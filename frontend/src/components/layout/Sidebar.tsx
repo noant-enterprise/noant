@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import { NavLink, useLocation } from 'react-router-dom'
 import { LayoutGrid, MessageSquare, GraduationCap, BarChart3, Link2, Settings, LogOut, X, CreditCard, Users, Code2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
 const navSections = [
   {
@@ -41,6 +42,7 @@ export function Sidebar({ onClose, collapsed = false, onToggleCollapse }: Sideba
   const { user, signOut } = useAuth()
   const location = useLocation()
   const [isHovered, setIsHovered] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   
   const isExpanded = collapsed ? isHovered : true
 
@@ -173,7 +175,7 @@ export function Sidebar({ onClose, collapsed = false, onToggleCollapse }: Sideba
       {/* Footer */}
       <div className="p-3 border-t border-default shrink-0">
         <button
-          onClick={signOut}
+          onClick={() => setShowLogoutConfirm(true)}
           className={cn(
             'flex items-center rounded-lg hover:bg-inset transition-colors active:scale-[0.98] w-full',
             isExpanded ? 'gap-3 px-3 py-2.5' : 'justify-center px-2 py-3'
@@ -195,6 +197,16 @@ export function Sidebar({ onClose, collapsed = false, onToggleCollapse }: Sideba
           )} />
         </button>
       </div>
+
+      <ConfirmModal
+        open={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        onConfirm={signOut}
+        title="Sign out of Noant?"
+        description="You will need to enter your email and password to log back in."
+        confirmText="Sign out"
+        variant="neutral"
+      />
     </div>
   )
 }

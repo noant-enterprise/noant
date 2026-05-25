@@ -19,7 +19,8 @@ import BillingPage from '@/app/(dashboard)/billing/page'
 import TeamPage from '@/app/(dashboard)/team/page'
 import WidgetPage from '@/app/(dashboard)/widget/page'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { WifiOff } from 'lucide-react'
 
 function parseJwt(token: string) {
   try {
@@ -35,6 +36,32 @@ function parseJwt(token: string) {
   } catch (e) {
     return null;
   }
+}
+
+function OfflineBanner() {
+  const [isOffline, setIsOffline] = useState(!navigator.onLine)
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false)
+    const handleOffline = () => setIsOffline(true)
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  if (!isOffline) return null
+
+  return (
+    <div className="bg-red-600 text-white text-xs font-semibold py-2.5 px-4 flex items-center justify-center gap-2 animate-slide-down sticky top-0 z-[9999] shadow-md border-b border-red-700">
+      <WifiOff className="w-4 h-4 animate-pulse" />
+      <span>You are currently offline. Trying to reconnect to the internet...</span>
+    </div>
+  )
 }
 
 function AppShell() {
@@ -71,6 +98,7 @@ function AppShell() {
 
   return (
     <>
+      <OfflineBanner />
       <CommandPalette />
       <Outlet />
     </>
