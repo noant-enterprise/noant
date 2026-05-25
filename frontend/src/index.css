@@ -1,0 +1,312 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light mode — clean, airy */
+    --bg-base: #fafafa;
+    --bg-surface: #ffffff;
+    --bg-surface-hover: #f8fafc;
+    --bg-elevated: #ffffff;
+    --bg-inset: #f1f5f9;
+    --bg-overlay: rgba(0, 0, 0, 0.5);
+    --bg-chat-customer: #0a0a0a;
+    
+    --text-primary: #0a0a0a;
+    --text-secondary: #64748b;
+    --text-tertiary: #94a3b8;
+    --text-inverse: #ffffff;
+    --text-brand: #0ea5e9;
+    --text-on-dark: #e5e5e5;
+    
+    --border-subtle: #f1f5f9;
+    --border-default: #e2e8f0;
+    --border-strong: #cbd5e1;
+    
+    --brand-sky: #0ea5e9;
+    --brand-sky-deep: #0284c7;
+    --brand-sky-soft: #e0f2fe;
+    
+    --success: #10b981;
+    --success-soft: #d1fae5;
+    --warning: #f59e0b;
+    --warning-soft: #fef3c7;
+    --error: #ef4444;
+    --error-soft: #fee2e2;
+    
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-sky: 0 4px 14px 0 rgba(14, 165, 233, 0.39);
+    
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+
+  /* System prefers dark — but ONLY if no manual override saved */
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light):not(.dark) {
+      --bg-base: #000000;
+      --bg-surface: #0d0d0d;
+      --bg-surface-hover: #1a1a1a;
+      --bg-elevated: #141414;
+      --bg-inset: #0a0a0a;
+      --bg-overlay: rgba(0, 0, 0, 0.85);
+      --bg-chat-customer: #1a1a1a;
+      
+      --text-primary: #e5e5e5;
+      --text-secondary: #a1a1aa;
+      --text-tertiary: #525252;
+      --text-inverse: #0a0a0a;
+      --text-brand: #38bdf8;
+      --text-on-dark: #e5e5e5;
+      
+      --border-subtle: #1a1a1a;
+      --border-default: #262626;
+      --border-strong: #404040;
+      
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.6), 0 2px 4px -2px rgb(0 0 0 / 0.6);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.7), 0 4px 6px -4px rgb(0 0 0 / 0.7);
+    }
+  }
+
+  html.dark {
+    /* Deep dark mode — ChatGPT style */
+    --bg-base: #000000;
+    --bg-surface: #0d0d0d;
+    --bg-surface-hover: #1a1a1a;
+    --bg-elevated: #141414;
+    --bg-inset: #0a0a0a;
+    --bg-overlay: rgba(0, 0, 0, 0.85);
+    --bg-chat-customer: #1a1a1a;
+    
+    --text-primary: #e5e5e5;
+    --text-secondary: #a1a1aa;
+    --text-tertiary: #525252;
+    --text-inverse: #0a0a0a;
+    --text-brand: #38bdf8;
+    --text-on-dark: #e5e5e5;
+    
+    --border-subtle: #1a1a1a;
+    --border-default: #262626;
+    --border-strong: #404040;
+    
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.6), 0 2px 4px -2px rgb(0 0 0 / 0.6);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.7), 0 4px 6px -4px rgb(0 0 0 / 0.7);
+  }
+
+  html.light {
+    /* Force light mode even if system is dark */
+    --bg-base: #fafafa;
+    --bg-surface: #ffffff;
+    --bg-surface-hover: #f8fafc;
+    --bg-elevated: #ffffff;
+    --bg-inset: #f1f5f9;
+    --bg-overlay: rgba(0, 0, 0, 0.5);
+    --bg-chat-customer: #0a0a0a;
+    
+    --text-primary: #0a0a0a;
+    --text-secondary: #64748b;
+    --text-tertiary: #94a3b8;
+    --text-inverse: #ffffff;
+    --text-brand: #0ea5e9;
+    --text-on-dark: #e5e5e5;
+    
+    --border-subtle: #f1f5f9;
+    --border-default: #e2e8f0;
+    --border-strong: #cbd5e1;
+    
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  }
+
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--bg-base);
+    color: var(--text-primary);
+  }
+
+  body {
+    background: var(--bg-base);
+    color: var(--text-primary);
+  }
+
+  * {
+    border-color: var(--border-default);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brand-sky);
+    outline-offset: 2px;
+  }
+
+  /* Styled scrollbars — subtle and theme-aware */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-tertiary);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  .bg-surface { background: var(--bg-surface); }
+  .bg-surface-hover:hover { background: var(--bg-surface-hover); }
+  .bg-elevated { background: var(--bg-elevated); }
+  .bg-inset { background: var(--bg-inset); }
+  .text-primary { color: var(--text-primary); }
+  .text-secondary { color: var(--text-secondary); }
+  .text-tertiary { color: var(--text-tertiary); }
+  .text-inverse { color: var(--text-inverse); }
+  .border-subtle { border-color: var(--border-subtle); }
+  .border-default { border-color: var(--border-default); }
+  .border-strong { border-color: var(--border-strong); }
+  .shadow-sky { box-shadow: var(--shadow-sky); }
+
+  .animate-fade-in {
+    animation: fadeIn 0.35s var(--ease-out) forwards;
+  }
+  .animate-slide-up {
+    animation: slideUp 0.4s var(--ease-out) forwards;
+  }
+  .animate-shimmer {
+    animation: shimmer 2s infinite;
+    background: linear-gradient(90deg, var(--bg-inset) 25%, var(--bg-surface-hover) 50%, var(--bg-inset) 75%);
+    background-size: 200% 100%;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  /* Firefox scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+}
+/* Sidebar tooltip animation */
+.sidebar-tooltip {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: all 0.2s ease;
+  pointer-events: none;
+}
+
+.group:hover .sidebar-tooltip {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+
+
+
+/* 1. Gentle float — stat cards, empty states */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+/* 2. Subtle pulse — active nav, badges, live indicators */
+@keyframes gentlePulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(14, 165, 233, 0); }
+  50% { opacity: 0.9; box-shadow: 0 0 0 8px rgba(14, 165, 233, 0.08); }
+}
+/* 3. Breathing shadow — cards on hover/focus */
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
+  50% { box-shadow: 0 4px 12px -2px rgb(14 165 233 / 0.15); }
+}
+.animate-breathe {
+  animation: breathe 8s ease-in-out infinite;
+}
+
+/* 4. Slow shimmer — skeletons, loading states */
+@keyframes shimmerSlow {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.animate-shimmer-slow {
+  animation: shimmerSlow 8s linear infinite;
+  background: linear-gradient(90deg, var(--bg-inset) 25%, var(--bg-surface-hover) 50%, var(--bg-inset) 75%);
+  background-size: 200% 100%;
+}
+
+/* 5. Live dot — typing indicator, online status */
+@keyframes livePulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+}
+.animate-live {
+  animation: livePulse 8s ease-in-out infinite;
+}
+
+/* 6. Toast slide in */
+@keyframes toastSlide {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-toast-in {
+  animation: toastSlide 0.3s var(--ease-out) forwards;
+}
+
+/* 7. Page transition */
+@keyframes pageFade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-page-in {
+  animation: pageFade 0.35s var(--ease-out) forwards;
+}
+
+/* 8. Button press feedback */
+.btn-press:active {
+  transform: scale(0.96);
+  transition: transform 0.1s ease;
+}
+
+/* 9. Nav item glow on active */
+

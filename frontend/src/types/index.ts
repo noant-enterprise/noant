@@ -1,0 +1,182 @@
+export class APIError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public data?: unknown
+  ) {
+    super(message);
+    this.name = 'APIError';
+  }
+}
+
+export interface APIResponse<T> {
+  data: T;
+  status: number;
+}
+
+// User
+export interface User {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  company_name?: string;
+  phone?: string;
+  avatar?: string;
+  plan_id: string;
+  plan: 'free' | 'pro' | 'business';
+  role: 'owner' | 'admin' | 'agent';
+  is_active: boolean;
+  must_change_password: boolean;
+  last_login_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Auth
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface SignupRequest {
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+  company_name?: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  refresh_token?: string;
+  user: User;
+}
+
+// Conversation
+export interface Conversation {
+  id: string;
+  customer_name: string;
+  channel: 'whatsapp' | 'instagram' | 'telegram' | 'discord' | 'web';
+  status: 'active' | 'resolved' | 'escalated';
+  is_ai_transferred: boolean;
+  last_message?: string;
+  unread: number;
+  intent?: string;
+  priority: 'low' | 'medium' | 'high';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  content: string;
+  sender_type: 'customer' | 'ai' | 'agent' | 'system';
+  created_at: string;
+}
+
+// Training
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  qa_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QAPair {
+  id: string;
+  category_id: string;
+  question: string;
+  answer: string;
+  created_at: string;
+}
+
+export interface UnknownQuestion {
+  id: string;
+  question: string;
+  status: 'pending' | 'trained' | 'ignored';
+  created_at: string;
+}
+
+// Analytics
+export interface OverviewStats {
+  conversations_today: number;
+  resolved_today: number;
+  active_conversations: number;
+  escalated_count: number;
+  ai_resolution_rate: number;
+  avg_response_time: number;
+  satisfaction: number;
+  total_conversations: number;
+}
+
+export interface TrendData {
+  date: string;
+  conversations: number;
+}
+
+export interface IntentData {
+  intent: string;
+  count: number;
+}
+
+export interface PeakHourData {
+  hour: string;
+  volume: number;
+}
+
+export interface ChannelDistribution {
+  [channel: string]: number;
+}
+
+// Integration
+export interface Integration {
+  channel: string;
+  status: 'connected' | 'disconnected' | 'error';
+  webhook_url?: string;
+  connected_at?: string;
+}
+
+// Team
+export interface TeamMember {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  role: 'owner' | 'admin' | 'agent';
+  status: 'active' | 'pending';
+}
+
+// Plan
+export interface Plan {
+  id: string;
+  name: string;
+  price_ngn: number;
+  features: string[];
+  is_popular: boolean;
+  max_responses: number;
+  max_channels: number;
+  max_team_members: number;
+}
+
+// API Key
+export interface APIKey {
+  id: string;
+  name: string;
+  key?: string;
+  created_at: string;
+}
+
+// WebSocket
+export interface WSMessage {
+  type: 'new_message' | 'new_conversation' | 'status_change' | 'typing' | 'integration_update' | 'unknown_question' | 'notification';
+  conversation_id?: string;
+  content?: string;
+  sender_type?: string;
+  timestamp?: string;
+  data?: any;
+}
