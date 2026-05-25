@@ -57,7 +57,7 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
       {/* Backdrop */}
       {open && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
+          className="fixed inset-0 bg-overlay z-40 backdrop-blur-sm"
           onClick={onClose}
         />
       )}

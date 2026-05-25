@@ -18,6 +18,7 @@ type User struct {
 	PlanID       string    `json:"plan_id" db:"plan_id"`
 	IsActive     bool      `json:"is_active" db:"is_active"`
 	MustChangePassword bool `json:"must_change_password" db:"must_change_password"`
+	TrialExpiresAt *time.Time `json:"trial_expires_at" db:"trial_expires_at"`
 	LastLoginAt  *time.Time `json:"last_login_at" db:"last_login_at"`
 	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`

@@ -317,11 +317,34 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
+	// Broadcast typing indicator - AI is thinking
+	if h.wsHub != nil {
+		h.wsHub.BroadcastMessage(WebSocketMessage{
+			ConversationID: id,
+			Type:           "typing_indicator",
+			Data: map[string]interface{}{
+				"conversation_id": id,
+				"is_typing":      true,
+			},
+		})
+	}
+
 	// Generate AI response asynchronously
 	go func() {
 	aiMsg, err := h.service.GenerateAIResponse(context.Background(), id, req.Content)
 	if err != nil {
 		h.logger.Error("AI generation failed in goroutine", "error", err)
+		// Remove typing indicator on error
+		if h.wsHub != nil {
+			h.wsHub.BroadcastMessage(WebSocketMessage{
+				ConversationID: id,
+				Type:           "typing_indicator",
+				Data: map[string]interface{}{
+					"conversation_id": id,
+					"is_typing":      false,
+				},
+			})
+		}
 		return
 	}
 	if h.wsHub != nil {
@@ -334,6 +357,15 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 				"content":         aiMsg.Content,
 				"sender_type":     aiMsg.SenderType,
 				"created_at":      aiMsg.CreatedAt,
+			},
+		})
+		// Stop typing indicator when response arrives
+		h.wsHub.BroadcastMessage(WebSocketMessage{
+			ConversationID: id,
+			Type:           "typing_indicator",
+			Data: map[string]interface{}{
+				"conversation_id": id,
+				"is_typing":      false,
 			},
 		})
 	}

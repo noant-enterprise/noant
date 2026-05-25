@@ -95,7 +95,7 @@ export function CommandPalette() {
       aria-modal="true"
       aria-label="Command palette"
     >
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
+      <div className="absolute inset-0 bg-overlay backdrop-blur-sm" aria-hidden="true" />
       <div
         className="relative w-full max-w-xl bg-surface rounded-xl shadow-2xl border border-default overflow-hidden animate-slide-up"
         onClick={e => e.stopPropagation()}

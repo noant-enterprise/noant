@@ -403,6 +403,11 @@ func (s *AuthService) Register(ctx context.Context, email, password, firstName, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
+	
+	// Set 14-day trial period
+	now := time.Now()
+	trialExpires := now.AddDate(0, 0, 14)
+	
 	user := &domain.User{
 		Email:              email,
 		Password:           string(hashedPassword),
@@ -413,6 +418,7 @@ func (s *AuthService) Register(ctx context.Context, email, password, firstName, 
 		PlanID:             "free",
 		IsActive:           true,
 		MustChangePassword: true,
+		TrialExpiresAt:     &trialExpires,
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
@@ -1257,10 +1263,145 @@ func (s *PaymentService) ListPlans(ctx context.Context) ([]domain.PaymentPlan, e
 }
 
 func (s *PaymentService) Subscribe(ctx context.Context, userID, planID string) error {
+	planName := planID
+	switch planID {
+	case "starter", "pro", "enterprise":
+		planName = planID
+	default:
+		return fmt.Errorf("invalid plan ID: %s", planID)
+	}
+
+	now := time.Now()
+	periodEnd := now.AddDate(0, 1, 0) // 1 month
+
+	sub := &domain.Subscription{
+		UserID:             userID,
+		PlanID:             planName,
+		Status:             "active",
+		CurrentPeriodStart: now,
+		CurrentPeriodEnd:   periodEnd,
+	}
+
+	if err := s.repos.Subscription.CreateOrUpdate(ctx, sub); err != nil {
+		s.logger.Error("Failed to create subscription", "error", err)
+		return fmt.Errorf("failed to create subscription: %w", err)
+	}
+
+	if err := s.repos.User.UpdatePlan(ctx, userID, planName); err != nil {
+		s.logger.Error("Failed to update user plan", "error", err)
+		return err
+	}
+
+	s.logger.Info("Subscription created", "user", userID, "plan", planName, "period_end", periodEnd)
 	return nil
 }
 
 func (s *PaymentService) Webhook(ctx context.Context, payload []byte) error {
+	var event struct {
+		Type string          `json:"type"`
+		Data json.RawMessage `json:"data"`
+	}
+
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return fmt.Errorf("failed to parse webhook payload: %w", err)
+	}
+
+	s.logger.Info("Payment webhook received", "type", event.Type)
+
+	switch event.Type {
+	case "checkout.success", "subscription.active", "subscription.created":
+		var subData struct {
+			UserID        string `json:"user_id"`
+			PlanID        string `json:"plan_id"`
+			Status        string `json:"status"`
+			PeriodStart   string `json:"current_period_start"`
+			PeriodEnd     string `json:"current_period_end"`
+			Metadata      map[string]interface{} `json:"metadata"`
+		}
+
+		if err := json.Unmarshal(event.Data, &subData); err != nil {
+			return fmt.Errorf("failed to parse subscription data: %w", err)
+		}
+
+		// Extract user_id from metadata if not at top level
+		userID := subData.UserID
+		if userID == "" && len(subData.Metadata) > 0 {
+			if uid, ok := subData.Metadata["user_id"].(string); ok {
+				userID = uid
+			}
+		}
+
+		if userID == "" {
+			return fmt.Errorf("missing user_id in webhook payload")
+		}
+
+		planID := subData.PlanID
+		if planID == "" {
+			planID = "starter"
+		}
+
+		// Parse dates or use defaults
+		now := time.Now()
+		periodEnd := now.AddDate(0, 1, 0)
+		if subData.PeriodEnd != "" {
+			if t, err := time.Parse(time.RFC3339, subData.PeriodEnd); err == nil {
+				periodEnd = t
+			}
+		}
+
+		sub := &domain.Subscription{
+			UserID:             userID,
+			PlanID:             planID,
+			Status:             "active",
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   periodEnd,
+		}
+
+		if err := s.repos.Subscription.CreateOrUpdate(ctx, sub); err != nil {
+			s.logger.Error("Failed to update subscription from webhook", "error", err)
+			return err
+		}
+
+		if err := s.repos.User.UpdatePlan(ctx, userID, planID); err != nil {
+			s.logger.Error("Failed to update user plan from webhook", "error", err)
+			return err
+		}
+
+		s.logger.Info("Subscription updated via webhook", "user", userID, "plan", planID, "status", subData.Status)
+
+	case "subscription.cancelled", "subscription.updated":
+		var subData struct {
+			UserID   string `json:"user_id"`
+			PlanID   string `json:"plan_id"`
+			Status   string `json:"status"`
+			Metadata map[string]interface{} `json:"metadata"`
+		}
+
+		if err := json.Unmarshal(event.Data, &subData); err != nil {
+			return fmt.Errorf("failed to parse subscription data: %w", err)
+		}
+
+		userID := subData.UserID
+		if userID == "" && len(subData.Metadata) > 0 {
+			if uid, ok := subData.Metadata["user_id"].(string); ok {
+				userID = uid
+			}
+		}
+
+		if userID != "" && event.Type == "subscription.cancelled" {
+			if err := s.repos.Subscription.Cancel(ctx, userID); err != nil {
+				s.logger.Error("Failed to cancel subscription", "error", err)
+			}
+			if err := s.repos.User.UpdatePlan(ctx, userID, "free"); err != nil {
+				s.logger.Error("Failed to downgrade user plan", "error", err)
+			}
+			s.logger.Info("Subscription cancelled", "user", userID)
+		}
+
+	default:
+		s.logger.Warn("Unhandled webhook event type", "type", event.Type)
+	}
+
 	return nil
 }
 
