@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"crypto/rand"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"noant/internal/domain"
 	"noant/internal/infrastructure"
 )
 
@@ -212,4 +214,47 @@ func PlanEnforcementMiddleware(redis *infrastructure.RedisClient) gin.HandlerFun
 		// For now, allow all authenticated requests
 		c.Next()
 	}
+}
+
+// TrialExpirationMiddleware checks if the user's trial has expired and blocks feature access.
+// It reads the trial_expires_at from a database lookup via a provided userProvider function.
+func TrialExpirationMiddleware(userProvider func(ctx context.Context, userID string) (*time.Time, error)) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, exists := c.Get("userID")
+		if !exists {
+			c.Next()
+			return
+		}
+
+		uid, ok := userID.(string)
+		if !ok || uid == "" {
+			c.Next()
+			return
+		}
+
+		trialExpiresAt, err := userProvider(c.Request.Context(), uid)
+		if err != nil || trialExpiresAt == nil {
+			c.Next()
+			return
+		}
+
+		if time.Now().After(*trialExpiresAt) {
+			c.JSON(http.StatusPaymentRequired, gin.H{
+				"error":        "Your free trial has expired. Please subscribe to continue using Noant.",
+				"trial_expired": true,
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// GetTrialExpiry is a helper to extract trial_expires_at from the user model
+func GetTrialExpiry(user *domain.User) *time.Time {
+	if user == nil {
+		return nil
+	}
+	return user.TrialExpiresAt
 }

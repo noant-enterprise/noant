@@ -109,10 +109,28 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Compute trial info for response
+	var trialInfo map[string]interface{}
+	if user.TrialExpiresAt != nil {
+		trialInfo = map[string]interface{}{
+			"trial_expires_at": user.TrialExpiresAt.Format(time.RFC3339),
+			"trial_ended":      time.Now().After(*user.TrialExpiresAt),
+			"trial_days_left":  int(time.Until(*user.TrialExpiresAt).Hours() / 24),
+		}
+		if trialInfo["trial_days_left"].(int) < 0 {
+			trialInfo["trial_days_left"] = 0
+		}
+	} else {
+		trialInfo = map[string]interface{}{
+			"trial_ended": false,
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"token":         token,
 		"refresh_token": refreshToken,
 		"user":          user,
+		"trial_info":    trialInfo,
 	})
 }
 
@@ -212,7 +230,28 @@ func (h *AuthHandler) Me(c *gin.Context) {
         utils.RespondInternalError(c, "Failed to retrieve user")
         return
     }
-    c.JSON(http.StatusOK, gin.H{"user": user})
+
+    // Compute trial info for response
+    var trialInfo map[string]interface{}
+    if user.TrialExpiresAt != nil {
+        trialInfo = map[string]interface{}{
+            "trial_expires_at": user.TrialExpiresAt.Format(time.RFC3339),
+            "trial_ended":      time.Now().After(*user.TrialExpiresAt),
+            "trial_days_left":  int(time.Until(*user.TrialExpiresAt).Hours() / 24),
+        }
+        if trialInfo["trial_days_left"].(int) < 0 {
+            trialInfo["trial_days_left"] = 0
+        }
+    } else {
+        trialInfo = map[string]interface{}{
+            "trial_ended": false,
+        }
+    }
+
+    c.JSON(http.StatusOK, gin.H{
+        "user":       user,
+        "trial_info": trialInfo,
+    })
 }
 
 // ========== CHAT HANDLER ==========
