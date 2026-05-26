@@ -545,136 +545,155 @@ function QATableSheet({
   )
 
   return createPortal(
-    <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 10500 }}>
-      {/* Backdrop */}
+    <div
+      className="fixed inset-0 flex flex-col bg-surface overflow-hidden"
+      style={{
+        zIndex: 10500,
+        animation: 'noantPageIn 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards'
+      }}
+    >
+      <style>{`
+        @keyframes noantPageIn {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      {/* Panel Header */}
       <div
-        className="absolute inset-0 bg-overlay backdrop-blur-sm pointer-events-auto"
-        onClick={onClose}
-      />
-      {/* Panel */}
-      <div className="absolute right-0 top-0 h-full w-full lg:w-[860px] bg-surface border-l border-default shadow-2xl flex flex-col pointer-events-auto">
-        {/* Panel Header */}
-        <div
-          className="px-6 py-4 border-b border-default flex items-center justify-between shrink-0"
-          style={{ borderLeft: `5px solid ${category.color}` }}
-        >
-          <div>
-            <div className="flex items-center gap-2 mb-0.5">
+        className="border-b border-default bg-surface shrink-0 z-10"
+        style={{ borderTop: `4px solid ${category.color}` }}
+      >
+        <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-3">
               <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: category.color }}
-              />
-              <h3 className="text-base font-bold text-primary">{category.name}</h3>
-              <span className="text-[10px] font-bold bg-inset px-2 py-0.5 rounded-full text-secondary border border-default">
-                {qaList.length} pairs
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border"
+                style={{
+                  backgroundColor: `${category.color}0D`,
+                  borderColor: `${category.color}33`,
+                  color: category.color,
+                }}
+              >
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: category.color }} />
+                {category.name}
+              </span>
+              <span className="text-xs font-bold bg-inset px-2.5 py-1 rounded-full text-secondary border border-default">
+                {qaList.length} Q&amp;A Pairs
               </span>
             </div>
             <p className="text-xs text-tertiary leading-relaxed">
               {category.description || 'Manage Q&A records inside this folder.'}
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-3 shrink-0">
             {category.id !== 'default' && (
               <button
                 onClick={onDeleteCategory}
-                className="p-2 rounded-xl border border-red-500/20 text-red-500 hover:bg-red-500/10 active:scale-95 transition-all cursor-pointer"
+                className="p-2.5 rounded-xl border border-red-500/20 text-red-500 hover:bg-red-500/10 active:scale-95 transition-all cursor-pointer flex items-center gap-2 text-xs font-semibold"
                 title="Delete Category Folder"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-4 h-4" />
+                Delete Folder
               </button>
             )}
             <button
               onClick={onClose}
-              className="p-2 rounded-xl hover:bg-inset text-tertiary hover:text-primary active:scale-95 transition-colors cursor-pointer"
+              className="p-2.5 rounded-xl hover:bg-inset text-tertiary hover:text-primary active:scale-95 transition-colors cursor-pointer border border-default bg-surface shadow-sm"
+              title="Close Panel"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Panel Controls */}
-        <div className="px-6 py-3 border-b border-default bg-inset/50 flex flex-col sm:flex-row sm:items-center gap-3 shrink-0">
-          <div className="relative flex-1 flex items-center bg-surface border border-default rounded-xl px-3 focus-within:ring-1 focus-within:ring-noant-sky focus-within:border-noant-sky transition-all">
+      {/* Panel Controls */}
+      <div className="border-b border-default bg-inset/50 shrink-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="relative flex-1 flex items-center bg-surface border border-default rounded-xl px-4 focus-within:ring-2 focus-within:ring-noant-sky/20 focus-within:border-noant-sky transition-all shadow-sm">
             <Search className="w-4 h-4 text-tertiary shrink-0" />
             <input
               type="text"
               value={filter}
               onChange={e => setFilter(e.target.value)}
-              placeholder="Filter questions or answers…"
-              className="w-full pl-2 py-2 text-xs bg-transparent outline-none text-primary placeholder-tertiary"
+              placeholder="Search questions or answers in this folder…"
+              className="w-full pl-3 py-3 text-sm bg-transparent outline-none text-primary placeholder-tertiary"
             />
             {filter && (
               <button onClick={() => setFilter('')} className="text-tertiary hover:text-primary shrink-0 cursor-pointer">
-                <X className="w-3 h-3" />
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
           <button
             onClick={onAddQA}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-noant-sky text-white rounded-xl text-xs font-semibold hover:bg-noant-sky-deep active:scale-95 transition-all shrink-0 shadow-sm shadow-sky/10 cursor-pointer"
+            className="flex items-center justify-center gap-2 px-5 py-3 bg-noant-sky text-white rounded-xl text-sm font-semibold hover:bg-noant-sky-deep active:scale-95 transition-all shrink-0 shadow-sm shadow-sky/10 cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5 text-white" />
+            <Plus className="w-4 h-4 text-white" />
             Add Q&amp;A to Folder
           </button>
         </div>
+      </div>
 
-        {/* Table Body */}
-        <div className="flex-1 overflow-auto p-6 scrollbar-thin">
+      {/* Table Body */}
+      <div className="flex-1 overflow-auto bg-surface scrollbar-thin">
+        <div className="max-w-7xl mx-auto px-6 py-6">
           {loading ? (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex gap-4 p-3 border border-default rounded-xl">
-                  <Skeleton className="h-4 w-1/3 rounded" />
-                  <Skeleton className="h-4 w-2/3 rounded" />
+                <div key={i} className="flex gap-4 p-4 border border-default rounded-2xl bg-surface shadow-sm animate-pulse">
+                  <Skeleton className="h-5 w-1/3 rounded" />
+                  <Skeleton className="h-5 w-2/3 rounded" />
                 </div>
               ))}
             </div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-20 border border-dashed border-default rounded-2xl bg-inset/10">
-              <div className="w-12 h-12 rounded-xl bg-inset flex items-center justify-center text-tertiary mx-auto mb-3">
-                <BookOpen className="w-6 h-6" />
+            <div className="text-center py-24 border border-dashed border-default rounded-2xl bg-inset/10">
+              <div className="w-14 h-14 rounded-2xl bg-inset flex items-center justify-center text-tertiary mx-auto mb-4 border border-default">
+                <BookOpen className="w-7 h-7 text-noant-sky" />
               </div>
-              <h4 className="text-sm font-semibold text-primary">
+              <h4 className="text-base font-bold text-primary">
                 {filter ? 'No matching pairs found' : 'No trained Q&As yet'}
               </h4>
-              <p className="text-xs text-secondary mt-1 max-w-xs mx-auto">
+              <p className="text-sm text-secondary mt-1 max-w-sm mx-auto leading-relaxed">
                 {filter ? 'Try a different search term.' : 'Add a Q&A pair to get started.'}
               </p>
             </div>
           ) : (
             <div className="border border-default rounded-2xl overflow-hidden shadow-sm bg-surface">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse table-fixed">
                 <thead>
-                  <tr className="bg-inset border-b border-default text-[10px] font-bold text-secondary uppercase tracking-wider select-none">
-                    <th className="px-5 py-3 w-[40%]">Question</th>
-                    <th className="px-5 py-3 w-[45%]">Answer</th>
-                    <th className="px-5 py-3 w-[15%] text-right">Actions</th>
+                  <tr className="bg-inset border-b border-default text-[11px] font-bold text-secondary uppercase tracking-wider select-none">
+                    <th className="px-6 py-4 w-[40%]">Question</th>
+                    <th className="px-6 py-4 w-[45%]">Answer</th>
+                    <th className="px-6 py-4 w-[15%] text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-default">
                   {filtered.map((qa: any) => (
                     <tr key={qa.id} className="hover:bg-inset/30 transition-colors group">
-                      <td className="px-5 py-3.5 text-xs font-medium text-primary leading-relaxed align-top">
+                      <td className="px-6 py-4 text-sm font-semibold text-primary leading-relaxed align-top break-words">
                         {qa.question}
                       </td>
-                      <td className="px-5 py-3.5 text-xs text-secondary leading-relaxed align-top">
+                      <td className="px-6 py-4 text-sm text-secondary leading-relaxed align-top break-words">
                         {qa.answer}
                       </td>
-                      <td className="px-5 py-3.5 align-top text-right">
-                        <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <td className="px-6 py-4 align-top text-right">
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => onEditQA(qa)}
-                            className="p-1.5 rounded-lg text-tertiary hover:text-noant-sky hover:bg-inset active:scale-95 transition-all cursor-pointer"
+                            className="p-2 rounded-xl text-tertiary hover:text-noant-sky hover:bg-inset active:scale-95 transition-all cursor-pointer border border-transparent hover:border-default bg-surface shadow-sm"
                             title="Edit Q&A"
                           >
-                            <Edit3 className="w-3.5 h-3.5" />
+                            <Edit3 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => onDeleteQA(qa.id)}
-                            className="p-1.5 rounded-lg text-tertiary hover:text-red-500 hover:bg-inset active:scale-95 transition-all cursor-pointer"
+                            className="p-2 rounded-xl text-tertiary hover:text-red-500 hover:bg-inset active:scale-95 transition-all cursor-pointer border border-transparent hover:border-default bg-surface shadow-sm"
                             title="Delete Q&A"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -685,17 +704,19 @@ function QATableSheet({
             </div>
           )}
         </div>
+      </div>
 
-        {/* Panel Footer */}
-        <div className="px-6 py-4 border-t border-default bg-inset/30 flex items-center justify-between shrink-0">
-          <span className="text-[11px] text-tertiary">
+      {/* Panel Footer */}
+      <div className="border-t border-default bg-inset/30 shrink-0">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <span className="text-xs text-tertiary">
             Showing <strong className="text-secondary">{filtered.length}</strong> of <strong className="text-secondary">{qaList.length}</strong> pairs
           </span>
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-default bg-surface rounded-xl text-xs font-semibold hover:bg-inset active:scale-95 transition-all cursor-pointer"
+            className="px-5 py-2.5 border border-default bg-surface hover:bg-inset rounded-xl text-xs font-semibold active:scale-95 transition-all cursor-pointer shadow-sm text-primary"
           >
-            Close Panel
+            Close Page
           </button>
         </div>
       </div>

@@ -212,7 +212,7 @@ function ConfirmModalRenderer({
       {/* Overlay */}
       <div
         ref={overlayRef}
-        className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-overlay backdrop-blur-sm"
+        className="fixed inset-0 z-[15000] flex items-center justify-center p-4 bg-overlay backdrop-blur-sm"
         style={{ animation: 'noantOverlayIn 200ms ease forwards' }}
         onClick={(e) => {
           if (resolvedCloseOnOverlay && e.target === overlayRef.current) {
