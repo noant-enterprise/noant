@@ -335,6 +335,62 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 	return messages, nil
 }
 
+func (r *MessageRepository) ListByConversationPaginated(ctx context.Context, conversationID string, limit, offset int) ([]domain.Message, int, error) {
+	var total int
+	countQuery := `SELECT COUNT(*) FROM messages WHERE conversation_id = ?`
+	err := r.db.QueryRowContext(ctx, countQuery, conversationID).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	query := `SELECT id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, created_at
+	FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	rows, err := r.db.QueryContext(ctx, query, conversationID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var messages []domain.Message
+	for rows.Next() {
+		var msg domain.Message
+		var senderID sql.NullString
+		var confidence sql.NullFloat64
+		var matchedQA sql.NullString
+		var escalationReason sql.NullString
+		var language sql.NullString
+		var source sql.NullString
+		err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.Role, &senderID, &msg.Content, &msg.IsRead, &confidence, &matchedQA, &escalationReason, &language, &source, &msg.CreatedAt)
+		if err != nil {
+			continue
+		}
+		if senderID.Valid {
+			msg.SenderID = &senderID.String
+		}
+		msg.Metadata = &domain.MessageMetadata{}
+		if confidence.Valid {
+			msg.Confidence = confidence.Float64
+		}
+		if matchedQA.Valid {
+			v := matchedQA.String
+			msg.Metadata.MatchedQAID = &v
+		}
+		if escalationReason.Valid {
+			msg.Metadata.EscalationReason = escalationReason.String
+		}
+		if language.Valid {
+			msg.Metadata.Language = language.String
+		}
+		if source.Valid {
+			msg.Source = source.String
+		}
+		messages = append(messages, msg)
+	}
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+	return messages, total, nil
+}
+
 func (r *MessageRepository) GetLastMessage(ctx context.Context, conversationID string) (*domain.Message, error) {
 	query := `SELECT id, conversation_id, sender_type, content, is_read, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1`
 	row := r.db.QueryRowContext(ctx, query, conversationID)

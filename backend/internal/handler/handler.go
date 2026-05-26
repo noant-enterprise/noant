@@ -330,15 +330,32 @@ func (h *ChatHandler) GetConversation(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
-	conv, messages, err := h.service.GetConversation(c.Request.Context(), userID.(string), id)
+
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "30"))
+	if limit < 1 || limit > 100 {
+		limit = 30
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	conv, messages, total, err := h.service.GetConversationPaginated(c.Request.Context(), userID.(string), id, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
 
+	hasMore := page*limit < total
+
 	c.JSON(http.StatusOK, gin.H{
 		"conversation": conv,
 		"messages":     messages,
+		"total":        total,
+		"has_more":     hasMore,
+		"page":         page,
 	})
 }
 

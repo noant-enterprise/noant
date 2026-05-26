@@ -6,6 +6,7 @@ import { ChatList, ChatMessages, ChatInput, CustomerInfo } from '@/components/ch
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { Avatar } from '@/components/ui/Avatar'
+import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ArrowLeft, Info, Sparkles } from 'lucide-react'
 import type { Conversation, Message, WSMessage } from '@/types'
@@ -15,19 +16,16 @@ export default function ChatsPage() {
   const navigate = useNavigate()
   const activeId = searchParams.get('id')
   const isMobileChatView = !!activeId
-  
+
   const convAPI = useAPI() as any
   const { data: convData, get: getConversations, loadMore, loading: convLoading, loadingMore } = convAPI
-  
-  const msgAPI = useAPI() as any
-  const { data: msgData, get: getMessages } = msgAPI
-  
+
   const postAPI = useAPI() as any
   const { post } = postAPI
-  
+
   const putAPI = useAPI() as any
   const { put } = putAPI
-  
+
   const { toast } = useToast()
   const { subscribe } = useWebSocket()
 
@@ -42,9 +40,14 @@ export default function ChatsPage() {
   const aiPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastSentContent = useRef<string>('')
 
+  // Paginated message states
+  const [activeMessages, setActiveMessages] = useState<Message[]>([])
+  const [msgPage, setMsgPage] = useState(1)
+  const [msgHasMore, setMsgHasMore] = useState(false)
+  const [msgLoadingMore, setMsgLoadingMore] = useState(false)
+
   // Safe data extraction
   const conversations = convData?.conversations || []
-  const messages = msgData?.messages || []
   const hasMore = convData?.has_more || false
 
   useEffect(() => {
@@ -65,8 +68,15 @@ export default function ChatsPage() {
       return
     }
 
-    aiPollRef.current = setInterval(() => {
-      getMessages(`/chats/conversations/${activeId}`)
+    aiPollRef.current = setInterval(async () => {
+      try {
+        const res = await api.get<any>(`/chats/conversations/${activeId}?limit=30&page=1`)
+        setActiveMessages(res.messages || [])
+        setMsgHasMore(res.has_more || false)
+        setMsgPage(1)
+      } catch (err) {
+        console.error('Failed to poll latest messages:', err)
+      }
     }, 800)
 
     return () => {
@@ -75,13 +85,13 @@ export default function ChatsPage() {
         aiPollRef.current = null
       }
     }
-  }, [activeId, pendingAI, getMessages])
+  }, [activeId, pendingAI])
 
   // Stop polling once AI response arrives
   useEffect(() => {
     if (!activeId || !pendingAI.has(activeId)) return
-    const hasAIResponse = messages.some((m: Message) => m.sender_type === 'ai')
-    const hasUserMessage = messages.some((m: Message) => m.sender_type === 'customer')
+    const hasAIResponse = activeMessages.some((m: Message) => m.sender_type === 'ai')
+    const hasUserMessage = activeMessages.some((m: Message) => m.sender_type === 'customer')
     if (hasAIResponse && hasUserMessage) {
       setPendingAI(prev => {
         const next = new Set(prev)
@@ -90,21 +100,21 @@ export default function ChatsPage() {
       })
       setTyping(false)
     }
-  }, [messages, activeId, pendingAI])
+  }, [activeMessages, activeId, pendingAI])
 
   // Clear optimistic messages ONLY when real message with matching content arrives
   useEffect(() => {
     if (optimisticMessages.length === 0 || !activeId) return
-    
+
     const lastOptimistic = optimisticMessages[optimisticMessages.length - 1]
-    const foundReal = messages.some((m: Message) => 
+    const foundReal = activeMessages.some((m: Message) =>
       m.sender_type === 'customer' && m.content === lastOptimistic.content
     )
-    
+
     if (foundReal) {
       setOptimisticMessages([])
     }
-  }, [messages, optimisticMessages, activeId])
+  }, [activeMessages, optimisticMessages, activeId])
 
   useEffect(() => {
     getConversations('/chats/conversations?page=1&limit=20')
@@ -112,23 +122,38 @@ export default function ChatsPage() {
 
   useEffect(() => {
     if (conversations.length > 0) {
-      setAllConversations(prev => 
+      setAllConversations(prev =>
         page === 1 ? conversations : [...prev, ...conversations]
       )
     }
   }, [conversations, page])
 
+  // Initial load of latest 30 messages on selection
   useEffect(() => {
     if (activeId) {
-      getMessages(`/chats/conversations/${activeId}`)
+      setActiveMessages([])
       setOptimisticMessages([])
+      setMsgPage(1)
+      setMsgHasMore(false)
+
+      const loadInitialMessages = async () => {
+        try {
+          const res = await api.get<any>(`/chats/conversations/${activeId}?limit=30&page=1`)
+          setActiveMessages(res.messages || [])
+          setMsgHasMore(res.has_more || false)
+        } catch (err) {
+          console.error('Failed to load initial messages:', err)
+        }
+      }
+      loadInitialMessages()
     }
-  }, [activeId, getMessages])
+  }, [activeId])
 
   useEffect(() => {
     setShowInfo(false)
   }, [activeId])
 
+  // Real-time WebSocket sync (optimistic updates in place, with silent background sync)
   useEffect(() => {
     const unsub = subscribe((msg: WSMessage) => {
       if (msg.type === 'typing' && msg.conversation_id === activeId) {
@@ -137,14 +162,41 @@ export default function ChatsPage() {
       }
       if (msg.type === 'new_message') {
         if (msg.conversation_id === activeId) {
-          getMessages(`/chats/conversations/${activeId}`)
+          const newMsg: Message = {
+            id: msg.data?.id || `msg-${Date.now()}`,
+            conversation_id: activeId,
+            content: msg.content || '',
+            sender_type: (msg.sender_type || 'customer') as any,
+            role: msg.sender_type || 'customer',
+            created_at: msg.timestamp || new Date().toISOString(),
+            confidence: msg.data?.confidence,
+            source: msg.data?.source,
+            metadata: msg.data?.metadata,
+          }
+          setActiveMessages(prev => {
+            if (prev.some(m => m.id === newMsg.id)) return prev
+            return [...prev, newMsg]
+          })
           setPendingAI(prev => {
             const next = new Set(prev)
             next.delete(activeId)
             return next
           })
         }
-        // Always refresh the conversation list so the last message and unread count are updated in real-time
+
+        // Optimistically update conversation list in-place instantly!
+        if (msg.conversation_id) {
+          setAllConversations(prev =>
+            prev.map(c => c.id === msg.conversation_id ? {
+              ...c,
+              last_message: msg.content || c.last_message,
+              unread: msg.conversation_id === activeId ? 0 : (msg.sender_type === 'customer' ? c.unread + 1 : c.unread),
+              updated_at: msg.timestamp || new Date().toISOString(),
+            } : c)
+          )
+        }
+
+        // Silently pull fresh dashboard summary in backend background to keep synced
         getConversations('/chats/conversations?page=1&limit=20')
       }
       if (msg.type === 'new_conversation') {
@@ -152,7 +204,7 @@ export default function ChatsPage() {
       }
     })
     return unsub
-  }, [activeId, subscribe, getMessages, getConversations])
+  }, [activeId, subscribe, getConversations])
 
   const activeConv = allConversations.find((c) => c.id === activeId) || null
 
@@ -163,9 +215,26 @@ export default function ChatsPage() {
     loadMore(`/chats/conversations?page=${nextPage}&limit=20`)
   }, [page, loadingMore, hasMore, loadMore])
 
+  // Backward message pagination infinite scroll
+  const handleLoadMoreMessages = useCallback(async () => {
+    if (!activeId || msgLoadingMore || !msgHasMore) return
+    setMsgLoadingMore(true)
+    const nextPage = msgPage + 1
+    try {
+      const res = await api.get<any>(`/chats/conversations/${activeId}?limit=30&page=${nextPage}`)
+      setActiveMessages(prev => [...(res.messages || []), ...prev])
+      setMsgHasMore(res.has_more || false)
+      setMsgPage(nextPage)
+    } catch (err) {
+      console.error('Failed to load older messages:', err)
+    } finally {
+      setMsgLoadingMore(false)
+    }
+  }, [activeId, msgPage, msgLoadingMore, msgHasMore])
+
   const handleSend = async (text: string) => {
     if (!activeId) return
-    
+
     const tempId = `temp-${Date.now()}`
     const optimisticMsg: Message = {
       id: tempId,
@@ -174,26 +243,34 @@ export default function ChatsPage() {
       sender_type: 'customer',
       created_at: new Date().toISOString(),
     }
-    
+
     lastSentContent.current = text
-    
-    // Show immediately — DON'T clear until real message arrives
+
+    // Show immediately
     setOptimisticMessages(prev => [...prev, optimisticMsg])
     setSending(true)
     setTyping(true)
-    
+
+    // Optimistically update conversation's last message and move it to top in sidebar
+    setAllConversations(prev =>
+      prev.map(c => c.id === activeId ? { ...c, last_message: text, updated_at: new Date().toISOString() } : c)
+    )
+
     try {
       await post(`/chats/conversations/${activeId}/messages`, { content: text })
-      
-      // Trigger fetch but keep optimistic visible
-      getMessages(`/chats/conversations/${activeId}`)
-      
+
+      // Pull fresh page 1 messages to sync
+      const syncRes = await api.get<any>(`/chats/conversations/${activeId}?limit=30&page=1`)
+      setActiveMessages(syncRes.messages || [])
+      setMsgHasMore(syncRes.has_more || false)
+      setMsgPage(1)
+
       // Mark AI as pending
       setPendingAI(prev => new Set(prev).add(activeId))
     } catch (err) {
       console.error('Send failed:', err)
       toast('Failed to send message', 'error')
-      setOptimisticMessages(prev => prev.map(m => 
+      setOptimisticMessages(prev => prev.map(m =>
         m.id === tempId ? { ...m, content: `${m.content} (failed)` } : m
       ))
       setTyping(false)
@@ -218,7 +295,7 @@ export default function ChatsPage() {
   }
 
   const openAIChat = async () => {
-    const aiConv = allConversations.find((c: Conversation) => 
+    const aiConv = allConversations.find((c: Conversation) =>
       c.channel === 'web' && c.customer_name === 'Noant AI'
     )
     if (aiConv) {
@@ -245,13 +322,18 @@ export default function ChatsPage() {
     }
   }
 
-  // Deduplicate: if real message exists with same content as optimistic, show real one only
-  const dedupedMessages = [...messages]
-  const realContents = new Set(messages.map((m: Message) => m.content))
-  
+  // Deduplicate messages
+  const dedupedMessages = [...activeMessages]
+  const realContents = new Set(activeMessages.map((m: Message) => m.content))
+
   const visibleOptimistic = optimisticMessages.filter((om) => !realContents.has(om.content))
-  
+
   const allMessages = [...dedupedMessages, ...visibleOptimistic]
+
+  // Sort conversations by updated_at so the latest conversation is always on top
+  const sortedConversations = [...allConversations].sort((a, b) =>
+    new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  )
 
   return (
     <div className="h-full w-full flex animate-page-in overflow-hidden relative">
@@ -279,7 +361,8 @@ export default function ChatsPage() {
           </button>
         </div>
 
-        {convLoading && page === 1 ? (
+        {/* Shimmer ONLY on initial absolute blank load to avoid flashing loaders */}
+        {convLoading && allConversations.length === 0 ? (
           <div className="p-3 space-y-2">
             <Skeleton className="h-8 w-full rounded-md" />
             <div className="flex gap-1">
@@ -299,7 +382,7 @@ export default function ChatsPage() {
           </div>
         ) : (
           <ChatList
-            conversations={allConversations}
+            conversations={sortedConversations}
             activeId={activeId || undefined}
             hasMore={hasMore}
             loadingMore={loadingMore}
@@ -323,7 +406,7 @@ export default function ChatsPage() {
               >
                 <ArrowLeft className="w-[18px] h-[18px]" strokeWidth={2} />
               </button>
-              
+
               <Avatar name={activeConv.customer_name} size="sm" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-primary truncate">{activeConv.customer_name}</p>
@@ -353,12 +436,17 @@ export default function ChatsPage() {
               </button>
             </div>
 
-            <ChatMessages messages={allMessages} />
-            <ChatInput 
-              onSend={handleSend} 
-              onTakeover={handleTakeover} 
-              disabled={!activeId || sending} 
-              typing={typing || pendingAI.has(activeId || '')} 
+            <ChatMessages
+              messages={allMessages}
+              hasMore={msgHasMore}
+              loadingMore={msgLoadingMore}
+              onLoadMore={handleLoadMoreMessages}
+            />
+            <ChatInput
+              onSend={handleSend}
+              onTakeover={handleTakeover}
+              disabled={!activeId || sending}
+              typing={typing || pendingAI.has(activeId || '')}
               typingText={pendingAI.has(activeId || '') ? 'Noant AI is thinking...' : 'Customer is typing...'}
             />
           </>

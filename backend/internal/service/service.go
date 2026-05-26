@@ -721,6 +721,25 @@ func (s *ChatService) GetConversation(ctx context.Context, userID, conversationI
 	return conv, messages, nil
 }
 
+func (s *ChatService) GetConversationPaginated(ctx context.Context, userID, conversationID string, limit, offset int) (*domain.Conversation, []domain.Message, int, error) {
+	conv, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if conv == nil {
+		return nil, nil, 0, fmt.Errorf("conversation not found")
+	}
+	
+	// Mark messages as read
+	_ = s.repos.Message.MarkRead(ctx, conversationID)
+
+	messages, total, err := s.repos.Message.ListByConversationPaginated(ctx, conversationID, limit, offset)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	return conv, messages, total, nil
+}
+
 func (s *ChatService) HumanTakeover(ctx context.Context, userID, conversationID, agentID string) error {
 	conv, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
 	if err != nil {
