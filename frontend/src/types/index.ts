@@ -183,7 +183,7 @@ export interface APIKey {
 
 // WebSocket
 export interface WSMessage {
-  type: 'new_message' | 'new_conversation' | 'status_change' | 'typing' | 'integration_update' | 'unknown_question' | 'notification';
+  type: 'new_message' | 'new_conversation' | 'status_change' | 'typing' | 'integration_update' | 'unknown_question' | 'notification' | 'typing_indicator';
   conversation_id?: string;
   content?: string;
   sender_type?: string;

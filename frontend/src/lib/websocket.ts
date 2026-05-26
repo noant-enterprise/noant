@@ -54,8 +54,9 @@ class WebSocketManager {
             type: raw.type || 'new_message',
             conversation_id: raw.conversation_id || raw.ConversationID,
             content: raw.content || raw.data?.content || raw.Data?.content,
-            sender_type: raw.sender_type || raw.data?.sender_type || raw.Data?.sender_type,
+            sender_type: raw.sender_type || raw.data?.sender_type || raw.Data?.sender_type || raw.data?.role || raw.Data?.role,
             timestamp: raw.timestamp || raw.created_at || new Date().toISOString(),
+            data: raw.data || raw.Data,
           }
           this.handlers.forEach(h => h(msg))
         } catch (err) {

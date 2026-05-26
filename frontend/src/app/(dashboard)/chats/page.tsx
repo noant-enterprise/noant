@@ -90,15 +90,18 @@ export default function ChatsPage() {
   // Stop polling once AI response arrives
   useEffect(() => {
     if (!activeId || !pendingAI.has(activeId)) return
-    const hasAIResponse = activeMessages.some((m: Message) => m.sender_type === 'ai')
-    const hasUserMessage = activeMessages.some((m: Message) => m.sender_type === 'customer')
-    if (hasAIResponse && hasUserMessage) {
-      setPendingAI(prev => {
-        const next = new Set(prev)
-        next.delete(activeId)
-        return next
-      })
-      setTyping(false)
+    
+    // Check if the latest message is from the AI
+    if (activeMessages.length > 0) {
+      const lastMessage = activeMessages[activeMessages.length - 1]
+      if (lastMessage && lastMessage.sender_type === 'ai') {
+        setPendingAI(prev => {
+          const next = new Set(prev)
+          next.delete(activeId)
+          return next
+        })
+        setTyping(false)
+      }
     }
   }, [activeMessages, activeId, pendingAI])
 
@@ -160,6 +163,23 @@ export default function ChatsPage() {
         setTyping(true)
         setTimeout(() => setTyping(false), 3000)
       }
+      if (msg.type === 'typing_indicator' && msg.conversation_id === activeId) {
+        const isTyping = msg.data?.is_typing ?? false
+        if (isTyping) {
+          setPendingAI(prev => {
+            const next = new Set(prev)
+            next.add(activeId)
+            return next
+          })
+        } else {
+          setPendingAI(prev => {
+            const next = new Set(prev)
+            next.delete(activeId)
+            return next
+          })
+          setTyping(false)
+        }
+      }
       if (msg.type === 'new_message') {
         if (msg.conversation_id === activeId) {
           const newMsg: Message = {
@@ -177,11 +197,16 @@ export default function ChatsPage() {
             if (prev.some(m => m.id === newMsg.id)) return prev
             return [...prev, newMsg]
           })
-          setPendingAI(prev => {
-            const next = new Set(prev)
-            next.delete(activeId)
-            return next
-          })
+          
+          // Clear pending AI and typing only if the incoming message is from the AI!
+          if (newMsg.sender_type === 'ai') {
+            setPendingAI(prev => {
+              const next = new Set(prev)
+              next.delete(activeId)
+              return next
+            })
+            setTyping(false)
+          }
         }
 
         // Optimistically update conversation list in-place instantly!
@@ -249,7 +274,13 @@ export default function ChatsPage() {
     // Show immediately
     setOptimisticMessages(prev => [...prev, optimisticMsg])
     setSending(true)
-    setTyping(true)
+    
+    // Mark AI as pending immediately so the typing state starts immediately!
+    setPendingAI(prev => {
+      const next = new Set(prev)
+      next.add(activeId)
+      return next
+    })
 
     // Optimistically update conversation's last message and move it to top in sidebar
     setAllConversations(prev =>
@@ -265,14 +296,24 @@ export default function ChatsPage() {
       setMsgHasMore(syncRes.has_more || false)
       setMsgPage(1)
 
-      // Mark AI as pending
-      setPendingAI(prev => new Set(prev).add(activeId))
+      // Ensure AI is still marked as pending
+      setPendingAI(prev => {
+        const next = new Set(prev)
+        next.add(activeId)
+        return next
+      })
     } catch (err) {
       console.error('Send failed:', err)
       toast('Failed to send message', 'error')
       setOptimisticMessages(prev => prev.map(m =>
         m.id === tempId ? { ...m, content: `${m.content} (failed)` } : m
       ))
+      // Clear pending AI since sending failed
+      setPendingAI(prev => {
+        const next = new Set(prev)
+        next.delete(activeId)
+        return next
+      })
       setTyping(false)
     } finally {
       setSending(false)
