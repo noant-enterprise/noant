@@ -670,7 +670,7 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, mess
 	}
 	_ = s.repos.Message.Create(ctx, aiMsg)
 	if aiResp.Escalate {
-		_ = s.repos.Conversation.UpdateStatus(ctx, conv.ID, "escalated")
+		_ = s.repos.Conversation.UpdateStatus(ctx, conv.ID, "escalated", userID)
 	}
 	return conv, aiMsg, nil
 }
@@ -696,11 +696,25 @@ func (s *ChatService) GetConversation(ctx context.Context, conversationID string
 }
 
 func (s *ChatService) HumanTakeover(ctx context.Context, conversationID, agentID string) error {
-	return s.repos.Conversation.Takeover(ctx, conversationID, agentID)
+	conv, err := s.repos.Conversation.GetByID(ctx, conversationID)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return fmt.Errorf("conversation not found")
+	}
+	return s.repos.Conversation.Takeover(ctx, conversationID, agentID, conv.UserID)
 }
 
 func (s *ChatService) Escalate(ctx context.Context, conversationID, reason string) error {
-	if err := s.repos.Conversation.UpdateStatus(ctx, conversationID, "escalated"); err != nil {
+	conv, err := s.repos.Conversation.GetByID(ctx, conversationID)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return fmt.Errorf("conversation not found")
+	}
+	if err := s.repos.Conversation.UpdateStatus(ctx, conversationID, "escalated", conv.UserID); err != nil {
 		return err
 	}
 	msg := &domain.Message{
@@ -749,7 +763,10 @@ func (s *ChatService) GenerateAIResponse(ctx context.Context, conversationID, us
 		return nil, err
 	}
 	if aiResp.Escalate {
-		_ = s.repos.Conversation.UpdateStatus(ctx, conversationID, "escalated")
+		conv, err := s.repos.Conversation.GetByID(ctx, conversationID)
+		if err == nil && conv != nil {
+			_ = s.repos.Conversation.UpdateStatus(ctx, conversationID, "escalated", conv.UserID)
+		}
 	}
 	return aiMsg, nil
 }
@@ -866,8 +883,8 @@ func (s *TrainingService) ListUnknownQuestions(ctx context.Context, userID strin
 	return s.repos.UnknownQ.List(ctx, userID, status, limit)
 }
 
-func (s *TrainingService) TrainUnknown(ctx context.Context, id string, answer string, categoryID string) error {
-	target, err := s.repos.UnknownQ.GetByID(ctx, id)
+func (s *TrainingService) TrainUnknown(ctx context.Context, userID, id string, answer string, categoryID string) error {
+	target, err := s.repos.UnknownQ.GetByIDAndUser(ctx, id, userID)
 	if err != nil {
 		return err
 	}
@@ -884,11 +901,11 @@ func (s *TrainingService) TrainUnknown(ctx context.Context, id string, answer st
 	if err := s.repos.QAPair.Create(ctx, qa); err != nil {
 		return err
 	}
-	return s.repos.UnknownQ.UpdateStatus(ctx, id, "trained", &answer, &categoryID)
+	return s.repos.UnknownQ.UpdateStatus(ctx, id, userID, "trained", &answer, &categoryID)
 }
 
-func (s *TrainingService) IgnoreUnknown(ctx context.Context, id string) error {
-	if err := s.repos.UnknownQ.UpdateStatus(ctx, id, "ignored", nil, nil); err != nil {
+func (s *TrainingService) IgnoreUnknown(ctx context.Context, userID, id string) error {
+	if err := s.repos.UnknownQ.UpdateStatus(ctx, id, userID, "ignored", nil, nil); err != nil {
 		return err
 	}
 	return nil
@@ -1136,8 +1153,8 @@ func (s *SettingsService) CreateAPIKey(ctx context.Context, userID, name string)
 	return apiKey, nil
 }
 
-func (s *SettingsService) RevokeAPIKey(ctx context.Context, id string) error {
-	return s.repos.APIKey.Revoke(ctx, id)
+func (s *SettingsService) RevokeAPIKey(ctx context.Context, userID, id string) error {
+	return s.repos.APIKey.Revoke(ctx, id, userID)
 }
 
 func (s *SettingsService) ListTeam(ctx context.Context, ownerID string) ([]domain.TeamMember, error) {
@@ -1194,12 +1211,12 @@ func (s *ArchiveService) DeleteFolder(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *ArchiveService) MoveChat(ctx context.Context, conversationID, folderID string) error {
-	return s.repos.Archive.MoveChat(ctx, conversationID, folderID)
+func (s *ArchiveService) MoveChat(ctx context.Context, userID, conversationID, folderID string) error {
+	return s.repos.Archive.MoveChat(ctx, conversationID, userID, folderID)
 }
 
-func (s *ArchiveService) RemoveFromArchive(ctx context.Context, conversationID string) error {
-	return s.repos.Archive.MoveChat(ctx, conversationID, "")
+func (s *ArchiveService) RemoveFromArchive(ctx context.Context, userID, conversationID string) error {
+	return s.repos.Archive.MoveChat(ctx, conversationID, userID, "")
 }
 
 func (s *ArchiveService) GetStatus(ctx context.Context, userID string) (map[string]interface{}, error) {

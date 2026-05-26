@@ -576,7 +576,8 @@ func (h *TrainingHandler) TrainUnknown(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.TrainUnknown(c.Request.Context(), id, req.Answer, req.CategoryID); err != nil {
+	userID, _ := c.Get("userID")
+	if err := h.service.TrainUnknown(c.Request.Context(), userID.(string), id, req.Answer, req.CategoryID); err != nil {
 		if err.Error() == "unknown question not found" || err.Error() == "not found" {
 			utils.RespondNotFound(c, err.Error())
 			return
@@ -590,8 +591,9 @@ func (h *TrainingHandler) TrainUnknown(c *gin.Context) {
 
 func (h *TrainingHandler) IgnoreUnknown(c *gin.Context) {
 	id := c.Param("id")
+	userID, _ := c.Get("userID")
 	
-	if err := h.service.IgnoreUnknown(c.Request.Context(), id); err != nil {
+	if err := h.service.IgnoreUnknown(c.Request.Context(), userID.(string), id); err != nil {
 		if err.Error() == "unknown question not found" || err.Error() == "not found" {
 			utils.RespondNotFound(c, err.Error())
 			return
@@ -797,7 +799,8 @@ func (h *SettingsHandler) CreateAPIKey(c *gin.Context) {
 
 func (h *SettingsHandler) RevokeAPIKey(c *gin.Context) {
 	id := c.Param("id")
-	if err := h.service.RevokeAPIKey(c.Request.Context(), id); err != nil {
+	userID, _ := c.Get("userID")
+	if err := h.service.RevokeAPIKey(c.Request.Context(), userID.(string), id); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
@@ -918,7 +921,8 @@ func (h *ArchiveHandler) MoveChat(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.MoveChat(c.Request.Context(), req.ConversationID, req.FolderID); err != nil {
+	userID, _ := c.Get("userID")
+	if err := h.service.MoveChat(c.Request.Context(), userID.(string), req.ConversationID, req.FolderID); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
@@ -936,7 +940,8 @@ func (h *ArchiveHandler) RemoveFromArchive(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.RemoveFromArchive(c.Request.Context(), req.ConversationID); err != nil {
+	userID, _ := c.Get("userID")
+	if err := h.service.RemoveFromArchive(c.Request.Context(), userID.(string), req.ConversationID); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}

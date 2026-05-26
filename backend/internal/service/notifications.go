@@ -176,7 +176,7 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 	_ = s.repos.Message.Create(ctx, aiMsg)
 
 	if aiResp.Escalate {
-		_ = s.repos.Conversation.UpdateStatus(ctx, conv.ID, "escalated")
+		_ = s.repos.Conversation.UpdateStatus(ctx, conv.ID, "escalated", userID)
 		
 		// Send notification of escalation if preference is set
 		prefs, err := s.repos.User.GetNotifPrefs(ctx, userID)

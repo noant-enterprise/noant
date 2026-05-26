@@ -49,6 +49,19 @@ func NewRepositories(db *sql.DB, redis *infrastructure.RedisClient) *Repositorie
 	}
 }
 
+// ConversationRepository additional methods
+func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*domain.Conversation, error) {
+	conv := &domain.Conversation{}
+	row := r.db.QueryRowContext(ctx, `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, created_at, updated_at FROM conversations WHERE id = ?`, id)
+	err := row.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CreatedAt, &conv.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return conv, nil
+}
 func generateUUID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
@@ -194,9 +207,9 @@ func (r *ConversationRepository) List(ctx context.Context, userID string, status
 	return conversations, total, nil
 }
 
-func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*domain.Conversation, error) {
-	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, created_at, updated_at FROM conversations WHERE id = ?`
-	row := r.db.QueryRowContext(ctx, query, id)
+func (r *ConversationRepository) GetByIDAndUser(ctx context.Context, id string, userID string) (*domain.Conversation, error) {
+	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, created_at, updated_at FROM conversations WHERE id = ? AND user_id = ?`
+	row := r.db.QueryRowContext(ctx, query, id, userID)
 	conv := &domain.Conversation{}
 	err := row.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CreatedAt, &conv.UpdatedAt)
 	if err != nil {
@@ -208,9 +221,9 @@ func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*domai
 	return conv, nil
 }
 
-func (r *ConversationRepository) UpdateStatus(ctx context.Context, id string, status string) error {
-	query := `UPDATE conversations SET status = ? WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, status, id)
+func (r *ConversationRepository) UpdateStatus(ctx context.Context, id string, userID string, status string) error {
+	query := `UPDATE conversations SET status = ? WHERE id = ? AND user_id = ?`
+	_, err := r.db.ExecContext(ctx, query, status, id, userID)
 	return err
 }
 
@@ -228,9 +241,9 @@ func (r *ConversationRepository) FindActiveByCustomer(ctx context.Context, userI
 	return conv, nil
 }
 
-func (r *ConversationRepository) Takeover(ctx context.Context, id string, agentID string) error {
-	query := `UPDATE conversations SET status = 'escalated', taken_over_by = ?, taken_over_at = NOW() WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, agentID, id)
+func (r *ConversationRepository) Takeover(ctx context.Context, id string, userID string, agentID string) error {
+	query := `UPDATE conversations SET status = 'escalated', taken_over_by = ?, taken_over_at = NOW() WHERE id = ? AND user_id = ?`
+	_, err := r.db.ExecContext(ctx, query, agentID, id, userID)
 	return err
 }
 
@@ -247,14 +260,36 @@ func (r *MessageRepository) Create(ctx context.Context, msg *domain.Message) err
 	if msg.ID == "" {
 		msg.ID = generateUUID()
 	}
-	query := `INSERT INTO messages (id, conversation_id, sender_type, sender_id, content, is_read, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, NOW())`
-	_, err := r.db.ExecContext(ctx, query, msg.ID, msg.ConversationID, msg.SenderType, msg.SenderID, msg.Content, msg.IsRead)
+	var confidence interface{} = nil
+	var matchedQA interface{} = nil
+	var escalationReason interface{} = nil
+	var language interface{} = nil
+	var source interface{} = nil
+	if msg.Metadata != nil {
+		if msg.Metadata.Confidence != 0 {
+			confidence = msg.Metadata.Confidence
+		}
+		if msg.Metadata.MatchedQAID != nil {
+			matchedQA = *msg.Metadata.MatchedQAID
+		}
+		if msg.Metadata.EscalationReason != "" {
+			escalationReason = msg.Metadata.EscalationReason
+		}
+		if msg.Metadata.Language != "" {
+			language = msg.Metadata.Language
+		}
+		if msg.Metadata.Source != "" {
+			source = msg.Metadata.Source
+		}
+	}
+	query := `INSERT INTO messages (id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+	_, err := r.db.ExecContext(ctx, query, msg.ID, msg.ConversationID, msg.SenderType, msg.SenderID, msg.Content, msg.IsRead, confidence, matchedQA, escalationReason, language, source)
 	return err
 }
 
 func (r *MessageRepository) ListByConversation(ctx context.Context, conversationID string, limit int) ([]domain.Message, error) {
-	query := `SELECT id, conversation_id, sender_type, sender_id, content, is_read, created_at
+	query := `SELECT id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, created_at
 	FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?`
 	rows, err := r.db.QueryContext(ctx, query, conversationID, limit)
 	if err != nil {
@@ -264,9 +299,35 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 	var messages []domain.Message
 	for rows.Next() {
 		var msg domain.Message
-		err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.SenderType, &msg.SenderID, &msg.Content, &msg.IsRead, &msg.CreatedAt)
+		var senderID sql.NullString
+		var confidence sql.NullFloat64
+		var matchedQA sql.NullString
+		var escalationReason sql.NullString
+		var language sql.NullString
+		var source sql.NullString
+		err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.SenderType, &senderID, &msg.Content, &msg.IsRead, &confidence, &matchedQA, &escalationReason, &language, &source, &msg.CreatedAt)
 		if err != nil {
 			continue
+		}
+		if senderID.Valid {
+			msg.SenderID = &senderID.String
+		}
+		msg.Metadata = &domain.MessageMetadata{}
+		if confidence.Valid {
+			msg.Metadata.Confidence = confidence.Float64
+		}
+		if matchedQA.Valid {
+			v := matchedQA.String
+			msg.Metadata.MatchedQAID = &v
+		}
+		if escalationReason.Valid {
+			msg.Metadata.EscalationReason = escalationReason.String
+		}
+		if language.Valid {
+			msg.Metadata.Language = language.String
+		}
+		if source.Valid {
+			msg.Metadata.Source = source.String
 		}
 		messages = append(messages, msg)
 	}
@@ -409,6 +470,40 @@ func (r *QAPairRepository) CountByUser(ctx context.Context, userID string) (int,
 	return count, err
 }
 
+func (r *QAPairRepository) GetByQuestion(ctx context.Context, userID string, question string) (*domain.QAPair, error) {
+	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE user_id = ? AND question = ? LIMIT 1`
+	row := r.db.QueryRowContext(ctx, query, userID, question)
+	var qa domain.QAPair
+	var variationsJSON sql.NullString
+	err := row.Scan(&qa.ID, &qa.CategoryID, &qa.Question, &qa.Answer, &variationsJSON, &qa.IsActive, &qa.UsageCount, &qa.CreatedAt, &qa.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	qa.UserID = userID
+	if variationsJSON.Valid && variationsJSON.String != "" && variationsJSON.String != "[]" {
+		_ = json.Unmarshal([]byte(variationsJSON.String), &qa.Variations)
+	} else {
+		qa.Variations = []string{}
+	}
+	return &qa, nil
+}
+
+func (r *QAPairRepository) Update(ctx context.Context, qa *domain.QAPair) error {
+	variationsJSON := []byte("[]")
+	if len(qa.Variations) > 0 {
+		b, err := json.Marshal(qa.Variations)
+		if err == nil {
+			variationsJSON = b
+		}
+	}
+	query := `UPDATE qa_pairs SET category_id = ?, question = ?, answer = ?, variations = ?, is_active = ?, updated_at = NOW() WHERE id = ? AND user_id = ?`
+	_, err := r.db.ExecContext(ctx, query, qa.CategoryID, qa.Question, qa.Answer, string(variationsJSON), qa.IsActive, qa.ID, qa.UserID)
+	return err
+}
+
 type CategoryRepository struct {
 	db    *sql.DB
 	redis *infrastructure.RedisClient
@@ -482,11 +577,11 @@ func (r *UnknownQuestionRepository) Create(ctx context.Context, uq *domain.Unkno
 	return err
 }
 
-func (r *UnknownQuestionRepository) GetByID(ctx context.Context, id string) (*domain.UnknownQuestion, error) {
-	query := `SELECT id, question, conversation_id, channel, status, suggested_answer, category_id, created_at FROM unknown_questions WHERE id = ?`
-	row := r.db.QueryRowContext(ctx, query, id)
+func (r *UnknownQuestionRepository) GetByIDAndUser(ctx context.Context, id string, userID string) (*domain.UnknownQuestion, error) {
+	query := `SELECT id, user_id, question, conversation_id, channel, status, suggested_answer, category_id, created_at FROM unknown_questions WHERE id = ? AND user_id = ?`
+	row := r.db.QueryRowContext(ctx, query, id, userID)
 	uq := &domain.UnknownQuestion{}
-	err := row.Scan(&uq.ID, &uq.Question, &uq.ConversationID, &uq.Channel, &uq.Status, &uq.SuggestedAnswer, &uq.CategoryID, &uq.CreatedAt)
+	err := row.Scan(&uq.ID, &uq.UserID, &uq.Question, &uq.ConversationID, &uq.Channel, &uq.Status, &uq.SuggestedAnswer, &uq.CategoryID, &uq.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -522,9 +617,9 @@ func (r *UnknownQuestionRepository) List(ctx context.Context, userID string, sta
 	return questions, nil
 }
 
-func (r *UnknownQuestionRepository) UpdateStatus(ctx context.Context, id string, status string, answer *string, categoryID *string) error {
-	query := `UPDATE unknown_questions SET status = ?, suggested_answer = ?, category_id = ? WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, status, answer, categoryID, id)
+func (r *UnknownQuestionRepository) UpdateStatus(ctx context.Context, id string, userID string, status string, answer *string, categoryID *string) error {
+	query := `UPDATE unknown_questions SET status = ?, suggested_answer = ?, category_id = ? WHERE id = ? AND user_id = ?`
+	_, err := r.db.ExecContext(ctx, query, status, answer, categoryID, id, userID)
 	return err
 }
 
@@ -557,6 +652,31 @@ func (r *IntegrationRepository) Create(ctx context.Context, integration *domain.
 func (r *IntegrationRepository) ListByUser(ctx context.Context, userID string) ([]domain.Integration, error) {
 	query := `SELECT id, user_id, channel, status, config, webhook_url, last_error, created_at, updated_at FROM integrations WHERE user_id = ?`
 	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var integrations []domain.Integration
+	for rows.Next() {
+		var i domain.Integration
+		var configStr string
+		err := rows.Scan(&i.ID, &i.UserID, &i.Channel, &i.Status, &configStr, &i.WebhookURL, &i.LastError, &i.CreatedAt, &i.UpdatedAt)
+		if err != nil {
+			continue
+		}
+		if configStr != "" && configStr != "{}" {
+			_ = json.Unmarshal([]byte(configStr), &i.Config)
+		} else {
+			i.Config = map[string]interface{}{}
+		}
+		integrations = append(integrations, i)
+	}
+	return integrations, nil
+}
+
+func (r *IntegrationRepository) ListActive(ctx context.Context) ([]domain.Integration, error) {
+	query := `SELECT id, user_id, channel, status, config, webhook_url, last_error, created_at, updated_at FROM integrations WHERE status = 'active'`
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -702,9 +822,9 @@ func (r *APIKeyRepository) ListByUser(ctx context.Context, userID string) ([]dom
 	return keys, nil
 }
 
-func (r *APIKeyRepository) Revoke(ctx context.Context, id string) error {
-	query := `UPDATE api_keys SET is_active = false WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, id)
+func (r *APIKeyRepository) Revoke(ctx context.Context, id string, userID string) error {
+	query := `UPDATE api_keys SET is_active = false WHERE id = ? AND user_id = ?`
+	_, err := r.db.ExecContext(ctx, query, id, userID)
 	return err
 }
 
@@ -752,9 +872,9 @@ func (r *ArchiveRepository) ListFolders(ctx context.Context, userID string, fold
 	return folders, nil
 }
 
-func (r *ArchiveRepository) MoveChat(ctx context.Context, conversationID string, folderID string) error {
-	query := `UPDATE conversations SET folder_id = ? WHERE id = ?`
-	_, err := r.db.ExecContext(ctx, query, folderID, conversationID)
+func (r *ArchiveRepository) MoveChat(ctx context.Context, conversationID string, userID string, folderID string) error {
+	query := `UPDATE conversations SET folder_id = ? WHERE id = ? AND user_id = ?`
+	_, err := r.db.ExecContext(ctx, query, folderID, conversationID, userID)
 	return err
 }
 

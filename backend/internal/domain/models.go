@@ -69,6 +69,7 @@ type MessageMetadata struct {
 	MatchedQAID   *string `json:"matched_qa_id,omitempty"`
 	EscalationReason string `json:"escalation_reason,omitempty"`
 	Language      string  `json:"language,omitempty"`
+	Source        string  `json:"source,omitempty"`
 }
 
 // QAPair represents a question-answer pair for training
