@@ -426,8 +426,33 @@
     close: function () { if (state.open) toggle(); },
   };
 
-  // Auto-init if noantWidgetConfig exists
-  if (window.noantWidgetConfig) {
+  // Auto-init via script dataset attributes or window config
+  var currentScript = document.currentScript;
+  if (!currentScript) {
+    var scripts = document.getElementsByTagName('script');
+    for (var i = 0; i < scripts.length; i++) {
+      if (scripts[i].src.indexOf('widget.js') !== -1) {
+        currentScript = scripts[i];
+        break;
+      }
+    }
+  }
+
+  if (currentScript && (currentScript.getAttribute('data-api-key') || currentScript.getAttribute('data-id'))) {
+    var apiKey = currentScript.getAttribute('data-api-key') || currentScript.getAttribute('data-id');
+    var brandColor = currentScript.getAttribute('data-brand-color');
+    var greeting = currentScript.getAttribute('data-greeting');
+    var botName = currentScript.getAttribute('data-bot-name');
+    var position = currentScript.getAttribute('data-position');
+
+    init({
+      apiKey: apiKey,
+      brandColor: brandColor || undefined,
+      greeting: greeting || undefined,
+      botName: botName || undefined,
+      position: position || undefined,
+    });
+  } else if (window.noantWidgetConfig) {
     init(window.noantWidgetConfig);
   }
 })();

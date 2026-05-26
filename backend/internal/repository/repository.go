@@ -260,15 +260,10 @@ func (r *MessageRepository) Create(ctx context.Context, msg *domain.Message) err
 	if msg.ID == "" {
 		msg.ID = generateUUID()
 	}
-	var confidence interface{} = nil
 	var matchedQA interface{} = nil
 	var escalationReason interface{} = nil
 	var language interface{} = nil
-	var source interface{} = nil
 	if msg.Metadata != nil {
-		if msg.Metadata.Confidence != 0 {
-			confidence = msg.Metadata.Confidence
-		}
 		if msg.Metadata.MatchedQAID != nil {
 			matchedQA = *msg.Metadata.MatchedQAID
 		}
@@ -278,14 +273,17 @@ func (r *MessageRepository) Create(ctx context.Context, msg *domain.Message) err
 		if msg.Metadata.Language != "" {
 			language = msg.Metadata.Language
 		}
-		if msg.Metadata.Source != "" {
-			source = msg.Metadata.Source
-		}
 	}
 	query := `INSERT INTO messages (id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, created_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-	_, err := r.db.ExecContext(ctx, query, msg.ID, msg.ConversationID, msg.SenderType, msg.SenderID, msg.Content, msg.IsRead, confidence, matchedQA, escalationReason, language, source)
-	return err
+	_, err := r.db.ExecContext(ctx, query, msg.ID, msg.ConversationID, msg.Role, msg.SenderID, msg.Content, msg.IsRead, msg.Confidence, matchedQA, escalationReason, language, msg.Source)
+	if err != nil {
+		return err
+	}
+	// Update conversation's updated_at timestamp!
+	updateConvQuery := `UPDATE conversations SET updated_at = NOW() WHERE id = ?`
+	_, _ = r.db.ExecContext(ctx, updateConvQuery, msg.ConversationID)
+	return nil
 }
 
 func (r *MessageRepository) ListByConversation(ctx context.Context, conversationID string, limit int) ([]domain.Message, error) {
@@ -305,7 +303,7 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 		var escalationReason sql.NullString
 		var language sql.NullString
 		var source sql.NullString
-		err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.SenderType, &senderID, &msg.Content, &msg.IsRead, &confidence, &matchedQA, &escalationReason, &language, &source, &msg.CreatedAt)
+		err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.Role, &senderID, &msg.Content, &msg.IsRead, &confidence, &matchedQA, &escalationReason, &language, &source, &msg.CreatedAt)
 		if err != nil {
 			continue
 		}
@@ -314,7 +312,7 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 		}
 		msg.Metadata = &domain.MessageMetadata{}
 		if confidence.Valid {
-			msg.Metadata.Confidence = confidence.Float64
+			msg.Confidence = confidence.Float64
 		}
 		if matchedQA.Valid {
 			v := matchedQA.String
@@ -327,7 +325,7 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 			msg.Metadata.Language = language.String
 		}
 		if source.Valid {
-			msg.Metadata.Source = source.String
+			msg.Source = source.String
 		}
 		messages = append(messages, msg)
 	}
@@ -335,6 +333,33 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 		messages[i], messages[j] = messages[j], messages[i]
 	}
 	return messages, nil
+}
+
+func (r *MessageRepository) GetLastMessage(ctx context.Context, conversationID string) (*domain.Message, error) {
+	query := `SELECT id, conversation_id, sender_type, content, is_read, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1`
+	row := r.db.QueryRowContext(ctx, query, conversationID)
+	msg := &domain.Message{}
+	err := row.Scan(&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.IsRead, &msg.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return msg, nil
+}
+
+func (r *MessageRepository) CountUnread(ctx context.Context, conversationID string) (int, error) {
+	query := `SELECT COUNT(*) FROM messages WHERE conversation_id = ? AND is_read = FALSE AND sender_type = 'customer'`
+	var count int
+	err := r.db.QueryRowContext(ctx, query, conversationID).Scan(&count)
+	return count, err
+}
+
+func (r *MessageRepository) MarkRead(ctx context.Context, conversationID string) error {
+	query := `UPDATE messages SET is_read = TRUE WHERE conversation_id = ? AND is_read = FALSE`
+	_, err := r.db.ExecContext(ctx, query, conversationID)
+	return err
 }
 
 type QAPairRepository struct {
@@ -458,6 +483,43 @@ func (r *QAPairRepository) Search(ctx context.Context, userID string, query stri
 	return qas, nil
 }
 
+func (r *QAPairRepository) GetByQuestion(ctx context.Context, userID, question string) (*domain.QAPair, error) {
+	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at 
+	FROM qa_pairs WHERE user_id = ? AND question = ? LIMIT 1`
+	var qa domain.QAPair
+	var variationsJSON sql.NullString
+	err := r.db.QueryRowContext(ctx, query, userID, question).Scan(
+		&qa.ID, &qa.CategoryID, &qa.Question, &qa.Answer, &variationsJSON, 
+		&qa.IsActive, &qa.UsageCount, &qa.CreatedAt, &qa.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if variationsJSON.Valid && variationsJSON.String != "" && variationsJSON.String != "[]" {
+		_ = json.Unmarshal([]byte(variationsJSON.String), &qa.Variations)
+	} else {
+		qa.Variations = []string{}
+	}
+	qa.UserID = userID
+	return &qa, nil
+}
+
+func (r *QAPairRepository) Update(ctx context.Context, qa *domain.QAPair) error {
+	query := `UPDATE qa_pairs SET category_id = ?, question = ?, answer = ?, variations = ?, is_active = ?, updated_at = NOW() WHERE id = ? AND user_id = ?`
+	variationsJSON := []byte("[]")
+	if len(qa.Variations) > 0 {
+		b, err := json.Marshal(qa.Variations)
+		if err == nil {
+			variationsJSON = b
+		}
+	}
+	_, err := r.db.ExecContext(ctx, query, qa.CategoryID, qa.Question, qa.Answer, string(variationsJSON), qa.IsActive, qa.ID, qa.UserID)
+	return err
+}
+
 func (r *QAPairRepository) IncrementUsage(ctx context.Context, id string) error {
 	query := `UPDATE qa_pairs SET usage_count = usage_count + 1 WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, id)
@@ -468,40 +530,6 @@ func (r *QAPairRepository) CountByUser(ctx context.Context, userID string) (int,
 	var count int
 	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM qa_pairs WHERE user_id = ? AND is_active = true`, userID).Scan(&count)
 	return count, err
-}
-
-func (r *QAPairRepository) GetByQuestion(ctx context.Context, userID string, question string) (*domain.QAPair, error) {
-	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE user_id = ? AND question = ? LIMIT 1`
-	row := r.db.QueryRowContext(ctx, query, userID, question)
-	var qa domain.QAPair
-	var variationsJSON sql.NullString
-	err := row.Scan(&qa.ID, &qa.CategoryID, &qa.Question, &qa.Answer, &variationsJSON, &qa.IsActive, &qa.UsageCount, &qa.CreatedAt, &qa.UpdatedAt)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
-	}
-	qa.UserID = userID
-	if variationsJSON.Valid && variationsJSON.String != "" && variationsJSON.String != "[]" {
-		_ = json.Unmarshal([]byte(variationsJSON.String), &qa.Variations)
-	} else {
-		qa.Variations = []string{}
-	}
-	return &qa, nil
-}
-
-func (r *QAPairRepository) Update(ctx context.Context, qa *domain.QAPair) error {
-	variationsJSON := []byte("[]")
-	if len(qa.Variations) > 0 {
-		b, err := json.Marshal(qa.Variations)
-		if err == nil {
-			variationsJSON = b
-		}
-	}
-	query := `UPDATE qa_pairs SET category_id = ?, question = ?, answer = ?, variations = ?, is_active = ?, updated_at = NOW() WHERE id = ? AND user_id = ?`
-	_, err := r.db.ExecContext(ctx, query, qa.CategoryID, qa.Question, qa.Answer, string(variationsJSON), qa.IsActive, qa.ID, qa.UserID)
-	return err
 }
 
 type CategoryRepository struct {

@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { ToastProvider } from './components/ui/Toast'
+import { NetworkProvider } from './contexts/NetworkContext'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import './index.css'
 
@@ -25,9 +26,11 @@ initTheme()
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
+      <NetworkProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </NetworkProvider>
     </ErrorBoundary>
   </React.StrictMode>
 )

@@ -1,11 +1,38 @@
-﻿import { useRef, useEffect } from 'react'
+import { useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { Check, CheckCheck } from 'lucide-react'
+import { Check, CheckCheck, Bot, UserCheck, Zap } from 'lucide-react'
 import type { Message } from '@/types'
 
 interface ChatMessagesProps {
   messages: Message[]
   deliveredIds?: Set<string>
+}
+
+function SourceBadge({ message }: { message: Message }) {
+  const role = message.role || message.sender_type
+  const confidence = message.metadata?.confidence ?? message.confidence
+
+  if (role === 'customer') return null
+
+  const badgeConfig: Record<string, { label: string; icon: typeof Bot; color: string }> = {
+    ai: { label: 'AI', icon: Bot, color: 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400' },
+    agent: { label: 'Agent', icon: UserCheck, color: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' },
+    system: { label: 'System', icon: Zap, color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' },
+  }
+
+  const config = badgeConfig[role || ''] || badgeConfig.ai
+  if (!config || role === 'customer') return null
+  const Icon = config.icon
+
+  return (
+    <span className={cn('inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold', config.color)}>
+      <Icon className="w-2.5 h-2.5" />
+      {config.label}
+      {confidence != null && role === 'ai' && (
+        <span className="ml-0.5 opacity-70">{Math.round(confidence * 100)}%</span>
+      )}
+    </span>
+  )
 }
 
 export function ChatMessages({ messages, deliveredIds }: ChatMessagesProps) {
@@ -37,8 +64,9 @@ export function ChatMessages({ messages, deliveredIds }: ChatMessagesProps) {
       {messages.map((m) => {
         const isOptimistic = m.id.startsWith('temp-')
         const isFailed = m.content.includes('(failed')
-        const isCustomer = m.sender_type === 'customer'
-        const isSystem = m.sender_type === 'system'
+        const role = m.role || m.sender_type
+        const isCustomer = role === 'customer'
+        const isSystem = role === 'system'
         const isDelivered = deliveredIds?.has(m.id) || (!isOptimistic && isCustomer)
         
         return (
@@ -56,6 +84,7 @@ export function ChatMessages({ messages, deliveredIds }: ChatMessagesProps) {
               isFailed && 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
             )}
           >
+            {!isCustomer && !isSystem && <SourceBadge message={m} />}
             <p className="whitespace-pre-wrap">{m.content}</p>
             <div className={cn(
               'text-[11px] lg:text-[10px] mt-1 flex items-center gap-1.5',

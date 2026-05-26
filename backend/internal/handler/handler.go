@@ -325,7 +325,12 @@ func (h *ChatHandler) ListConversations(c *gin.Context) {
 
 func (h *ChatHandler) GetConversation(c *gin.Context) {
 	id := c.Param("id")
-	conv, messages, err := h.service.GetConversation(c.Request.Context(), id)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	conv, messages, err := h.service.GetConversation(c.Request.Context(), userID.(string), id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -349,7 +354,12 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 	}
 
 	// Store customer message
-	_, err := h.service.SendMessage(c.Request.Context(), id, "customer", req.Content)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	_, err := h.service.SendMessage(c.Request.Context(), userID.(string), id, "customer", req.Content)
 	if err != nil {
 		h.logger.Error("Failed to store message", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -394,8 +404,11 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 				"id":              aiMsg.ID,
 				"conversation_id": aiMsg.ConversationID,
 				"content":         aiMsg.Content,
-				"sender_type":     aiMsg.SenderType,
+				"role":            aiMsg.Role,
 				"created_at":      aiMsg.CreatedAt,
+				"metadata":        aiMsg.Metadata,
+				"confidence":      aiMsg.Confidence,
+				"source":          aiMsg.Source,
 			},
 		})
 		// Stop typing indicator when response arrives
@@ -417,7 +430,12 @@ func (h *ChatHandler) HumanTakeover(c *gin.Context) {
 	id := c.Param("id")
 	agentID, _ := c.Get("userID")
 
-	if err := h.service.HumanTakeover(c.Request.Context(), id, agentID.(string)); err != nil {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	if err := h.service.HumanTakeover(c.Request.Context(), userID.(string), id, agentID.(string)); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
@@ -436,7 +454,12 @@ func (h *ChatHandler) Escalate(c *gin.Context) {
 	}
 
 	id := c.Param("id")
-	if err := h.service.Escalate(c.Request.Context(), id, req.Reason); err != nil {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	if err := h.service.Escalate(c.Request.Context(), userID.(string), id, req.Reason); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}

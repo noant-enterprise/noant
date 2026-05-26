@@ -43,6 +43,8 @@ type Conversation struct {
 	Location        *Location `json:"location" db:"location"`
 	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
+	LastMessage     string     `json:"last_message"`
+	Unread          int        `json:"unread"`
 }
 
 type Location struct {
@@ -56,10 +58,12 @@ type Location struct {
 type Message struct {
 	ID             string    `json:"id" db:"id"`
 	ConversationID string    `json:"conversation_id" db:"conversation_id"`
-	SenderType     string    `json:"sender_type" db:"sender_type"` // ai, human, customer, system
+	Role           string    `json:"role" db:"sender_type"` // ai, human, customer, system
 	SenderID       *string   `json:"sender_id" db:"sender_id"`
 	Content        string    `json:"content" db:"content"`
 	IsRead         bool      `json:"is_read" db:"is_read"`
+	Confidence     float64   `json:"confidence,omitempty" db:"confidence"`
+	Source         string    `json:"source,omitempty" db:"source"`
 	Metadata       *MessageMetadata `json:"metadata" db:"metadata"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }

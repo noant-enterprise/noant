@@ -1,0 +1,44 @@
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"os"
+
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/joho/godotenv"
+)
+
+func main() {
+	if err := godotenv.Load(".env"); err != nil {
+		log.Println("No .env file found or error loading, continuing with env vars")
+	}
+
+	host := os.Getenv("TIDB_HOST")
+	port := os.Getenv("TIDB_PORT")
+	user := os.Getenv("TIDB_USER")
+	password := os.Getenv("TIDB_PASSWORD")
+	dbname := os.Getenv("TIDB_DATABASE")
+
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?tls=true", user, password, host, port, dbname)
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	query := "ALTER TABLE messages ADD COLUMN IF NOT EXISTS source VARCHAR(50) NULL;"
+	_, err = db.Exec(query)
+	if err != nil {
+		// Ignore error if MySQL version doesn't support IF NOT EXISTS
+		query = "ALTER TABLE messages ADD COLUMN source VARCHAR(50) NULL;"
+		_, err = db.Exec(query)
+		if err != nil {
+			fmt.Printf("Error adding column (might already exist): %v\n", err)
+			return
+		}
+	}
+	fmt.Println("Successfully added 'source' column to messages table")
+}

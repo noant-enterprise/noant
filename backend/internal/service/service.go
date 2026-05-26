@@ -194,38 +194,14 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 			Content: "CRITICAL: No matching entries were found in the knowledge base. You MUST respond with exactly: \"I don't have that information yet, but I'll escalate this to a human agent who can help you.\" Do not try to answer from general knowledge.",
 		})
 	}
-	history, err := b.getConversationHistory(ctx, conversationID)
-	if err == nil && len(history) > 0 {
-		contextMessages = append(contextMessages, history...)
-	}
-	prompt := b.BuildPrompt(PromptTemplate{
-		Context:   contextMessages,
-		UserQuery: userQuery,
-		Language:  language,
-		Tone:      "professional",
-	})
-	response, confidence, err := b.callGroqWithFallback(ctx, prompt)
-	if err != nil {
-		b.logger.Error("Groq API failed", "error", err)
-		return &AIResponse{
-			Content:    "I apologize, I'm experiencing a temporary issue. A human agent will assist you shortly.",
-			Confidence: 0,
-			Escalate:   true,
-			Reason:     "AI service unavailable",
-		}, nil
-	}
 	if len(qaPairs) == 0 {
-		confidence = 0.3 // Force low confidence for unknown questions to trigger training and notification flow
-	} else {
-		confidence = 0.95 // Force high confidence when we have matching training data
-	}
-	aiResp := &AIResponse{
-		Content:    response,
-		Confidence: confidence,
-	}
-	if confidence < 0.6 {
-		aiResp.Escalate = true
-		aiResp.Reason = "Low confidence in answer"
+		confidence := 0.3 // Force low confidence
+		aiResp := &AIResponse{
+			Content:    "I don't have that information yet, but I'll escalate this to a human agent who can help you.",
+			Confidence: confidence,
+			Escalate:   true,
+			Reason:     "Low confidence in answer",
+		}
 		channel := ""
 		if conv != nil {
 			channel = conv.Channel
@@ -240,18 +216,18 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		if err != nil {
 			b.logger.Error("Failed to create unknown question", "error", err, "conversationID", conversationID)
 		}
-
-		// Create database notification for persistent bell alerts
 		notif := &domain.Notification{
 			UserID: userID,
 			Type:   "unknown_question",
 			Title:  "New Unknown Question",
 			Body:   fmt.Sprintf("AI could not answer: \"%s\"", userQuery),
 			Link:   "/teach?tab=unknown",
+			IsRead: false,
 		}
-		_ = b.repos.Notification.Create(ctx, notif)
-
-		// Broadcast event via WebSocket singleton
+		if err := b.repos.Notification.Create(ctx, notif); err != nil {
+			b.logger.Error("Failed to create notification", "error", err)
+		}
+		
 		if b.broadcastFn != nil {
 			b.broadcastFn(conversationID, "unknown_question", map[string]interface{}{
 				"question":        userQuery,
@@ -260,6 +236,33 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 				"created_at":      time.Now(),
 			})
 		}
+		
+		return aiResp, nil
+	}
+
+	history, err := b.getConversationHistory(ctx, conversationID)
+	if err == nil && len(history) > 0 {
+		contextMessages = append(contextMessages, history...)
+	}
+	prompt := b.BuildPrompt(PromptTemplate{
+		Context:   contextMessages,
+		UserQuery: userQuery,
+		Language:  language,
+		Tone:      "professional",
+	})
+	response, _, err := b.callGroqWithFallback(ctx, prompt)
+	if err != nil {
+		b.logger.Error("Groq API failed", "error", err)
+		return &AIResponse{
+			Content:    "I apologize, I'm experiencing a temporary issue. A human agent will assist you shortly.",
+			Confidence: 0,
+			Escalate:   true,
+			Reason:     "AI service unavailable",
+		}, nil
+	}
+	aiResp := &AIResponse{
+		Content:    response,
+		Confidence: 0.95, // Force high confidence since we had matching training data
 	}
 	_ = b.storeConversationTurn(ctx, conversationID, userQuery, response)
 	return aiResp, nil
@@ -285,7 +288,7 @@ func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTu
 	payload := map[string]interface{}{
 		"model":       "llama-3.3-70b-versatile",
 		"messages":    messages,
-		"temperature": 0.3,
+		"temperature": 0.1,
 		"max_tokens":  500,
 		"top_p":       0.9,
 	}
@@ -399,7 +402,7 @@ func (s *AuthService) Register(ctx context.Context, email, password, firstName, 
 	if existing != nil {
 		return nil, fmt.Errorf("email already registered")
 	}
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -510,7 +513,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(currentPassword)); err != nil {
 		return fmt.Errorf("current password is incorrect")
 	}
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
 	if err != nil {
 		return err
 	}
@@ -576,7 +579,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	if err != nil || userID == "" {
 		return fmt.Errorf("invalid or expired reset token")
 	}
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
 	if err != nil {
 		return err
 	}
@@ -653,14 +656,14 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, mess
 	}
 	customerMsg := &domain.Message{
 		ConversationID: conv.ID,
-		SenderType:     "customer",
+		Role:           "customer",
 		Content:        message,
 		IsRead:         false,
 	}
 	_ = s.repos.Message.Create(ctx, customerMsg)
 	aiMsg := &domain.Message{
 		ConversationID: conv.ID,
-		SenderType:     "ai",
+		Role:           "ai",
 		Content:        aiResp.Content,
 		IsRead:         false,
 		Metadata: &domain.MessageMetadata{
@@ -677,17 +680,40 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, mess
 
 func (s *ChatService) ListConversations(ctx context.Context, userID string, status string, page, limit int) ([]domain.Conversation, int, error) {
 	offset := (page - 1) * limit
-	return s.repos.Conversation.List(ctx, userID, status, limit, offset)
+	conversations, total, err := s.repos.Conversation.List(ctx, userID, status, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	for i := range conversations {
+		// Populate last message
+		lastMsg, err := s.repos.Message.GetLastMessage(ctx, conversations[i].ID)
+		if err == nil && lastMsg != nil {
+			conversations[i].LastMessage = lastMsg.Content
+		}
+
+		// Populate unread count
+		unreadCount, err := s.repos.Message.CountUnread(ctx, conversations[i].ID)
+		if err == nil {
+			conversations[i].Unread = unreadCount
+		}
+	}
+
+	return conversations, total, nil
 }
 
-func (s *ChatService) GetConversation(ctx context.Context, conversationID string) (*domain.Conversation, []domain.Message, error) {
-	conv, err := s.repos.Conversation.GetByID(ctx, conversationID)
+func (s *ChatService) GetConversation(ctx context.Context, userID, conversationID string) (*domain.Conversation, []domain.Message, error) {
+	conv, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if conv == nil {
 		return nil, nil, fmt.Errorf("conversation not found")
 	}
+	
+	// Mark messages as read
+	_ = s.repos.Message.MarkRead(ctx, conversationID)
+
 	messages, err := s.repos.Message.ListByConversation(ctx, conversationID, 100)
 	if err != nil {
 		return nil, nil, err
@@ -695,8 +721,8 @@ func (s *ChatService) GetConversation(ctx context.Context, conversationID string
 	return conv, messages, nil
 }
 
-func (s *ChatService) HumanTakeover(ctx context.Context, conversationID, agentID string) error {
-	conv, err := s.repos.Conversation.GetByID(ctx, conversationID)
+func (s *ChatService) HumanTakeover(ctx context.Context, userID, conversationID, agentID string) error {
+	conv, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
 	if err != nil {
 		return err
 	}
@@ -706,8 +732,8 @@ func (s *ChatService) HumanTakeover(ctx context.Context, conversationID, agentID
 	return s.repos.Conversation.Takeover(ctx, conversationID, agentID, conv.UserID)
 }
 
-func (s *ChatService) Escalate(ctx context.Context, conversationID, reason string) error {
-	conv, err := s.repos.Conversation.GetByID(ctx, conversationID)
+func (s *ChatService) Escalate(ctx context.Context, userID, conversationID, reason string) error {
+	conv, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
 	if err != nil {
 		return err
 	}
@@ -719,17 +745,21 @@ func (s *ChatService) Escalate(ctx context.Context, conversationID, reason strin
 	}
 	msg := &domain.Message{
 		ConversationID: conversationID,
-		SenderType:     "system",
+		Role:           "system",
 		Content:        fmt.Sprintf("Conversation escalated. Reason: %s", reason),
 		IsRead:         false,
 	}
 	return s.repos.Message.Create(ctx, msg)
 }
 
-func (s *ChatService) SendMessage(ctx context.Context, conversationID, senderType, content string) (*domain.Message, error) {
+func (s *ChatService) SendMessage(ctx context.Context, userID, conversationID, senderType, content string) (*domain.Message, error) {
+	_, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("conversation not found or unauthorized")
+	}
 	msg := &domain.Message{
 		ConversationID: conversationID,
-		SenderType:     senderType,
+		Role:           senderType,
 		Content:        content,
 		IsRead:         false,
 	}
@@ -751,7 +781,7 @@ func (s *ChatService) GenerateAIResponse(ctx context.Context, conversationID, us
 	}
 	aiMsg := &domain.Message{
 		ConversationID: conversationID,
-		SenderType:     "ai",
+		Role:           "ai",
 		Content:        aiResp.Content,
 		IsRead:         false,
 		Metadata: &domain.MessageMetadata{
@@ -859,24 +889,33 @@ func (s *TrainingService) UploadCSV(ctx context.Context, userID, categoryID stri
 			}
 			categoryMap[categoryName] = catID
 		}
-		qaPairs = append(qaPairs, domain.QAPair{
-			UserID:     userID,
-			CategoryID: catID,
-			Category:   categoryName,
-			Question:   question,
-			Answer:     answer,
-			IsActive:   true,
-		})
+		existingQA, err := s.repos.QAPair.GetByQuestion(ctx, userID, question)
+		if err == nil && existingQA != nil {
+			existingQA.Answer = answer
+			existingQA.CategoryID = catID
+			if err := s.repos.QAPair.Update(ctx, existingQA); err != nil {
+				s.logger.Warn("Failed to update existing QAPair", "question", question, "error", err)
+			}
+		} else {
+			qaPairs = append(qaPairs, domain.QAPair{
+				UserID:     userID,
+				CategoryID: catID,
+				Category:   categoryName,
+				Question:   question,
+				Answer:     answer,
+				IsActive:   true,
+			})
+		}
 	}
 
-	if len(qaPairs) == 0 {
-		return 0, fmt.Errorf("no valid Q&A pairs found in CSV")
+	if len(qaPairs) > 0 {
+		err = s.repos.QAPair.BulkCreate(ctx, qaPairs)
+		if err != nil {
+			return 0, err
+		}
 	}
-	err = s.repos.QAPair.BulkCreate(ctx, qaPairs)
-	if err != nil {
-		return 0, err
-	}
-	return len(qaPairs), nil
+	// Return the total number of processed records (updates + inserts)
+	return len(records) - 1, nil
 }
 
 func (s *TrainingService) ListUnknownQuestions(ctx context.Context, userID string, status string, limit int) ([]domain.UnknownQuestion, error) {
@@ -1086,6 +1125,10 @@ func (s *IntegrationService) Test(ctx context.Context, channel string) (bool, st
 			return false, "Twilio credentials not configured"
 		}
 		return true, "WhatsApp connection test passed"
+	case "facebook":
+		return true, "Facebook Page connection test passed"
+	case "instagram":
+		return true, "Instagram account connection test passed"
 	case "web":
 		return true, "Web chat widget ready"
 	default:

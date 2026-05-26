@@ -36,11 +36,12 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
     setMessages(prev => [...prev, { role: 'user', content: userMsg }])
     setLoading(true)
     try {
-      const res = await api.post<{ response: string }>('/chats/direct-chat', {
+      const res = await api.post<{ message: { content: string } }>('/chats/direct-chat', {
         message: userMsg,
-        language: 'en',
+        channel: 'web',
+        customer_name: 'Test Customer',
       })
-      setMessages(prev => [...prev, { role: 'assistant', content: res.response || 'No response.' }])
+      setMessages(prev => [...prev, { role: 'assistant', content: res.message?.content || 'No response.' }])
     } catch (err: any) {
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Could not get a response. Check your training data.' }])
     } finally {
@@ -223,11 +224,8 @@ export default function TeachPage() {
     }
   }
 
-  const handleTrain = async (id: string, question: string) => {
-    const answer = prompt(`Enter answer for: "${question}"`)
-    if (!answer) return
-    const catId = prompt('Category ID (or leave blank for default):') || 'default'
-    await post(`/training/unknown-questions/${id}/train`, { answer, category_id: catId })
+  const handleTrain = async (id: string, answer: string, categoryId: string) => {
+    await post(`/training/unknown-questions/${id}/train`, { answer, category_id: categoryId || 'default' })
     getUnknown('/training/unknown-questions?status=pending')
   }
 

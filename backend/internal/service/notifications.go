@@ -145,7 +145,7 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 	// Create customer message
 	customerMsg := &domain.Message{
 		ConversationID: conv.ID,
-		SenderType:     "customer",
+		Role:           "customer",
 		Content:        message,
 		IsRead:         false,
 	}
@@ -165,7 +165,7 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 	// Create AI message
 	aiMsg := &domain.Message{
 		ConversationID: conv.ID,
-		SenderType:     "ai",
+		Role:           "ai",
 		Content:        aiResp.Content,
 		IsRead:         false,
 		Metadata: &domain.MessageMetadata{

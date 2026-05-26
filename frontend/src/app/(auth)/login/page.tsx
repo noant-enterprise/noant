@@ -22,9 +22,9 @@ export default function LoginPage() {
     }
     setLoading(true)
     try {
-      const res = await login({ email, password })
+      await login({ email, password })
       toast('Welcome back!', 'success')
-      res.user?.must_change_password ? navigate('/setup?change_password=1') : navigate('/')
+      navigate('/')
     } catch (err: any) {
       toast(err?.message || 'Invalid credentials', 'error')
     } finally {

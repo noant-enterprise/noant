@@ -1,0 +1,34 @@
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+
+	_ "github.com/go-sql-driver/mysql"
+)
+
+func main() {
+	dsn := "4AGgT4yCvxVAhsL.root:yrQsrsUeMFuJh8V8@tcp(gateway01.eu-central-1.prod.aws.tidbcloud.com:4000)/omagent?tls=true"
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query("DESCRIBE messages")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var field, typ, null, key, extra sql.NullString
+		var def sql.NullString
+		err := rows.Scan(&field, &typ, &null, &key, &def, &extra)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%s\t%s\n", field.String, typ.String)
+	}
+}

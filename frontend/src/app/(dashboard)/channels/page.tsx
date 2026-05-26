@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useAPI } from '@/hooks/useAPI'
-import { ChannelCard } from '@/components/channels'
+import {
+  ChannelCard,
+  WhatsAppModal,
+  TelegramModal,
+  FacebookModal,
+  InstagramModal,
+  WebWidgetModal
+} from '@/components/channels'
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Badge } from '@/components/ui/Badge'
@@ -8,6 +15,7 @@ import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { useModal } from '@/hooks/useModal'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { useWidgetConfig } from '@/contexts/WidgetConfigContext'
 
 interface Integration {
   id?: string
@@ -16,6 +24,7 @@ interface Integration {
   token?: string
   webhook_url?: string
   connected_at?: string
+  config?: any
 }
 
 const channelConfig: Record<string, { name: string; desc: string }> = {
@@ -33,6 +42,8 @@ export default function ChannelsPage() {
   
   const postAPI = useAPI() as any
   const { post } = postAPI
+
+  const { config: widgetConfig, setConfig: setWidgetConfig } = useWidgetConfig()
 
   const { subscribe } = useWebSocket()
   const { open: showDisconnect, openModal: openDisconnect, closeModal: closeDisconnect } = useModal()
@@ -53,9 +64,40 @@ export default function ChannelsPage() {
     return unsub
   }, [subscribe, getIntegrations])
 
-  const handleConnect = async (channel: string) => {
-    await post('/integrations/connect', { channel })
-    getIntegrations('/integrations/list')
+  const [activeModal, setActiveModal] = useState<'telegram' | 'whatsapp' | 'instagram' | 'facebook' | 'web' | null>(null)
+  const [connectLoading, setConnectLoading] = useState(false)
+
+  const handleConnectClick = (channel: string) => {
+    if (channel === 'discord') {
+      handleConnectSubmit('discord', {})
+    } else {
+      setActiveModal(channel as any)
+    }
+  }
+
+  const handleConnectSubmit = async (channel: string, config: any) => {
+    setConnectLoading(true)
+    try {
+      await post('/integrations/connect', { channel, config })
+      if (channel === 'web') {
+        const updatedWidget = {
+          bot_name: config.botName,
+          greeting: config.greeting,
+          brand_color: config.brandColor,
+          position: config.position === 'left' ? 'bottom-left' : 'bottom-right',
+          is_active: true,
+          widget_api_key: widgetConfig?.widget_api_key || '',
+        }
+        setWidgetConfig(updatedWidget)
+        await post('/widget/config', updatedWidget)
+      }
+      getIntegrations('/integrations/list')
+      setActiveModal(null)
+    } catch {
+      // error handled by API hook
+    } finally {
+      setConnectLoading(false)
+    }
   }
 
   const handleDisconnectClick = (channel: string) => {
@@ -68,6 +110,14 @@ export default function ChannelsPage() {
     setDisconnectLoading(true)
     try {
       await post(`/integrations/disconnect/${disconnectChannel}`)
+      if (disconnectChannel === 'web') {
+        setWidgetConfig(c => {
+          if (!c) return null
+          const updated = { ...c, is_active: false }
+          post('/widget/config', updated)
+          return updated
+        })
+      }
       getIntegrations('/integrations/list')
     } catch {
       // error handled by API hook
@@ -79,6 +129,8 @@ export default function ChannelsPage() {
   }
 
   const integrations: Integration[] = data?.integrations || []
+  // Only show truly connected channels in the summary table
+  const connectedIntegrations = integrations.filter((i: Integration) => i.status === 'connected')
   const integrationMap = new Map<string, Integration>(integrations.map((i: Integration) => [i.channel, i]))
 
   return (
@@ -115,7 +167,7 @@ export default function ChannelsPage() {
                   token={integration?.token}
                   webhookUrl={integration?.webhook_url}
                   connectedAt={integration?.connected_at}
-                  onConnect={() => handleConnect(key)}
+                  onConnect={() => handleConnectClick(key)}
                   onDisconnect={() => handleDisconnectClick(key)}
                 />
               )
@@ -140,7 +192,7 @@ export default function ChannelsPage() {
                   </div>
                 ))}
               </div>
-            ) : integrations.length === 0 ? (
+            ) : connectedIntegrations.length === 0 ? (
               <EmptyChannels />
             ) : (
               <>
@@ -157,7 +209,7 @@ export default function ChannelsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {integrations.map((i: Integration, idx: number) => (
+                      {connectedIntegrations.map((i: Integration, idx: number) => (
                         <tr key={`desktop-${i.id || i.channel}-${idx}`} className="border-b border-subtle hover:bg-surface-hover transition-colors">
                           <td className="px-4 py-3">
                             <span className="font-semibold text-sm text-primary capitalize">{i.channel}</span>
@@ -186,7 +238,7 @@ export default function ChannelsPage() {
 
                 {/* Mobile list */}
                 <div className="lg:hidden divide-y divide-subtle">
-                  {integrations.map((i: Integration, idx: number) => (
+                  {connectedIntegrations.map((i: Integration, idx: number) => (
                     <div key={`mobile-${i.id || i.channel}-${idx}`} className="flex items-center justify-between p-3">
                       <div className="flex items-center gap-3">
                         <span className="font-semibold text-sm text-primary capitalize">{i.channel}</span>
@@ -216,6 +268,53 @@ export default function ChannelsPage() {
         variant="warning"
         confirmText="Disconnect"
         loading={disconnectLoading}
+      />
+
+      {/* Connection Modals */}
+      <WhatsAppModal
+        open={activeModal === 'whatsapp'}
+        onClose={() => setActiveModal(null)}
+        onConnect={(config) => handleConnectSubmit('whatsapp', config)}
+        loading={connectLoading}
+      />
+
+      <TelegramModal
+        open={activeModal === 'telegram'}
+        onClose={() => setActiveModal(null)}
+        onConnect={(config) => handleConnectSubmit('telegram', config)}
+        loading={connectLoading}
+      />
+
+      <FacebookModal
+        open={activeModal === 'facebook'}
+        onClose={() => setActiveModal(null)}
+        onConnect={(config) => handleConnectSubmit('facebook', config)}
+        loading={connectLoading}
+      />
+
+      <InstagramModal
+        open={activeModal === 'instagram'}
+        onClose={() => setActiveModal(null)}
+        onConnect={(config) => handleConnectSubmit('instagram', config)}
+        loading={connectLoading}
+      />
+
+      <WebWidgetModal
+        open={activeModal === 'web'}
+        onClose={() => setActiveModal(null)}
+        onConnect={(config) => handleConnectSubmit('web', config)}
+        loading={connectLoading}
+        isConnected={widgetConfig?.is_active ?? integrationMap.has('web')}
+        existingConfig={
+          widgetConfig
+            ? {
+                botName: widgetConfig.bot_name,
+                greeting: widgetConfig.greeting,
+                brandColor: widgetConfig.brand_color,
+                position: widgetConfig.position === 'bottom-left' ? 'left' : 'right',
+              }
+            : integrationMap.get('web')?.config
+        }
       />
     </div>
   )

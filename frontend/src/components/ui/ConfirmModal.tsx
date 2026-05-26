@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ConfirmModal — component-level confirm modal (uses local state).
  *
  * For app-wide confirms triggered imperatively from anywhere, use:
@@ -133,8 +133,6 @@ export function ConfirmModal({
 
   if (!open) return null
 
-  const secondaryCls =
-    'bg-surface border border-default hover:bg-surface-hover text-primary px-4 py-2 rounded-lg text-sm font-medium transition-colors'
   const confirmCls = cn(
     'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
     meta.btnCls
@@ -154,7 +152,7 @@ export function ConfirmModal({
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
         aria-describedby={description ? 'confirm-modal-desc' : undefined}
-        className="bg-surface rounded-xl shadow-2xl max-w-md w-full mx-4 p-6 relative"
+        className="bg-surface rounded-xl shadow-2xl max-w-md w-full mx-4 p-5 sm:p-6 relative"
         style={{ animation: 'noantModalIn 200ms ease forwards' }}
       >
         {/* Close X */}
@@ -173,13 +171,13 @@ export function ConfirmModal({
         </div>
 
         {/* Title */}
-        <h2 id="confirm-modal-title" className="text-lg font-semibold text-primary pr-8">
+        <h2 id="confirm-modal-title" className="text-base sm:text-lg font-semibold text-primary pr-8">
           {title}
         </h2>
 
         {/* Description */}
         {description && (
-          <p id="confirm-modal-desc" className="text-sm text-secondary mt-2">
+          <p id="confirm-modal-desc" className="text-xs sm:text-sm text-secondary mt-2">
             {description}
           </p>
         )}
@@ -208,21 +206,21 @@ export function ConfirmModal({
         )}
 
         {/* Buttons */}
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-6">
           <button
             ref={cancelBtnRef}
             onClick={onClose}
             disabled={loading}
-            className={secondaryCls}
+            className="w-full sm:w-auto bg-surface border border-default hover:bg-surface-hover text-primary px-4 py-2 rounded-lg text-sm font-medium transition-colors text-center"
           >
             {cancelText}
           </button>
           <button
             onClick={() => { void onConfirm() }}
             disabled={loading || !typeMatch}
-            className={confirmCls}
+            className={cn("w-full sm:w-auto flex items-center justify-center gap-1.5", confirmCls)}
           >
-            {variant === 'danger' && !loading && <Trash2 className="w-4 h-4" />}
+            {variant === 'danger' && !loading && <Trash2 className="w-4 h-4 shrink-0" />}
             {loading ? 'Please wait…' : confirmText}
           </button>
         </div>

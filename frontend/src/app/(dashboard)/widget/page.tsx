@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Code2, Copy, Check, MessageSquare, RefreshCw, Palette, AlignRight, AlignLeft, Save } from 'lucide-react'
-import { api } from '../../../lib/api'
 import { useToast } from '@/components/ui/Toast'
+import { useWidgetConfig } from '@/contexts/WidgetConfigContext'
 
 interface WidgetConfig {
   brand_color: string
@@ -132,34 +132,18 @@ function CodeBlock({ code }: { code: string }) {
 }
 
 export default function WidgetPage() {
-  const [config, setConfig] = useState<WidgetConfig>(defaultConfig)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const { config: ctxConfig, loading, saving, setConfig, save, refresh } = useWidgetConfig()
   const { toast: showToast } = useToast()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await api.get<WidgetConfig>('/widget/config')
-      setConfig({ ...defaultConfig, ...res })
-    } catch {
-      // Use defaults if no config yet
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
+  // Fall back to defaults when context hasn't loaded yet
+  const config = ctxConfig ?? defaultConfig
 
   const handleSave = async () => {
-    setSaving(true)
     try {
-      await api.post('/widget/config', config)
+      await save()
       showToast('Widget configuration saved!', 'success')
     } catch {
       showToast('Failed to save configuration', 'error')
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -210,7 +194,7 @@ export default function WidgetPage() {
                 <input
                   type="text"
                   value={config.bot_name}
-                  onChange={e => setConfig(c => ({ ...c, bot_name: e.target.value }))}
+                  onChange={e => setConfig(c => c ? { ...c, bot_name: e.target.value } : null)}
                   className="w-full px-3 py-2.5 rounded-lg border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all"
                 />
               </div>
@@ -219,7 +203,7 @@ export default function WidgetPage() {
                 <label className="block text-xs font-semibold text-secondary uppercase tracking-wide mb-1.5">Welcome Message</label>
                 <textarea
                   value={config.greeting}
-                  onChange={e => setConfig(c => ({ ...c, greeting: e.target.value }))}
+                  onChange={e => setConfig(c => c ? { ...c, greeting: e.target.value } : null)}
                   rows={2}
                   className="w-full px-3 py-2.5 rounded-lg border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all resize-none"
                 />
@@ -231,13 +215,13 @@ export default function WidgetPage() {
                   <input
                     type="color"
                     value={config.brand_color}
-                    onChange={e => setConfig(c => ({ ...c, brand_color: e.target.value }))}
+                    onChange={e => setConfig(c => c ? { ...c, brand_color: e.target.value } : null)}
                     className="w-10 h-10 rounded-lg border border-default cursor-pointer p-0.5 bg-inset"
                   />
                   <input
                     type="text"
                     value={config.brand_color}
-                    onChange={e => setConfig(c => ({ ...c, brand_color: e.target.value }))}
+                    onChange={e => setConfig(c => c ? { ...c, brand_color: e.target.value } : null)}
                     className="flex-1 px-3 py-2.5 rounded-lg border border-default bg-inset text-primary text-sm font-mono focus:outline-none focus:border-noant-sky transition-all"
                   />
                 </div>
@@ -249,7 +233,7 @@ export default function WidgetPage() {
                   {(['bottom-right', 'bottom-left'] as const).map(pos => (
                     <button
                       key={pos}
-                      onClick={() => setConfig(c => ({ ...c, position: pos }))}
+                      onClick={() => setConfig(c => c ? { ...c, position: pos } : null)}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border text-xs font-medium transition-all ${
                         config.position === pos
                           ? 'border-noant-sky bg-noant-sky/10 text-noant-sky-deep dark:text-noant-sky'
@@ -269,7 +253,7 @@ export default function WidgetPage() {
                   <div className="text-xs text-secondary">Show widget on your website</div>
                 </div>
                 <button
-                  onClick={() => setConfig(c => ({ ...c, is_active: !c.is_active }))}
+                  onClick={() => setConfig(c => c ? { ...c, is_active: !c.is_active } : null)}
                   className={`relative inline-flex h-5 w-9 rounded-full border-2 border-transparent cursor-pointer transition-colors duration-200 ${config.is_active ? 'bg-noant-sky' : 'bg-border-strong'}`}
                 >
                   <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transform transition duration-200 ${config.is_active ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -293,7 +277,7 @@ export default function WidgetPage() {
                   <Code2 className="w-4 h-4 text-noant-sky" />
                   Embed Code
                 </h2>
-                <button onClick={load} className="text-tertiary hover:text-secondary transition-colors">
+                <button onClick={refresh} className="text-tertiary hover:text-secondary transition-colors">
                   <RefreshCw className="w-3.5 h-3.5" />
                 </button>
               </div>

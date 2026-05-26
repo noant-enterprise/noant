@@ -68,11 +68,21 @@ export interface Conversation {
   updated_at: string;
 }
 
+export interface MessageMetadata {
+  confidence?: number;
+  language?: string;
+  [key: string]: any;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
   content: string;
-  sender_type: 'customer' | 'ai' | 'agent' | 'system';
+  sender_type?: 'customer' | 'ai' | 'agent' | 'system';
+  role?: string;
+  source?: string;
+  metadata?: MessageMetadata;
+  confidence?: number;
   created_at: string;
 }
 

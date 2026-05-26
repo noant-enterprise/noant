@@ -135,13 +135,17 @@ export default function ChatsPage() {
         setTyping(true)
         setTimeout(() => setTyping(false), 3000)
       }
-      if (msg.type === 'new_message' && msg.conversation_id === activeId) {
-        getMessages(`/chats/conversations/${activeId}`)
-        setPendingAI(prev => {
-          const next = new Set(prev)
-          next.delete(activeId)
-          return next
-        })
+      if (msg.type === 'new_message') {
+        if (msg.conversation_id === activeId) {
+          getMessages(`/chats/conversations/${activeId}`)
+          setPendingAI(prev => {
+            const next = new Set(prev)
+            next.delete(activeId)
+            return next
+          })
+        }
+        // Always refresh the conversation list so the last message and unread count are updated in real-time
+        getConversations('/chats/conversations?page=1&limit=20')
       }
       if (msg.type === 'new_conversation') {
         getConversations('/chats/conversations?page=1&limit=20')

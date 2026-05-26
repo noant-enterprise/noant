@@ -100,6 +100,9 @@ func main() {
 	handlers := handler.NewHandlers(services, logger, wsHub)
 	healthHandler := handler.NewHealthHandler(db, redisClient, cfg.GroqAPIKeys, logger)
 
+	// Start background health checks
+	startHealthChecks(services.Integration, logger)
+
 	if cfg.NodeEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -282,4 +285,25 @@ func main() {
 	}
 
 	logger.Info("Server exited gracefully")
+}
+
+func startHealthChecks(integrationSvc *service.IntegrationService, logger *infrastructure.Logger) {
+	ticker := time.NewTicker(5 * time.Minute)
+	channels := []string{"telegram", "whatsapp", "facebook", "instagram"}
+	
+	go func() {
+		for range ticker.C {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			logger.Info("Running periodic channel health checks")
+			for _, ch := range channels {
+				ok, msg := integrationSvc.Test(ctx, ch)
+				if !ok {
+					logger.Warn("Channel health check failed", "channel", ch, "details", msg)
+				} else {
+					logger.Info("Channel health check passed", "channel", ch)
+				}
+			}
+			cancel()
+		}
+	}()
 }
