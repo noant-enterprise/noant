@@ -230,6 +230,10 @@ func (h *AuthHandler) Me(c *gin.Context) {
         utils.RespondInternalError(c, "Failed to retrieve user")
         return
     }
+    if user == nil {
+        utils.RespondUnauthorized(c, "User not found")
+        return
+    }
 
     // Compute trial info for response
     var trialInfo map[string]interface{}

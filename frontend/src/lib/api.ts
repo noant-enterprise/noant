@@ -49,7 +49,7 @@ async function doRequest<T>(method: string, endpoint: string, body?: unknown, is
 
   if (!res.ok) {
     // Silent token refresh on 401 (skip if this IS the refresh call)
-    if (res.status === 401 && !isRetry && !endpoint.includes('/auth/refresh')) {
+    if (res.status === 401 && !isRetry && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
       if (!isRefreshing) {
         isRefreshing = true;
         const { refreshToken } = await import('./auth');
@@ -66,7 +66,9 @@ async function doRequest<T>(method: string, endpoint: string, body?: unknown, is
       // Refresh failed ? force re-login
       const { clearAuth } = await import('./auth');
       clearAuth();
-      window.location.href = '/login';
+      if (token) {
+        window.location.href = '/login';
+      }
       throw new APIError('Session expired. Please log in again.', 401);
     }
 

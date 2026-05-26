@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useAPI } from '@/hooks/useAPI'
 import { UploadZone, CategoryCard, UnknownQuestionItem } from '@/components/training'
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card'
@@ -26,8 +27,13 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    if (open) {
+      const timer = setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [messages, open])
 
   const send = async () => {
     if (!input.trim() || loading) return
@@ -53,25 +59,30 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
   }
 
-  return (
-    <>
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      className="fixed inset-0 pointer-events-none overflow-hidden"
+      style={{ zIndex: 9999 }}
+    >
       {/* Backdrop */}
-      {open && (
-        <div
-          className="fixed inset-0 bg-overlay z-40 backdrop-blur-sm"
-          onClick={onClose}
-        />
-      )}
+      <div
+        className={`absolute inset-0 bg-overlay backdrop-blur-sm transition-opacity duration-300 pointer-events-auto ${
+          open ? 'opacity-100' : 'opacity-0 invisible pointer-events-none'
+        }`}
+        onClick={onClose}
+      />
       {/* Drawer */}
       <div
-        className={`fixed right-0 top-0 h-full w-full max-w-md z-50 flex flex-col shadow-2xl transition-transform duration-300 ${
+        className={`absolute right-0 top-0 h-full w-full sm:w-[440px] flex flex-col shadow-2xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
         style={{ background: 'var(--bg-surface)', borderLeft: '1px solid var(--border-default)' }}
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-5 py-4 border-b"
+          className="flex items-center justify-between px-4 py-3 lg:px-5 lg:py-4 border-b shrink-0"
           style={{ borderColor: 'var(--border-default)' }}
         >
           <div className="flex items-center gap-3">
@@ -85,14 +96,14 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
           </div>
           <button
             onClick={onClose}
-            className="text-tertiary hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-inset"
+            className="text-tertiary hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-inset active:scale-95"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
           {messages.map((msg, i) => (
             <div
               key={i}
@@ -104,9 +115,9 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
                 </div>
               )}
               <div
-                className={`max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
                   msg.role === 'user'
-                    ? 'bg-noant-sky text-white rounded-br-sm'
+                    ? 'bg-noant-sky text-white rounded-br-sm shadow-sm shadow-sky/10'
                     : 'rounded-bl-sm'
                 }`}
                 style={msg.role === 'assistant' ? {
@@ -140,7 +151,7 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
         </div>
 
         {/* Input */}
-        <div className="p-4 border-t" style={{ borderColor: 'var(--border-default)' }}>
+        <div className="p-3 lg:p-4 border-t shrink-0 bg-surface" style={{ borderColor: 'var(--border-default)' }}>
           <div className="flex gap-2">
             <input
               type="text"
@@ -148,7 +159,7 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKey}
               placeholder="Ask something your AI should know…"
-              className="flex-1 px-3.5 py-2.5 text-sm rounded-xl border outline-none transition-colors"
+              className="flex-1 px-3.5 py-2.5 text-sm rounded-xl border outline-none transition-all duration-200 focus:border-noant-sky"
               style={{
                 background: 'var(--bg-inset)',
                 borderColor: 'var(--border-default)',
@@ -159,7 +170,7 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
             <button
               onClick={send}
               disabled={!input.trim() || loading}
-              className="w-10 h-10 rounded-xl bg-noant-sky hover:bg-noant-sky-deep disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center shrink-0"
+              className="w-10 h-10 rounded-xl bg-noant-sky hover:bg-noant-sky-deep disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center shrink-0 btn-press"
             >
               {loading ? (
                 <Loader2 className="w-4 h-4 text-white animate-spin" />
@@ -171,7 +182,8 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
           <p className="text-xs text-tertiary mt-2 text-center">Responses use your uploaded Q&amp;A training data</p>
         </div>
       </div>
-    </>
+    </div>,
+    document.body
   )
 }
 

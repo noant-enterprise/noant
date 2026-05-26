@@ -1018,10 +1018,10 @@ func (r *SubscriptionRepository) Cancel(ctx context.Context, userID string) erro
 // ========== ANALYTICS REPOSITORY METHODS ==========
 
 func (r *ConversationRepository) GetOverview(ctx context.Context, userID string) (map[string]interface{}, error) {
-	query := "SELECT COUNT(*) as total, COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) as active, COALESCE(SUM(CASE WHEN status = 'resolved' AND DATE(resolved_at) = CURDATE() THEN 1 ELSE 0 END), 0) as resolved_today, COALESCE(SUM(CASE WHEN is_ai_transferred = false THEN 1 ELSE 0 END), 0) as ai_handled, COALESCE(COUNT(DISTINCT CASE WHEN status = 'escalated' THEN id END), 0) as escalated FROM conversations WHERE user_id = ?"
+	query := "SELECT COUNT(*) as total, COALESCE(SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END), 0) as conversations_today, COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) as active, COALESCE(SUM(CASE WHEN status = 'resolved' AND DATE(resolved_at) = CURDATE() THEN 1 ELSE 0 END), 0) as resolved_today, COALESCE(SUM(CASE WHEN is_ai_transferred = false THEN 1 ELSE 0 END), 0) as ai_handled, COALESCE(COUNT(DISTINCT CASE WHEN status = 'escalated' THEN id END), 0) as escalated FROM conversations WHERE user_id = ?"
 	row := r.db.QueryRowContext(ctx, query, userID)
-	var total, active, resolvedToday, aiHandled, escalated int
-	err := row.Scan(&total, &active, &resolvedToday, &aiHandled, &escalated)
+	var total, conversationsToday, active, resolvedToday, aiHandled, escalated int
+	err := row.Scan(&total, &conversationsToday, &active, &resolvedToday, &aiHandled, &escalated)
 	if err != nil {
 		return nil, err
 	}
@@ -1031,6 +1031,7 @@ func (r *ConversationRepository) GetOverview(ctx context.Context, userID string)
 	}
 	return map[string]interface{}{
 		"total_conversations":  total,
+		"conversations_today":  conversationsToday,
 		"active_conversations": active,
 		"resolved_today":       resolvedToday,
 		"ai_resolution_rate":   aiRate,
@@ -1085,7 +1086,8 @@ func (r *ConversationRepository) CountByHour(ctx context.Context, userID string)
 	for rows.Next() {
 		var hour, count int
 		if err := rows.Scan(&hour, &count); err == nil {
-			result = append(result, map[string]interface{}{"hour": hour, "count": count})
+			hourStr := fmt.Sprintf("%02d:00", hour)
+			result = append(result, map[string]interface{}{"hour": hourStr, "volume": count})
 		}
 	}
 	return result, nil
@@ -1103,7 +1105,11 @@ func (r *ConversationRepository) CountByDate(ctx context.Context, userID string,
 		var date string
 		var count int
 		if err := rows.Scan(&date, &count); err == nil {
-			result = append(result, map[string]interface{}{"date": date, "count": count})
+			// Format date string to YYYY-MM-DD cleanly
+			if len(date) > 10 {
+				date = date[:10]
+			}
+			result = append(result, map[string]interface{}{"date": date, "conversations": count})
 		}
 	}
 	return result, nil

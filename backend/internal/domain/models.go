@@ -132,11 +132,13 @@ type Integration struct {
 // AnalyticsOverview represents dashboard metrics
 type AnalyticsOverview struct {
 	TotalConversations   int     `json:"total_conversations"`
+	ConversationsToday   int     `json:"conversations_today"`
 	ActiveConversations  int     `json:"active_conversations"`
 	ResolvedToday        int     `json:"resolved_today"`
 	AIResolutionRate     float64 `json:"ai_resolution_rate"`
 	AvgResponseTime      float64 `json:"avg_response_time"`
 	CustomerSatisfaction float64 `json:"customer_satisfaction"`
+	Satisfaction         float64 `json:"satisfaction"`
 	TotalMessages        int     `json:"total_messages"`
 	EscalatedCount       int     `json:"escalated_count"`
 }

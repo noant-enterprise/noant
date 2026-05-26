@@ -110,7 +110,9 @@ const router = createBrowserRouter([
         path: '/',
         element: (
           <ProtectedRoute>
-            <DashboardLayout />
+            <WidgetConfigProvider>
+              <DashboardLayout />
+            </WidgetConfigProvider>
           </ProtectedRoute>
         ),
         children: [
@@ -137,9 +139,7 @@ import { WidgetConfigProvider } from '@/contexts/WidgetConfigContext';
 export default function App() {
   return (
     <NetworkProvider>
-      <WidgetConfigProvider>
-        <RouterProvider router={router} />
-      </WidgetConfigProvider>
+      <RouterProvider router={router} />
     </NetworkProvider>
   );
 }
