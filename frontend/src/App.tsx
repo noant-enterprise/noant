@@ -111,7 +111,9 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute>
             <WidgetConfigProvider>
-              <DashboardLayout />
+              <SidebarAlertsProvider>
+                <DashboardLayout />
+              </SidebarAlertsProvider>
             </WidgetConfigProvider>
           </ProtectedRoute>
         ),
@@ -135,6 +137,7 @@ const router = createBrowserRouter([
 ])
 
 import { WidgetConfigProvider } from '@/contexts/WidgetConfigContext';
+import { SidebarAlertsProvider } from '@/contexts/SidebarAlertsContext';
 
 export default function App() {
   return (

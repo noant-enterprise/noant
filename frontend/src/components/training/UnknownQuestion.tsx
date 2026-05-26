@@ -8,9 +8,10 @@ interface UnknownQuestionProps {
   }
   onTrain: (id: string, answer: string, categoryId: string) => Promise<void>
   onIgnore: (id: string) => void
+  categories?: Array<{ id: string; name: string }>
 }
 
-export function UnknownQuestionItem({ question, onIgnore, onTrain }: UnknownQuestionProps) {
+export function UnknownQuestionItem({ question, onIgnore, onTrain, categories = [] }: UnknownQuestionProps) {
   const [isTraining, setIsTraining] = useState(false)
   const [answer, setAnswer] = useState('')
   const [categoryId, setCategoryId] = useState('default')
@@ -66,17 +67,24 @@ export function UnknownQuestionItem({ question, onIgnore, onTrain }: UnknownQues
 
           <div>
             <label htmlFor={`cat-${question.id}`} className="block text-xs font-semibold text-secondary mb-1">
-              Category ID (e.g. general, billing, default)
+              Select Category
             </label>
-            <input
+            <select
               id={`cat-${question.id}`}
-              type="text"
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
-              placeholder="default"
               className="w-full text-sm px-3 py-2 rounded-lg border border-default outline-none bg-inset focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all text-primary"
               disabled={loading}
-            />
+            >
+              <option value="default">Default</option>
+              {categories.map(cat => (
+                cat.id !== 'default' && (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                )
+              ))}
+            </select>
           </div>
 
           <div className="flex justify-end gap-2 pt-1">

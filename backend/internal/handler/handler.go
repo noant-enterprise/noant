@@ -650,6 +650,103 @@ func (h *TrainingHandler) IgnoreUnknown(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Question ignored successfully"})
 }
 
+func (h *TrainingHandler) ListQAPairs(c *gin.Context) {
+	categoryID := c.Param("id")
+	userID, _ := c.Get("userID")
+
+	qaPairs, err := h.service.ListQAPairs(c.Request.Context(), userID.(string), categoryID)
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"qa_pairs": qaPairs})
+}
+
+func (h *TrainingHandler) CreateQAPair(c *gin.Context) {
+	var req struct {
+		CategoryID string `json:"category_id" binding:"required"`
+		Question   string `json:"question" binding:"required"`
+		Answer     string `json:"answer" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, err.Error())
+		return
+	}
+
+	userID, _ := c.Get("userID")
+	qa, err := h.service.CreateQAPair(c.Request.Context(), userID.(string), req.CategoryID, req.Question, req.Answer)
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Q&A pair created successfully", "qa_pair": qa})
+}
+
+func (h *TrainingHandler) UpdateQAPair(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		CategoryID string `json:"category_id" binding:"required"`
+		Question   string `json:"question" binding:"required"`
+		Answer     string `json:"answer" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, err.Error())
+		return
+	}
+
+	userID, _ := c.Get("userID")
+	err := h.service.UpdateQAPair(c.Request.Context(), userID.(string), id, req.CategoryID, req.Question, req.Answer)
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Q&A pair updated successfully"})
+}
+
+func (h *TrainingHandler) DeleteQAPair(c *gin.Context) {
+	id := c.Param("id")
+	userID, _ := c.Get("userID")
+
+	err := h.service.DeleteQAPair(c.Request.Context(), userID.(string), id)
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Q&A pair deleted successfully"})
+}
+
+func (h *TrainingHandler) DeleteCategory(c *gin.Context) {
+	id := c.Param("id")
+	userID, _ := c.Get("userID")
+
+	err := h.service.DeleteCategory(c.Request.Context(), userID.(string), id)
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Category and all associated Q&A pairs deleted successfully"})
+}
+
+func (h *TrainingHandler) SearchQAPairs(c *gin.Context) {
+	query := c.Query("q")
+	userID, _ := c.Get("userID")
+
+	qaPairs, err := h.service.SearchQAPairs(c.Request.Context(), userID.(string), query)
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"qa_pairs": qaPairs})
+}
+
 // ========== ANALYTICS HANDLER ==========
 
 type AnalyticsHandler struct {

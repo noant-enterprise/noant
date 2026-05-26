@@ -969,6 +969,48 @@ func (s *TrainingService) IgnoreUnknown(ctx context.Context, userID, id string) 
 	return nil
 }
 
+func (s *TrainingService) ListQAPairs(ctx context.Context, userID, categoryID string) ([]domain.QAPair, error) {
+	return s.repos.QAPair.ListByCategoryAndUser(ctx, categoryID, userID)
+}
+
+func (s *TrainingService) CreateQAPair(ctx context.Context, userID, categoryID string, question, answer string) (*domain.QAPair, error) {
+	qa := &domain.QAPair{
+		UserID:     userID,
+		CategoryID: categoryID,
+		Question:   question,
+		Answer:     answer,
+		IsActive:   true,
+	}
+	if err := s.repos.QAPair.Create(ctx, qa); err != nil {
+		return nil, err
+	}
+	return qa, nil
+}
+
+func (s *TrainingService) UpdateQAPair(ctx context.Context, userID, qaID, categoryID, question, answer string) error {
+	qa := &domain.QAPair{
+		ID:         qaID,
+		UserID:     userID,
+		CategoryID: categoryID,
+		Question:   question,
+		Answer:     answer,
+		IsActive:   true,
+	}
+	return s.repos.QAPair.Update(ctx, qa)
+}
+
+func (s *TrainingService) DeleteQAPair(ctx context.Context, userID, qaID string) error {
+	return s.repos.QAPair.Delete(ctx, qaID, userID)
+}
+
+func (s *TrainingService) DeleteCategory(ctx context.Context, userID, categoryID string) error {
+	return s.repos.Category.Delete(ctx, categoryID, userID)
+}
+
+func (s *TrainingService) SearchQAPairs(ctx context.Context, userID, query string) ([]domain.QAPair, error) {
+	return s.repos.QAPair.Search(ctx, userID, query)
+}
+
 // ========== ANALYTICS SERVICE ==========
 
 type AnalyticsService struct {
@@ -1029,6 +1071,7 @@ func (s *AnalyticsService) Overview(ctx context.Context, userID string) (*domain
 		TotalConversations:   total,
 		ConversationsToday:   getInt(data, "conversations_today"),
 		ActiveConversations:  getInt(data, "active_conversations"),
+		UnreadConversations:  getInt(data, "active_conversations"), // active = open/unread for badge
 		ResolvedToday:        getInt(data, "resolved_today"),
 		AIResolutionRate:     getFloat64(data, "ai_resolution_rate"),
 		AvgResponseTime:      avgResponse,
@@ -1036,6 +1079,7 @@ func (s *AnalyticsService) Overview(ctx context.Context, userID string) (*domain
 		Satisfaction:         satisfaction,
 		TotalMessages:        total * 5, // Organic approximation of message volume
 		EscalatedCount:       getInt(data, "escalated_count"),
+		BillingAlert:         false, // Will be true when billing integration detects plan expiry
 	}, nil
 }
 

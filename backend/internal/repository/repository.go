@@ -496,6 +496,32 @@ func (r *QAPairRepository) ListByCategory(ctx context.Context, categoryID string
 	return qas, nil
 }
 
+func (r *QAPairRepository) ListByCategoryAndUser(ctx context.Context, categoryID string, userID string) ([]domain.QAPair, error) {
+	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE category_id = ? AND user_id = ? AND is_active = true`
+	rows, err := r.db.QueryContext(ctx, query, categoryID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var qas []domain.QAPair
+	for rows.Next() {
+		var qa domain.QAPair
+		var variationsJSON sql.NullString
+		err := rows.Scan(&qa.ID, &qa.CategoryID, &qa.Question, &qa.Answer, &variationsJSON, &qa.IsActive, &qa.UsageCount, &qa.CreatedAt, &qa.UpdatedAt)
+		if err != nil {
+			continue
+		}
+		if variationsJSON.Valid && variationsJSON.String != "" && variationsJSON.String != "[]" {
+			_ = json.Unmarshal([]byte(variationsJSON.String), &qa.Variations)
+		} else {
+			qa.Variations = []string{}
+		}
+		qa.UserID = userID
+		qas = append(qas, qa)
+	}
+	return qas, nil
+}
+
 func (r *QAPairRepository) Search(ctx context.Context, userID string, query string) ([]domain.QAPair, error) {
 	// Clean query by removing common punctuation and trim
 	cleanQuery := query
@@ -588,6 +614,12 @@ func (r *QAPairRepository) CountByUser(ctx context.Context, userID string) (int,
 	return count, err
 }
 
+func (r *QAPairRepository) Delete(ctx context.Context, id string, userID string) error {
+	query := `DELETE FROM qa_pairs WHERE id = ? AND user_id = ?`
+	_, err := r.db.ExecContext(ctx, query, id, userID)
+	return err
+}
+
 type CategoryRepository struct {
 	db    *sql.DB
 	redis *infrastructure.RedisClient
@@ -640,6 +672,28 @@ func (r *CategoryRepository) List(ctx context.Context, userID string) ([]domain.
 		categories = append(categories, cat)
 	}
 	return categories, nil
+}
+
+func (r *CategoryRepository) Delete(ctx context.Context, id string, userID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Delete all associated Q&As
+	_, err = tx.ExecContext(ctx, `DELETE FROM qa_pairs WHERE category_id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return err
+	}
+
+	// 2. Delete the category itself
+	_, err = tx.ExecContext(ctx, `DELETE FROM categories WHERE id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 type UnknownQuestionRepository struct {

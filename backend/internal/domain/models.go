@@ -134,6 +134,7 @@ type AnalyticsOverview struct {
 	TotalConversations   int     `json:"total_conversations"`
 	ConversationsToday   int     `json:"conversations_today"`
 	ActiveConversations  int     `json:"active_conversations"`
+	UnreadConversations  int     `json:"unread_conversations"` // Open convos with no recent agent reply
 	ResolvedToday        int     `json:"resolved_today"`
 	AIResolutionRate     float64 `json:"ai_resolution_rate"`
 	AvgResponseTime      float64 `json:"avg_response_time"`
@@ -141,6 +142,7 @@ type AnalyticsOverview struct {
 	Satisfaction         float64 `json:"satisfaction"`
 	TotalMessages        int     `json:"total_messages"`
 	EscalatedCount       int     `json:"escalated_count"`
+	BillingAlert         bool    `json:"billing_alert"`  // True when plan is expiring/over limit
 }
 
 // TeamMember represents a team member
