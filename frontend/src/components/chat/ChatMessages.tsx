@@ -9,6 +9,7 @@ interface ChatMessagesProps {
   deliveredIds?: Set<string>
   hasMore?: boolean
   loadingMore?: boolean
+  isLoading?: boolean
   onLoadMore?: () => void
 }
 
@@ -59,6 +60,7 @@ export function ChatMessages({
   deliveredIds,
   hasMore = false,
   loadingMore = false,
+  isLoading = false,
   onLoadMore,
 }: ChatMessagesProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -100,6 +102,50 @@ export function ChatMessages({
     shouldScrollToBottomRef.current = true
     bottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [messages[0]?.conversation_id])
+
+  // Shimmer skeleton while messages are loading
+  if (isLoading) {
+    const shimmerItems = [
+      { isRight: false, width: 'w-2/3' },
+      { isRight: true,  width: 'w-1/2' },
+      { isRight: false, width: 'w-4/5' },
+      { isRight: true,  width: 'w-2/5' },
+      { isRight: false, width: 'w-3/5' },
+      { isRight: true,  width: 'w-1/3' },
+    ]
+    return (
+      <div className="flex-1 overflow-hidden px-3 lg:px-4 py-4 flex flex-col gap-3 bg-base">
+        <div className="flex-1" />
+        {shimmerItems.map((item, i) => (
+          <div
+            key={i}
+            className={cn('flex w-full shrink-0', item.isRight ? 'justify-end' : 'justify-start')}
+            style={{ animationDelay: `${i * 80}ms` }}
+          >
+            <div
+              className={cn(
+                'rounded-2xl px-4 py-3 shimmer-bubble',
+                item.width,
+                item.isRight
+                  ? 'rounded-br-md bg-noant-black/10 dark:bg-white/10'
+                  : 'rounded-bl-md bg-surface border border-default'
+              )}
+              style={{
+                height: '36px',
+                background: item.isRight
+                  ? 'linear-gradient(90deg, rgba(0,0,0,0.06) 25%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.06) 75%)'
+                  : undefined,
+                backgroundSize: '200% 100%',
+                animation: 'shimmer 1.5s ease-in-out infinite',
+                animationDelay: `${i * 120}ms`,
+              }}
+            />
+          </div>
+        ))}
+        <div className="h-2" />
+      </div>
+    )
+  }
 
   if (messages.length === 0) {
     return (

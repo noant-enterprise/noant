@@ -1192,21 +1192,173 @@ func (s *IntegrationService) Disconnect(ctx context.Context, userID, channel str
 	return nil
 }
 
-func (s *IntegrationService) Test(ctx context.Context, channel string) (bool, string) {
+func (s *IntegrationService) Test(ctx context.Context, channel string, config map[string]interface{}) (bool, string) {
+	client := &http.Client{Timeout: 10 * time.Second}
+
 	switch channel {
 	case "telegram":
-		return true, "Telegram webhook configured successfully"
-	case "whatsapp":
-		if s.cfg.TwilioAccountSID == "" {
-			return false, "Twilio credentials not configured"
+		// Prefer token from the provided config, fall back to environment config
+		token := ""
+		if config != nil {
+			if t, ok := config["bot_token"].(string); ok {
+				token = t
+			}
 		}
-		return true, "WhatsApp connection test passed"
+		if token == "" {
+			token = s.cfg.TelegramBotToken
+		}
+		if token == "" {
+			return false, "No Telegram Bot Token provided"
+		}
+		url := fmt.Sprintf("https://api.telegram.org/bot%s/getMe", token)
+		resp, err := client.Get(url)
+		if err != nil {
+			return false, fmt.Sprintf("Connection failed: %v", err)
+		}
+		defer resp.Body.Close()
+		var result struct {
+			OK     bool `json:"ok"`
+			Result struct {
+				Username string `json:"username"`
+				FirstName string `json:"first_name"`
+			} `json:"result"`
+			Description string `json:"description"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return false, "Invalid response from Telegram API"
+		}
+		if !result.OK {
+			return false, fmt.Sprintf("Telegram API error: %s", result.Description)
+		}
+		return true, fmt.Sprintf("✓ Connected as @%s (%s)", result.Result.Username, result.Result.FirstName)
+
+	case "whatsapp":
+		phoneNumberID := ""
+		accessToken := ""
+		if config != nil {
+			if v, ok := config["phone_number_id"].(string); ok {
+				phoneNumberID = v
+			}
+			if v, ok := config["access_token"].(string); ok {
+				accessToken = v
+			}
+		}
+		if phoneNumberID == "" || accessToken == "" {
+			if s.cfg.MetaAccessToken != "" && s.cfg.MetaPhoneNumberID != "" {
+				phoneNumberID = s.cfg.MetaPhoneNumberID
+				accessToken = s.cfg.MetaAccessToken
+			} else {
+				return false, "Phone Number ID and Access Token are required"
+			}
+		}
+		url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s", phoneNumberID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return false, "Failed to create request"
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		resp, err := client.Do(req)
+		if err != nil {
+			return false, fmt.Sprintf("Connection failed: %v", err)
+		}
+		defer resp.Body.Close()
+		var result struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"display_phone_number"`
+			Error       struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return false, "Invalid response from Meta Graph API"
+		}
+		if resp.StatusCode != http.StatusOK {
+			return false, fmt.Sprintf("Meta API error: %s", result.Error.Message)
+		}
+		return true, fmt.Sprintf("✓ WhatsApp number verified: %s (ID: %s)", result.DisplayName, result.ID)
+
 	case "facebook":
-		return true, "Facebook Page connection test passed"
+		pageID := ""
+		pageToken := ""
+		if config != nil {
+			if v, ok := config["page_id"].(string); ok {
+				pageID = v
+			}
+			if v, ok := config["page_access_token"].(string); ok {
+				pageToken = v
+			}
+		}
+		if pageID == "" || pageToken == "" {
+			if s.cfg.MetaAccessToken != "" && s.cfg.MetaPageID != "" {
+				pageID = s.cfg.MetaPageID
+				pageToken = s.cfg.MetaAccessToken
+			} else {
+				return false, "Page ID and Page Access Token are required"
+			}
+		}
+		url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s?fields=id,name&access_token=%s", pageID, pageToken)
+		resp, err := client.Get(url)
+		if err != nil {
+			return false, fmt.Sprintf("Connection failed: %v", err)
+		}
+		defer resp.Body.Close()
+		var result struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return false, "Invalid response from Meta Graph API"
+		}
+		if resp.StatusCode != http.StatusOK {
+			return false, fmt.Sprintf("Meta API error: %s", result.Error.Message)
+		}
+		return true, fmt.Sprintf("✓ Facebook Page verified: %s (ID: %s)", result.Name, result.ID)
+
 	case "instagram":
-		return true, "Instagram account connection test passed"
+		instagramID := ""
+		pageToken := ""
+		if config != nil {
+			if v, ok := config["instagram_id"].(string); ok {
+				instagramID = v
+			}
+			if v, ok := config["page_access_token"].(string); ok {
+				pageToken = v
+			}
+		}
+		if instagramID == "" || pageToken == "" {
+			if s.cfg.MetaAccessToken != "" && s.cfg.InstagramAccountID != "" {
+				instagramID = s.cfg.InstagramAccountID
+				pageToken = s.cfg.MetaAccessToken
+			} else {
+				return false, "Instagram Account ID and Page Access Token are required"
+			}
+		}
+		url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s?fields=id,username&access_token=%s", instagramID, pageToken)
+		resp, err := client.Get(url)
+		if err != nil {
+			return false, fmt.Sprintf("Connection failed: %v", err)
+		}
+		defer resp.Body.Close()
+		var result struct {
+			ID       string `json:"id"`
+			Username string `json:"username"`
+			Error    struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return false, "Invalid response from Meta Graph API"
+		}
+		if resp.StatusCode != http.StatusOK {
+			return false, fmt.Sprintf("Meta API error: %s", result.Error.Message)
+		}
+		return true, fmt.Sprintf("✓ Instagram account verified: @%s (ID: %s)", result.Username, result.ID)
+
 	case "web":
-		return true, "Web chat widget ready"
+		return true, "✓ Web chat widget is ready"
 	default:
 		return false, "Unsupported channel"
 	}
@@ -1398,13 +1550,13 @@ func (s *PaymentService) ListPlans(ctx context.Context) ([]domain.PaymentPlan, e
 	}, nil
 }
 
-func (s *PaymentService) Subscribe(ctx context.Context, userID, planID string) error {
+func (s *PaymentService) Subscribe(ctx context.Context, userID, planID string) (string, error) {
 	planName := planID
 	switch planID {
 	case "starter", "pro", "enterprise":
 		planName = planID
 	default:
-		return fmt.Errorf("invalid plan ID: %s", planID)
+		return "", fmt.Errorf("invalid plan ID: %s", planID)
 	}
 
 	now := time.Now()
@@ -1420,16 +1572,17 @@ func (s *PaymentService) Subscribe(ctx context.Context, userID, planID string) e
 
 	if err := s.repos.Subscription.CreateOrUpdate(ctx, sub); err != nil {
 		s.logger.Error("Failed to create subscription", "error", err)
-		return fmt.Errorf("failed to create subscription: %w", err)
+		return "", fmt.Errorf("failed to create subscription: %w", err)
 	}
 
 	if err := s.repos.User.UpdatePlan(ctx, userID, planName); err != nil {
 		s.logger.Error("Failed to update user plan", "error", err)
-		return err
+		return "", err
 	}
 
 	s.logger.Info("Subscription created", "user", userID, "plan", planName, "period_end", periodEnd)
-	return nil
+	// Return empty string — local DB subscription applied; no hosted checkout needed
+	return "", nil
 }
 
 func (s *PaymentService) Webhook(ctx context.Context, payload []byte) error {

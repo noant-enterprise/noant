@@ -860,7 +860,15 @@ func (h *IntegrationHandler) Disconnect(c *gin.Context) {
 
 func (h *IntegrationHandler) Test(c *gin.Context) {
 	channel := c.Param("channel")
-	success, message := h.service.Test(c.Request.Context(), channel)
+
+	// Optionally parse config credentials from the request body (for pre-connect testing)
+	var req struct {
+		Config map[string]interface{} `json:"config"`
+	}
+	// Ignore bind errors – the body is optional
+	c.ShouldBindJSON(&req)
+
+	success, message := h.service.Test(c.Request.Context(), channel, req.Config)
 
 	if success {
 		c.JSON(http.StatusOK, gin.H{"status": "success", "message": message})
@@ -1123,8 +1131,11 @@ func (h *PaymentHandler) ListPlans(c *gin.Context) {
 }
 
 func (h *PaymentHandler) Subscribe(c *gin.Context) {
+	// Accept both 'plan_id' and 'plan' keys for frontend compatibility
 	var req struct {
-		PlanID string `json:"plan_id" binding:"required"`
+		PlanID   string `json:"plan_id"`
+		Plan     string `json:"plan"`
+		Currency string `json:"currency"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1132,13 +1143,28 @@ func (h *PaymentHandler) Subscribe(c *gin.Context) {
 		return
 	}
 
+	// Prefer plan_id, fall back to plan
+	planID := req.PlanID
+	if planID == "" {
+		planID = req.Plan
+	}
+	if planID == "" {
+		utils.RespondValidationError(c, "plan or plan_id is required")
+		return
+	}
+
 	userID, _ := c.Get("userID")
-	if err := h.service.Subscribe(c.Request.Context(), userID.(string), req.PlanID); err != nil {
+	checkoutURL, err := h.service.Subscribe(c.Request.Context(), userID.(string), planID)
+	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Subscription initiated"})
+	resp := gin.H{"message": "Subscription initiated"}
+	if checkoutURL != "" {
+		resp["checkout_url"] = checkoutURL
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *PaymentHandler) Webhook(c *gin.Context) {

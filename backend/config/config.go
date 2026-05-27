@@ -53,6 +53,17 @@ type Config struct {
 	PolarServerURL       string
 	PolarWebhookSecret   string
 	CORSOrigins         []string
+
+	// Telegram
+	TelegramBotToken string
+	TelegramWebhookURL string
+
+	// Meta (WhatsApp / Facebook / Instagram)
+	MetaAccessToken    string
+	MetaPhoneNumberID  string
+	MetaPageID         string
+	InstagramAccountID string
+	MetaVerifyToken    string
 }
 
 func Load() *Config {
@@ -119,6 +130,15 @@ func Load() *Config {
 		PolarOrganizationID: getEnv("POLAR_ORGANIZATION_ID", ""),
 		PolarServerURL:      getEnv("POLAR_SERVER_URL", "https://api.polar.sh"),
 		PolarWebhookSecret:  getEnv("POLAR_WEBHOOK_SECRET", ""),
+
+		TelegramBotToken:   getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramWebhookURL: getEnv("TELEGRAM_WEBHOOK_URL", ""),
+
+		MetaAccessToken:    getEnv("META_ACCESS_TOKEN", ""),
+		MetaPhoneNumberID:  getEnv("META_PHONE_NUMBER_ID", ""),
+		MetaPageID:         getEnv("META_PAGE_ID", ""),
+		InstagramAccountID: getEnv("INSTAGRAM_ACCOUNT_ID", ""),
+		MetaVerifyToken:    getEnv("META_VERIFY_TOKEN", ""),
 	}
 
 	// Parse CORS origins

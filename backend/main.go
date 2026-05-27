@@ -302,7 +302,8 @@ func startHealthChecks(integrationSvc *service.IntegrationService, logger *infra
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			logger.Info("Running periodic channel health checks")
 			for _, ch := range channels {
-				ok, msg := integrationSvc.Test(ctx, ch)
+				// Pass nil config — health checks use env-configured credentials
+				ok, msg := integrationSvc.Test(ctx, ch, nil)
 				if !ok {
 					logger.Warn("Channel health check failed", "channel", ch, "details", msg)
 				} else {
