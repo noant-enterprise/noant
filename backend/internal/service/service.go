@@ -37,7 +37,7 @@ type Services struct {
 	Widget       *WidgetService
 }
 
-func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *ResendService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
+func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *ResendService, polarSvc *PolarService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
 	aiBrain := NewAIBrain(cfg, repos, redis, logger, broadcastFn)
 	return &Services{
 		Auth:        NewAuthService(cfg, repos.User, redis, logger, email),
@@ -47,7 +47,7 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 		Integration: NewIntegrationService(cfg, repos, redis, logger, broadcastFn),
 		Settings:    NewSettingsService(cfg, repos, redis, logger),
 		Archive:     NewArchiveService(cfg, repos, redis, logger),
-		Payment:     NewPaymentService(cfg, repos, redis, logger),
+		Payment:     NewPaymentService(cfg, repos, redis, logger, polarSvc),
 		Audit:       NewAuditService(repos, logger),
 		Notification: NewNotificationService(cfg, repos, redis, logger, email),
 		Widget:       NewWidgetService(cfg, repos, redis, aiBrain, logger, email),
@@ -1501,14 +1501,15 @@ func (s *ArchiveService) GetStatus(ctx context.Context, userID string) (map[stri
 // ========== PAYMENT SERVICE ==========
 
 type PaymentService struct {
-	cfg    *config.Config
-	repos  *repository.Repositories
-	redis  *infrastructure.RedisClient
-	logger *infrastructure.Logger
+	cfg       *config.Config
+	repos     *repository.Repositories
+	redis     *infrastructure.RedisClient
+	logger    *infrastructure.Logger
+	polarSvc  *PolarService
 }
 
-func NewPaymentService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger) *PaymentService {
-	return &PaymentService{cfg: cfg, repos: repos, redis: redis, logger: logger}
+func NewPaymentService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, polarSvc *PolarService) *PaymentService {
+	return &PaymentService{cfg: cfg, repos: repos, redis: redis, logger: logger, polarSvc: polarSvc}
 }
 
 func (s *PaymentService) ListPlans(ctx context.Context) ([]domain.PaymentPlan, error) {
@@ -1559,8 +1560,19 @@ func (s *PaymentService) Subscribe(ctx context.Context, userID, planID string) (
 		return "", fmt.Errorf("invalid plan ID: %s", planID)
 	}
 
+	// Attempt Polar checkout first if available
+	if s.polarSvc != nil && s.cfg.PolarAccessToken != "" {
+		checkoutURL, err := s.polarSvc.CreateCheckout(ctx, userID, planName)
+		if err == nil && checkoutURL != "" {
+			s.logger.Info("Polar checkout created", "user", userID, "plan", planName, "url", checkoutURL)
+			return checkoutURL, nil
+		}
+		s.logger.Warn("Polar checkout failed, falling back to local sub", "user", userID, "plan", planName, "error", err)
+	}
+
+	// Local database fallback
 	now := time.Now()
-	periodEnd := now.AddDate(0, 1, 0) // 1 month
+	periodEnd := now.AddDate(0, 1, 0)
 
 	sub := &domain.Subscription{
 		UserID:             userID,

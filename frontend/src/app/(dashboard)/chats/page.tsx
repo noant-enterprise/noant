@@ -45,6 +45,7 @@ export default function ChatsPage() {
   const [msgPage, setMsgPage] = useState(1)
   const [msgHasMore, setMsgHasMore] = useState(false)
   const [msgLoadingMore, setMsgLoadingMore] = useState(false)
+  const [messagesLoading, setMessagesLoading] = useState(false)
 
   // Safe data extraction
   const conversations = convData?.conversations || []
@@ -138,6 +139,7 @@ export default function ChatsPage() {
       setOptimisticMessages([])
       setMsgPage(1)
       setMsgHasMore(false)
+      setMessagesLoading(true)
 
       const loadInitialMessages = async () => {
         try {
@@ -146,6 +148,8 @@ export default function ChatsPage() {
           setMsgHasMore(res.has_more || false)
         } catch (err) {
           console.error('Failed to load initial messages:', err)
+        } finally {
+          setMessagesLoading(false)
         }
       }
       loadInitialMessages()
@@ -481,6 +485,7 @@ export default function ChatsPage() {
               messages={allMessages}
               hasMore={msgHasMore}
               loadingMore={msgLoadingMore}
+              isLoading={messagesLoading}
               onLoadMore={handleLoadMoreMessages}
             />
             <ChatInput

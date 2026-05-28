@@ -91,17 +91,32 @@ func main() {
 
 	polarSvc := service.NewPolarService(cfg)
 	emailSvc := service.NewResendService(cfg.ResendAPIKey)
-	_ = polarSvc
 
-	// Wire email service and broadcaster into the service layer
-	services := service.NewServices(cfg, repos, redisClient, logger, emailSvc, broadcastFn)
+	// Wire Polar payment service, email service, and broadcaster into the service layer
+	services := service.NewServices(cfg, repos, redisClient, logger, emailSvc, polarSvc, broadcastFn)
+
+	// Initialize layers: Cache, Bottleneck, JobQueue
+	cacheStore := infrastructure.NewCache(cfg, redisClient)
+	bottleneck := infrastructure.NewBottleneck(
+		infrastructure.WithMaxConcurrent(200),
+		infrastructure.WithMaxQueue(1000),
+	)
+	jobQueue := infrastructure.NewJobQueue(logger, redisClient, 10)
+
+	// Register background job handlers
+	jobQueue.RegisterHandler("health_check", infrastructure.HealthCheckHandler(services.Integration))
+	jobQueue.RegisterHandler("cache_cleanup", infrastructure.CacheCleanupHandler(cacheStore))
+
+	// Start recurring background jobs
+	jobQueue.ScheduleRecurring("health_check", map[string]interface{}{}, 5*time.Minute)
+	jobQueue.ScheduleRecurring("cache_cleanup", map[string]interface{}{}, 15*time.Minute)
 
 	// Pass wsHub to handlers
 	handlers := handler.NewHandlers(services, logger, wsHub)
 	healthHandler := handler.NewHealthHandler(db, redisClient, cfg.GroqAPIKeys, logger)
-
-	// Start background health checks
-	startHealthChecks(services.Integration, logger)
+	_ = cacheStore
+	_ = bottleneck
+	_ = jobQueue
 
 	if cfg.NodeEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
