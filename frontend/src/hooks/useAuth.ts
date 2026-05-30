@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getCurrentUser, logout } from '@/lib/auth'
+import { clearAuth, getCurrentUser, logout } from '@/lib/auth'
 import type { User } from '@/types'
 
 export function useAuth() {
@@ -15,7 +15,7 @@ export function useAuth() {
       .then(setUser)
       .catch(() => {
         setUser(null)
-        logout()
+        clearAuth()
       })
       .finally(() => setLoading(false))
   }, [])

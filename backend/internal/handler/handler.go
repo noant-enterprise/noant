@@ -2,13 +2,14 @@ package handler
 
 import (
 	"context"
-	"strconv"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"noant/internal/domain"
 	"noant/internal/infrastructure"
+	"noant/internal/middleware"
 	"noant/internal/service"
 	"noant/internal/utils"
 
@@ -16,30 +17,30 @@ import (
 )
 
 type Handlers struct {
-	Auth        *AuthHandler
-	Chat        *ChatHandler
-	Training    *TrainingHandler
-	Analytics   *AnalyticsHandler
-	Integration *IntegrationHandler
-	Settings    *SettingsHandler
-	Archive     *ArchiveHandler
-	Payment     *PaymentHandler
-	Audit       *AuditHandler
+	Auth         *AuthHandler
+	Chat         *ChatHandler
+	Training     *TrainingHandler
+	Analytics    *AnalyticsHandler
+	Integration  *IntegrationHandler
+	Settings     *SettingsHandler
+	Archive      *ArchiveHandler
+	Payment      *PaymentHandler
+	Audit        *AuditHandler
 	Notification *NotificationHandler
 	Widget       *WidgetHandler
 }
 
 func NewHandlers(services *service.Services, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
 	return &Handlers{
-		Auth:        NewAuthHandler(services.Auth, logger),
-		Chat:        NewChatHandler(services.Chat, logger, wsHub),
-		Training:    NewTrainingHandler(services.Training, logger),
-		Analytics:   NewAnalyticsHandler(services.Analytics, logger),
-		Integration: NewIntegrationHandler(services.Integration, logger),
-		Settings:    NewSettingsHandler(services.Settings, logger),
-		Archive:     NewArchiveHandler(services.Archive, logger),
-		Payment:     NewPaymentHandler(services.Payment, logger),
-		Audit:       NewAuditHandler(services.Audit, logger),
+		Auth:         NewAuthHandler(services.Auth, logger),
+		Chat:         NewChatHandler(services.Chat, logger, wsHub),
+		Training:     NewTrainingHandler(services.Training, logger),
+		Analytics:    NewAnalyticsHandler(services.Analytics, logger),
+		Integration:  NewIntegrationHandler(services.Integration, logger),
+		Settings:     NewSettingsHandler(services.Settings, logger),
+		Archive:      NewArchiveHandler(services.Archive, logger),
+		Payment:      NewPaymentHandler(services.Payment, logger),
+		Audit:        NewAuditHandler(services.Audit, logger),
 		Notification: NewNotificationHandler(services.Notification, logger),
 		Widget:       NewWidgetHandler(services.Widget, logger),
 	}
@@ -109,6 +110,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	middleware.SetAuthCookies(c, token, refreshToken, 24*time.Hour, 7*24*time.Hour)
+	c.Header("Cache-Control", "no-store")
+
 	// Compute trial info for response
 	var trialInfo map[string]interface{}
 	if user.TrialExpiresAt != nil {
@@ -127,42 +131,37 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"token":         token,
-		"refresh_token": refreshToken,
-		"user":          user,
-		"trial_info":    trialInfo,
+		"user":       user,
+		"trial_info": trialInfo,
 	})
 }
 
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
-	var req struct {
-		RefreshToken string `json:"refresh_token"`
-	}
-
-	_ = c.ShouldBindJSON(&req)
-
-	if req.RefreshToken == "" {
-		authHeader := c.GetHeader("Authorization")
-		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-			req.RefreshToken = authHeader[7:]
-		}
-	}
-
-	if req.RefreshToken == "" {
+	refreshToken := middleware.GetRefreshTokenFromRequest(c)
+	if refreshToken == "" {
 		utils.RespondUnauthorized(c, "refresh token required")
 		return
 	}
 
-	token, err := h.service.RefreshToken(req.RefreshToken)
+	token, newRefreshToken, err := h.service.RefreshToken(c.Request.Context(), refreshToken)
 	if err != nil {
 		utils.RespondUnauthorized(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"token": token})
+	middleware.SetAuthCookies(c, token, newRefreshToken, 24*time.Hour, 7*24*time.Hour)
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{"message": "Session refreshed"})
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
+	token := middleware.GetAccessTokenFromRequest(c)
+	refreshToken := middleware.GetRefreshTokenFromRequest(c)
+	if err := h.service.Logout(c.Request.Context(), token, refreshToken); err != nil {
+		utils.RespondInternalError(c, "Failed to log out")
+		return
+	}
+	middleware.ClearAuthCookies(c)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
 
@@ -224,38 +223,41 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 }
 
 func (h *AuthHandler) Me(c *gin.Context) {
-    userID, _ := c.Get("userID")
-    user, err := h.service.GetUser(c.Request.Context(), userID.(string))
-    if err != nil {
-        utils.RespondInternalError(c, "Failed to retrieve user")
-        return
-    }
-    if user == nil {
-        utils.RespondUnauthorized(c, "User not found")
-        return
-    }
+	userID, _ := c.Get("userID")
+	id, _ := userID.(string)
+	user, err := h.service.GetUser(c.Request.Context(), id)
+	if err != nil {
+		utils.RespondInternalError(c, "Failed to retrieve user")
+		return
+	}
+	if user == nil {
+		utils.RespondUnauthorized(c, "User not found")
+		return
+	}
 
-    // Compute trial info for response
-    var trialInfo map[string]interface{}
-    if user.TrialExpiresAt != nil {
-        trialInfo = map[string]interface{}{
-            "trial_expires_at": user.TrialExpiresAt.Format(time.RFC3339),
-            "trial_ended":      time.Now().After(*user.TrialExpiresAt),
-            "trial_days_left":  int(time.Until(*user.TrialExpiresAt).Hours() / 24),
-        }
-        if trialInfo["trial_days_left"].(int) < 0 {
-            trialInfo["trial_days_left"] = 0
-        }
-    } else {
-        trialInfo = map[string]interface{}{
-            "trial_ended": false,
-        }
-    }
+	c.Header("Cache-Control", "no-store")
 
-    c.JSON(http.StatusOK, gin.H{
-        "user":       user,
-        "trial_info": trialInfo,
-    })
+	// Compute trial info for response
+	var trialInfo map[string]interface{}
+	if user.TrialExpiresAt != nil {
+		trialInfo = map[string]interface{}{
+			"trial_expires_at": user.TrialExpiresAt.Format(time.RFC3339),
+			"trial_ended":      time.Now().After(*user.TrialExpiresAt),
+			"trial_days_left":  int(time.Until(*user.TrialExpiresAt).Hours() / 24),
+		}
+		if trialInfo["trial_days_left"].(int) < 0 {
+			trialInfo["trial_days_left"] = 0
+		}
+	} else {
+		trialInfo = map[string]interface{}{
+			"trial_ended": false,
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user":       user,
+		"trial_info": trialInfo,
+	})
 }
 
 // ========== CHAT HANDLER ==========
@@ -299,12 +301,12 @@ func (h *ChatHandler) DirectChat(c *gin.Context) {
 func (h *ChatHandler) ListConversations(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	status := c.Query("status")
-	
+
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
 		page = 1
 	}
-	
+
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	if limit < 1 || limit > 100 {
 		limit = 20
@@ -394,55 +396,55 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 			Type:           "typing_indicator",
 			Data: map[string]interface{}{
 				"conversation_id": id,
-				"is_typing":      true,
+				"is_typing":       true,
 			},
 		})
 	}
 
 	// Generate AI response asynchronously
 	go func() {
-	aiMsg, err := h.service.GenerateAIResponse(context.Background(), id, req.Content)
-	if err != nil {
-		h.logger.Error("AI generation failed in goroutine", "error", err)
-		// Remove typing indicator on error
+		aiMsg, err := h.service.GenerateAIResponse(context.Background(), id, req.Content)
+		if err != nil {
+			h.logger.Error("AI generation failed in goroutine", "error", err)
+			// Remove typing indicator on error
+			if h.wsHub != nil {
+				h.wsHub.BroadcastMessage(WebSocketMessage{
+					ConversationID: id,
+					Type:           "typing_indicator",
+					Data: map[string]interface{}{
+						"conversation_id": id,
+						"is_typing":       false,
+					},
+				})
+			}
+			return
+		}
 		if h.wsHub != nil {
+			h.wsHub.BroadcastMessage(WebSocketMessage{
+				ConversationID: id,
+				Type:           "new_message",
+				Data: map[string]interface{}{
+					"id":              aiMsg.ID,
+					"conversation_id": aiMsg.ConversationID,
+					"content":         aiMsg.Content,
+					"role":            aiMsg.Role,
+					"created_at":      aiMsg.CreatedAt,
+					"metadata":        aiMsg.Metadata,
+					"confidence":      aiMsg.Confidence,
+					"source":          aiMsg.Source,
+				},
+			})
+			// Stop typing indicator when response arrives
 			h.wsHub.BroadcastMessage(WebSocketMessage{
 				ConversationID: id,
 				Type:           "typing_indicator",
 				Data: map[string]interface{}{
 					"conversation_id": id,
-					"is_typing":      false,
+					"is_typing":       false,
 				},
 			})
 		}
-		return
-	}
-	if h.wsHub != nil {
-		h.wsHub.BroadcastMessage(WebSocketMessage{
-			ConversationID: id,
-			Type:           "new_message",
-			Data: map[string]interface{}{
-				"id":              aiMsg.ID,
-				"conversation_id": aiMsg.ConversationID,
-				"content":         aiMsg.Content,
-				"role":            aiMsg.Role,
-				"created_at":      aiMsg.CreatedAt,
-				"metadata":        aiMsg.Metadata,
-				"confidence":      aiMsg.Confidence,
-				"source":          aiMsg.Source,
-			},
-		})
-		// Stop typing indicator when response arrives
-		h.wsHub.BroadcastMessage(WebSocketMessage{
-			ConversationID: id,
-			Type:           "typing_indicator",
-			Data: map[string]interface{}{
-				"conversation_id": id,
-				"is_typing":      false,
-			},
-		})
-	}
-}()
+	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Message sent"})
 }
@@ -636,7 +638,7 @@ func (h *TrainingHandler) TrainUnknown(c *gin.Context) {
 func (h *TrainingHandler) IgnoreUnknown(c *gin.Context) {
 	id := c.Param("id")
 	userID, _ := c.Get("userID")
-	
+
 	if err := h.service.IgnoreUnknown(c.Request.Context(), userID.(string), id); err != nil {
 		if err.Error() == "unknown question not found" || err.Error() == "not found" {
 			utils.RespondNotFound(c, err.Error())

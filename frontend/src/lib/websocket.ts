@@ -2,54 +2,49 @@ import type { WSMessage } from '@/types'
 
 type MessageHandler = (msg: WSMessage) => void
 
-// Match backend port - adjust if your backend runs on a different port
-const BACKEND_PORT = 8080
-
 class WebSocketManager {
   private ws: WebSocket | null = null
   private handlers: Set<MessageHandler> = new Set()
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  private url: string = ''
-  private currentToken: string = ''
+  private url = ''
+  private shouldReconnect = false
 
-  connect(token: string): void {
-    // Don't reconnect if already connected with same token
-    if (this.ws?.readyState === WebSocket.OPEN && this.currentToken === token) {
+  connect(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
       return
     }
-    
-    // Close existing before opening new
+
     if (this.ws) {
-      this.ws.onclose = null // Prevent auto-reconnect on intentional close
+      this.ws.onclose = null
       this.ws.close()
       this.ws = null
     }
-    
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
 
-    this.currentToken = token
-    
-    // Use same hostname but backend port for WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = window.location.hostname
-    const port = host === 'localhost' ? BACKEND_PORT : window.location.port
-    const portStr = port ? `:${port}` : ''
-    this.url = `${protocol}//${host}${portStr}/ws?token=${token}`
-    
+    this.shouldReconnect = true
+
+    const configuredUrl = import.meta.env.VITE_WS_URL as string | undefined
+    if (configuredUrl) {
+      this.url = configuredUrl
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      this.url = `${protocol}//${window.location.host}/ws`
+    }
+
     try {
       this.ws = new WebSocket(this.url)
-      
+
       this.ws.onopen = () => {
         console.log('WebSocket connected to', this.url)
       }
-      
+
       this.ws.onmessage = (event) => {
         try {
           const raw = JSON.parse(event.data)
-          // Normalize backend shape: { conversation_id, type, data } -> WSMessage
           const msg: WSMessage = {
             type: raw.type || 'new_message',
             conversation_id: raw.conversation_id || raw.ConversationID,
@@ -58,30 +53,29 @@ class WebSocketManager {
             timestamp: raw.timestamp || raw.created_at || new Date().toISOString(),
             data: raw.data || raw.Data,
           }
-          this.handlers.forEach(h => h(msg))
+          this.handlers.forEach((handler) => handler(msg))
         } catch (err) {
           console.error('WebSocket message parse error:', err)
         }
       }
-      
+
       this.ws.onclose = () => {
         this.ws = null
-        // Only auto-reconnect if we haven't explicitly disconnected
-        if (this.currentToken) {
-          // Use latest token from storage in case it was refreshed by api.ts
-          const latestToken = localStorage.getItem('noant_token') || this.currentToken
+        if (this.shouldReconnect) {
           this.reconnectTimer = setTimeout(() => {
-            this.connect(latestToken)
+            this.connect()
           }, 3000)
         }
       }
-      
+
       this.ws.onerror = (err) => {
         console.error('WebSocket error:', err)
         this.ws?.close()
       }
     } catch (err) {
-      this.reconnectTimer = setTimeout(() => this.connect(token), 5000)
+      if (this.shouldReconnect) {
+        this.reconnectTimer = setTimeout(() => this.connect(), 5000)
+      }
     }
   }
 
@@ -91,17 +85,16 @@ class WebSocketManager {
   }
 
   disconnect(): void {
-    this.currentToken = '' // Stop auto-reconnect
+    this.shouldReconnect = false
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
     if (this.ws) {
-      this.ws.onclose = null // Prevent reconnect loop
+      this.ws.onclose = null
       this.ws.close()
       this.ws = null
     }
-    // DON'T clear handlers � they belong to components that may persist across route changes
   }
 }
 

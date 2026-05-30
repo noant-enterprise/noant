@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
@@ -22,54 +22,30 @@ import WidgetPage from '@/app/(dashboard)/widget/page'
 import { useEffect } from 'react'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import { NetworkProvider } from '@/contexts/NetworkContext'
-
-function parseJwt(token: string) {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      window.atob(base64)
-        .split('')
-        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    return null;
-  }
-}
+import { refreshToken } from '@/lib/auth'
 
 function AppShell() {
+  const location = useLocation()
+
   useEffect(() => {
-    const checkAndRefreshToken = async () => {
-      const token = localStorage.getItem('noant_token');
-      if (!token) return;
+    const authPaths = ['/login', '/signup', '/forgot-password', '/reset-password']
+    if (authPaths.some((path) => location.pathname.startsWith(path))) {
+      return
+    }
 
-      const claims = parseJwt(token);
-      if (!claims || !claims.exp) return;
-
-      const expiryTime = claims.exp * 1000;
-      const now = Date.now();
-      const timeLeft = expiryTime - now;
-
-      // If token expires in less than 5 minutes, trigger a refresh
-      if (timeLeft > 0 && timeLeft < 5 * 60 * 1000) {
-        try {
-          const { refreshToken } = await import('@/lib/auth');
-          await refreshToken();
-        } catch (err) {
-          console.error('Failed to refresh token in background:', err);
-        }
+    const refreshSession = async () => {
+      try {
+        await refreshToken()
+      } catch (err) {
+        console.error('Failed to refresh session in background:', err)
       }
-    };
+    }
 
-    // Run check on mount
-    checkAndRefreshToken();
+    refreshSession()
 
-    // Check every minute
-    const interval = setInterval(checkAndRefreshToken, 60 * 1000);
+    const interval = setInterval(refreshSession, 20 * 60 * 1000)
     return () => clearInterval(interval);
-  }, []);
+  }, [location.pathname]);
 
   return (
     <>
@@ -146,4 +122,3 @@ export default function App() {
     </NetworkProvider>
   );
 }
-

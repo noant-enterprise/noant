@@ -15,8 +15,8 @@ import (
 	"noant/internal/repository"
 	"noant/internal/service"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -72,8 +72,13 @@ func main() {
 
 	auditRepo := repository.NewAuditRepository(db, redisClient)
 
-	// CORS: allow Vite dev server + any configured origins
-	corsOrigins := append(cfg.CORSOrigins, "http://localhost:3000", "http://127.0.0.1:3000")
+	// CORS: allow common local dev origins + any configured origins
+	corsOrigins := append(cfg.CORSOrigins,
+		"http://localhost:3000",
+		"http://127.0.0.1:3000",
+		"http://localhost:5173",
+		"http://127.0.0.1:5173",
+	)
 
 	// Create WebSocket hub with origin enforcement
 	wsHub := handler.NewWebSocketHub(logger, corsOrigins)
@@ -142,7 +147,7 @@ func main() {
 	router.GET("/health", healthHandler.Check)
 
 	// WebSocket endpoint — secured with JWT auth and origin validation
-	router.GET("/ws", middleware.WebSocketAuth(cfg.JWTSecret), wsHub.HandleWebSocket)
+	router.GET("/ws", middleware.WebSocketAuth(cfg.JWTSecret, redisClient), wsHub.HandleWebSocket)
 
 	api := router.Group("/api/v1")
 	{
@@ -153,15 +158,15 @@ func main() {
 			auth.POST("/register", handlers.Auth.Register)
 			auth.POST("/login", handlers.Auth.Login)
 			auth.POST("/refresh", handlers.Auth.RefreshToken)
-			auth.POST("/logout", middleware.AuthMiddleware(cfg.JWTSecret), handlers.Auth.Logout)
-			auth.POST("/change-password", middleware.AuthMiddleware(cfg.JWTSecret), handlers.Auth.ChangePassword)
+			auth.POST("/logout", handlers.Auth.Logout)
+			auth.POST("/change-password", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.ChangePassword)
 			auth.POST("/forgot-password", handlers.Auth.ForgotPassword)
 			auth.POST("/reset-password", handlers.Auth.ResetPassword)
-			auth.GET("/me", middleware.AuthMiddleware(cfg.JWTSecret), handlers.Auth.Me)
+			auth.GET("/me", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.Me)
 		}
 
 		chats := api.Group("/chats")
-		chats.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+		chats.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		chats.Use(middleware.RateLimitByUserMiddleware(redisClient, 500, time.Minute))
 		chats.Use(middleware.AuditMiddleware(auditRepo, logger))
 		{
@@ -174,7 +179,7 @@ func main() {
 		}
 
 		training := api.Group("/training")
-		training.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+		training.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		training.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
 		training.Use(middleware.AuditMiddleware(auditRepo, logger))
 		{
@@ -194,7 +199,7 @@ func main() {
 		}
 
 		analytics := api.Group("/analytics")
-		analytics.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+		analytics.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		analytics.Use(middleware.RateLimitByUserMiddleware(redisClient, 60, time.Minute))
 		analytics.Use(middleware.AuditMiddleware(auditRepo, logger))
 		{
@@ -205,7 +210,7 @@ func main() {
 		}
 
 		integrations := api.Group("/integrations")
-		integrations.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+		integrations.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		integrations.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
 		integrations.Use(middleware.AuditMiddleware(auditRepo, logger))
 		{
@@ -216,7 +221,7 @@ func main() {
 		}
 
 		settings := api.Group("/settings")
-		settings.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+		settings.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		settings.Use(middleware.RateLimitByUserMiddleware(redisClient, 60, time.Minute))
 		settings.Use(middleware.AuditMiddleware(auditRepo, logger))
 		{
@@ -236,7 +241,7 @@ func main() {
 		}
 
 		notifications := api.Group("/notifications")
-		notifications.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+		notifications.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		{
 			notifications.GET("", handlers.Notification.List)
 			notifications.GET("/unread-count", handlers.Notification.UnreadCount)
@@ -247,7 +252,7 @@ func main() {
 		widget := api.Group("/widget")
 		{
 			configGroup := widget.Group("/config")
-			configGroup.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+			configGroup.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 			{
 				configGroup.GET("", handlers.Widget.Get)
 				configGroup.POST("", handlers.Widget.Upsert)
@@ -257,7 +262,7 @@ func main() {
 		}
 
 		archive := api.Group("/archive")
-		archive.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+		archive.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		archive.Use(middleware.AuditMiddleware(auditRepo, logger))
 		{
 			archive.GET("/folders", handlers.Archive.ListFolders)
@@ -271,9 +276,9 @@ func main() {
 		payments := api.Group("/payments")
 		{
 			payments.GET("/plans", handlers.Payment.ListPlans)
-			payments.POST("/subscribe", middleware.AuthMiddleware(cfg.JWTSecret), middleware.AuditMiddleware(auditRepo, logger), handlers.Payment.Subscribe)
+			payments.POST("/subscribe", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), middleware.AuditMiddleware(auditRepo, logger), handlers.Payment.Subscribe)
 			payments.POST("/webhook", handlers.Payment.Webhook)
-			payments.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret), handlers.Payment.Status)
+			payments.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Payment.Status)
 		}
 	}
 
@@ -311,7 +316,7 @@ func main() {
 func startHealthChecks(integrationSvc *service.IntegrationService, logger *infrastructure.Logger) {
 	ticker := time.NewTicker(5 * time.Minute)
 	channels := []string{"telegram", "whatsapp", "facebook", "instagram"}
-	
+
 	go func() {
 		for range ticker.C {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

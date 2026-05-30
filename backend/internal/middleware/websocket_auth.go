@@ -2,58 +2,65 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 	"time"
+
+	"noant/internal/infrastructure"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func WebSocketAuth(jwtSecret string) gin.HandlerFunc {
+func WebSocketAuth(jwtSecret string, redis *infrastructure.RedisClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tokenString := c.Query("token")
+		tokenString := GetAccessTokenFromRequest(c)
 		if tokenString == "" {
-			authHeader := c.GetHeader("Authorization")
-			if len(authHeader) > 7 && strings.ToLower(authHeader[:7]) == "bearer " {
-				tokenString = authHeader[7:]
-			}
-		}
-
-		if tokenString == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "WebSocket token required"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "websocket token required"})
 			c.Abort()
 			return
 		}
 
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return []byte(jwtSecret), nil
-		})
-
-		if err != nil || !token.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid WebSocket token"})
-			c.Abort()
-			return
-		}
-
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
-			c.Abort()
-			return
-		}
-
-		if exp, ok := claims["exp"].(float64); ok {
-			if time.Now().Unix() > int64(exp) {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Token expired"})
+		if redis != nil {
+			if blacklisted, err := redis.Exists(c.Request.Context(), "blacklist:"+tokenString); err == nil && blacklisted {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "token revoked"})
 				c.Abort()
 				return
 			}
 		}
 
-		c.Set("userID", claims["user_id"])
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return []byte(jwtSecret), nil
+		})
+		if err != nil || token == nil || !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid websocket token"})
+			c.Abort()
+			return
+		}
+
+		if tokenType, _ := claims["type"].(string); tokenType != "access" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token type"})
+			c.Abort()
+			return
+		}
+
+		exp, err := claims.GetExpirationTime()
+		if err != nil || exp == nil || time.Now().After(exp.Time) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "token expired"})
+			c.Abort()
+			return
+		}
+
+		userID, _ := claims["user_id"].(string)
+		if userID == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token claims"})
+			c.Abort()
+			return
+		}
+
+		c.Set("userID", userID)
 		c.Next()
 	}
 }

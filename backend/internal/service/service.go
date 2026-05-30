@@ -24,15 +24,15 @@ import (
 )
 
 type Services struct {
-	Auth        *AuthService
-	Chat        *ChatService
-	Training    *TrainingService
-	Analytics   *AnalyticsService
-	Integration *IntegrationService
-	Settings    *SettingsService
-	Archive     *ArchiveService
-	Payment     *PaymentService
-	Audit       *AuditService
+	Auth         *AuthService
+	Chat         *ChatService
+	Training     *TrainingService
+	Analytics    *AnalyticsService
+	Integration  *IntegrationService
+	Settings     *SettingsService
+	Archive      *ArchiveService
+	Payment      *PaymentService
+	Audit        *AuditService
 	Notification *NotificationService
 	Widget       *WidgetService
 }
@@ -40,15 +40,15 @@ type Services struct {
 func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *ResendService, polarSvc *PolarService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
 	aiBrain := NewAIBrain(cfg, repos, redis, logger, broadcastFn)
 	return &Services{
-		Auth:        NewAuthService(cfg, repos.User, redis, logger, email),
-		Chat:        NewChatService(cfg, repos, redis, aiBrain, logger),
-		Training:    NewTrainingService(cfg, repos, redis, logger),
-		Analytics:   NewAnalyticsService(cfg, repos, redis, logger),
-		Integration: NewIntegrationService(cfg, repos, redis, logger, broadcastFn),
-		Settings:    NewSettingsService(cfg, repos, redis, logger),
-		Archive:     NewArchiveService(cfg, repos, redis, logger),
-		Payment:     NewPaymentService(cfg, repos, redis, logger, polarSvc),
-		Audit:       NewAuditService(repos, logger),
+		Auth:         NewAuthService(cfg, repos.User, redis, logger, email),
+		Chat:         NewChatService(cfg, repos, redis, aiBrain, logger),
+		Training:     NewTrainingService(cfg, repos, redis, logger),
+		Analytics:    NewAnalyticsService(cfg, repos, redis, logger),
+		Integration:  NewIntegrationService(cfg, repos, redis, logger, broadcastFn),
+		Settings:     NewSettingsService(cfg, repos, redis, logger),
+		Archive:      NewArchiveService(cfg, repos, redis, logger),
+		Payment:      NewPaymentService(cfg, repos, redis, logger, polarSvc),
+		Audit:        NewAuditService(repos, logger),
 		Notification: NewNotificationService(cfg, repos, redis, logger, email),
 		Widget:       NewWidgetService(cfg, repos, redis, aiBrain, logger, email),
 	}
@@ -227,7 +227,7 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		if err := b.repos.Notification.Create(ctx, notif); err != nil {
 			b.logger.Error("Failed to create notification", "error", err)
 		}
-		
+
 		if b.broadcastFn != nil {
 			b.broadcastFn(conversationID, "unknown_question", map[string]interface{}{
 				"question":        userQuery,
@@ -236,7 +236,7 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 				"created_at":      time.Now(),
 			})
 		}
-		
+
 		return aiResp, nil
 	}
 
@@ -312,7 +312,7 @@ func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTu
 	}
 	var result struct {
 		Choices []struct {
-			Message      struct {
+			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
@@ -406,11 +406,11 @@ func (s *AuthService) Register(ctx context.Context, email, password, firstName, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
-	
+
 	// Set 14-day trial period
 	now := time.Now()
 	trialExpires := now.AddDate(0, 0, 14)
-	
+
 	user := &domain.User{
 		Email:              email,
 		Password:           string(hashedPassword),
@@ -473,29 +473,35 @@ func (s *AuthService) generateToken(user *domain.User) (string, error) {
 	return token.SignedString([]byte(s.cfg.JWTSecret))
 }
 
-func (s *AuthService) RefreshToken(refreshToken string) (string, error) {
+func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (string, string, error) {
 	if refreshToken == "" {
-		return "", fmt.Errorf("refresh token required")
+		return "", "", fmt.Errorf("refresh token required")
 	}
-	var userID string
-	if s.redis != nil {
-		uid, err := s.redis.Get(context.Background(), "refresh:"+refreshToken)
-		if err != nil || uid == "" {
-			return "", fmt.Errorf("invalid or expired refresh token")
-		}
-		userID = uid
-	} else {
-		return "", fmt.Errorf("token store unavailable")
+	if s.redis == nil {
+		return "", "", fmt.Errorf("token store unavailable")
 	}
-	user, err := s.userRepo.GetByID(context.Background(), userID)
+
+	userID, err := s.redis.Get(ctx, "refresh:"+refreshToken)
+	if err != nil || userID == "" {
+		return "", "", fmt.Errorf("invalid or expired refresh token")
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil || user == nil {
-		return "", fmt.Errorf("user not found")
+		return "", "", fmt.Errorf("user not found")
 	}
+
 	accessToken, err := s.generateToken(user)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return accessToken, nil
+
+	newRefreshToken := s.generateRefreshToken()
+	_ = s.redis.Delete(ctx, "refresh:"+refreshToken)
+	if err := s.redis.Set(ctx, "refresh:"+newRefreshToken, user.ID, 7*24*time.Hour); err != nil {
+		return "", "", err
+	}
+	return accessToken, newRefreshToken, nil
 }
 
 func (s *AuthService) GetUser(ctx context.Context, userID string) (*domain.User, error) {
@@ -562,11 +568,17 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 	return nil
 }
 
-
-
-func (s *AuthService) Logout(ctx context.Context, token string) error {
-	if s.redis != nil {
-		return s.redis.Set(ctx, "blacklist:"+token, "true", 24*time.Hour)
+func (s *AuthService) Logout(ctx context.Context, token string, refreshToken string) error {
+	if s.redis == nil {
+		return nil
+	}
+	if token != "" {
+		if err := s.redis.Set(ctx, "blacklist:"+token, "true", 24*time.Hour); err != nil {
+			return err
+		}
+	}
+	if refreshToken != "" {
+		_ = s.redis.Delete(ctx, "refresh:"+refreshToken)
 	}
 	return nil
 }
@@ -710,7 +722,7 @@ func (s *ChatService) GetConversation(ctx context.Context, userID, conversationI
 	if conv == nil {
 		return nil, nil, fmt.Errorf("conversation not found")
 	}
-	
+
 	// Mark messages as read
 	_ = s.repos.Message.MarkRead(ctx, conversationID)
 
@@ -729,7 +741,7 @@ func (s *ChatService) GetConversationPaginated(ctx context.Context, userID, conv
 	if conv == nil {
 		return nil, nil, 0, fmt.Errorf("conversation not found")
 	}
-	
+
 	// Mark messages as read
 	_ = s.repos.Message.MarkRead(ctx, conversationID)
 
@@ -1056,9 +1068,9 @@ func (s *AnalyticsService) Overview(ctx context.Context, userID string) (*domain
 		s.logger.Warn("Failed to get analytics overview", "error", err)
 		return nil, fmt.Errorf("failed to load analytics: %w", err)
 	}
-	
+
 	total := getInt(data, "total_conversations")
-	
+
 	// Dynamically compute organic response time and satisfaction rate based on the real db conversation count
 	avgResponse := 14.2
 	satisfaction := 96.0
@@ -1066,7 +1078,7 @@ func (s *AnalyticsService) Overview(ctx context.Context, userID string) (*domain
 		avgResponse = 12.5 + float64(total%4)*0.8
 		satisfaction = 94.0 + float64(total%5)*1.0
 	}
-	
+
 	return &domain.AnalyticsOverview{
 		TotalConversations:   total,
 		ConversationsToday:   getInt(data, "conversations_today"),
@@ -1219,7 +1231,7 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 		var result struct {
 			OK     bool `json:"ok"`
 			Result struct {
-				Username string `json:"username"`
+				Username  string `json:"username"`
 				FirstName string `json:"first_name"`
 			} `json:"result"`
 			Description string `json:"description"`
@@ -1501,11 +1513,11 @@ func (s *ArchiveService) GetStatus(ctx context.Context, userID string) (map[stri
 // ========== PAYMENT SERVICE ==========
 
 type PaymentService struct {
-	cfg       *config.Config
-	repos     *repository.Repositories
-	redis     *infrastructure.RedisClient
-	logger    *infrastructure.Logger
-	polarSvc  *PolarService
+	cfg      *config.Config
+	repos    *repository.Repositories
+	redis    *infrastructure.RedisClient
+	logger   *infrastructure.Logger
+	polarSvc *PolarService
 }
 
 func NewPaymentService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, polarSvc *PolarService) *PaymentService {
@@ -1612,12 +1624,12 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte) error {
 	switch event.Type {
 	case "checkout.success", "subscription.active", "subscription.created":
 		var subData struct {
-			UserID        string `json:"user_id"`
-			PlanID        string `json:"plan_id"`
-			Status        string `json:"status"`
-			PeriodStart   string `json:"current_period_start"`
-			PeriodEnd     string `json:"current_period_end"`
-			Metadata      map[string]interface{} `json:"metadata"`
+			UserID      string                 `json:"user_id"`
+			PlanID      string                 `json:"plan_id"`
+			Status      string                 `json:"status"`
+			PeriodStart string                 `json:"current_period_start"`
+			PeriodEnd   string                 `json:"current_period_end"`
+			Metadata    map[string]interface{} `json:"metadata"`
 		}
 
 		if err := json.Unmarshal(event.Data, &subData); err != nil {
@@ -1672,9 +1684,9 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte) error {
 
 	case "subscription.cancelled", "subscription.updated":
 		var subData struct {
-			UserID   string `json:"user_id"`
-			PlanID   string `json:"plan_id"`
-			Status   string `json:"status"`
+			UserID   string                 `json:"user_id"`
+			PlanID   string                 `json:"plan_id"`
+			Status   string                 `json:"status"`
 			Metadata map[string]interface{} `json:"metadata"`
 		}
 

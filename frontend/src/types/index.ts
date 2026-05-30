@@ -48,9 +48,10 @@ export interface SignupRequest {
 }
 
 export interface AuthResponse {
-  token: string;
+  token?: string;
   refresh_token?: string;
   user: User;
+  trial_info?: Record<string, unknown>;
 }
 
 // Conversation

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { signup } from '@/lib/auth'
 import { Button } from '@/components/ui/Button'
@@ -16,12 +16,6 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
   const { toast } = useToast()
-
-  useEffect(() => {
-    if (localStorage.getItem('noant_token')) {
-      navigate('/', { replace: true })
-    }
-  }, [navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -36,39 +36,36 @@ async function request<T>(method: string, endpoint: string, body?: unknown, isFo
 }
 
 async function doRequest<T>(method: string, endpoint: string, body?: unknown, isFormData?: boolean, isRetry = false): Promise<T> {
-  const token = localStorage.getItem('noant_token');
   const headers: Record<string, string> = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
   if (!isFormData && body) headers['Content-Type'] = 'application/json';
 
   const res = await fetch(`${API_BASE}${endpoint}`, {
     method,
     headers,
+    credentials: 'include',
     body: isFormData ? (body as FormData) : body ? JSON.stringify(body) : undefined,
   });
 
   if (!res.ok) {
-    // Silent token refresh on 401 (skip if this IS the refresh call)
+    // Silent session refresh on 401 (skip if this IS the refresh call)
     if (res.status === 401 && !isRetry && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
       if (!isRefreshing) {
         isRefreshing = true;
         const { refreshToken } = await import('./auth');
         refreshPromise = refreshToken();
       }
-      const newToken = await refreshPromise;
+      const refreshed = await refreshPromise;
       isRefreshing = false;
       refreshPromise = null;
 
-      if (newToken) {
+      if (refreshed) {
         return doRequest<T>(method, endpoint, body, isFormData, true);
       }
 
-      // Refresh failed ? force re-login
+      // Refresh failed - force re-login
       const { clearAuth } = await import('./auth');
       clearAuth();
-      if (token) {
-        window.location.href = '/login';
-      }
+      window.location.href = '/login';
       throw new APIError('Session expired. Please log in again.', 401);
     }
 

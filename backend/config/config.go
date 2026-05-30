@@ -1,25 +1,26 @@
 package config
 
 import (
-	"github.com/joho/godotenv"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Port            string
-	JWTSecret       string
-	SessionSecret   string
-	NodeEnv         string
-	LogLevel        string
-	APIURL          string
+	Port          string
+	JWTSecret     string
+	SessionSecret string
+	NodeEnv       string
+	LogLevel      string
+	APIURL        string
 
 	// Cache
-	CacheTTL      time.Duration
-	CacheMaxKeys  int
+	CacheTTL     time.Duration
+	CacheMaxKeys int
 
 	// TiDB
 	TiDBHost     string
@@ -40,22 +41,22 @@ type Config struct {
 	GroqAPIKeys []string
 
 	// Twilio
-	TwilioAccountSID    string
-	TwilioAuthToken     string
+	TwilioAccountSID     string
+	TwilioAuthToken      string
 	TwilioWhatsAppNumber string
 
 	// Resend
 	ResendAPIKey string
 
 	// Polar
-	PolarAccessToken     string
-	PolarOrganizationID  string
-	PolarServerURL       string
-	PolarWebhookSecret   string
+	PolarAccessToken    string
+	PolarOrganizationID string
+	PolarServerURL      string
+	PolarWebhookSecret  string
 	CORSOrigins         []string
 
 	// Telegram
-	TelegramBotToken string
+	TelegramBotToken   string
 	TelegramWebhookURL string
 
 	// Meta (WhatsApp / Facebook / Instagram)
@@ -141,42 +142,23 @@ func Load() *Config {
 		MetaVerifyToken:    getEnv("META_VERIFY_TOKEN", ""),
 	}
 
-	// Parse CORS origins
-	if origins := getEnv("CORS_ORIGINS", ""); origins != "" {
-		cfg.CORSOrigins = strings.Split(origins, ",")
-	} else {
-		cfg.CORSOrigins = []string{cfg.APIURL}
-	}
-
-	// Parse CORS origins
-	if origins := getEnv("CORS_ORIGINS", ""); origins != "" {
-		cfg.CORSOrigins = strings.Split(origins, ",")
-	} else {
-		cfg.CORSOrigins = []string{cfg.APIURL}
-	}
-
-	// Parse CORS origins
-	if origins := getEnv("CORS_ORIGINS", ""); origins != "" {
-		cfg.CORSOrigins = strings.Split(origins, ",")
-	} else {
-		cfg.CORSOrigins = []string{cfg.APIURL}
-	}
+	cfg.CORSOrigins = parseCSVEnv("CORS_ORIGINS", cfg.APIURL)
 
 	cfg.Validate()
 	return cfg
 }
 
 func (c *Config) Validate() {
-	if c.JWTSecret == "" {
-		panic("FATAL: JWT_SECRET environment variable is required")
+	if len(strings.TrimSpace(c.JWTSecret)) < 32 {
+		panic("FATAL: JWT_SECRET must be set and at least 32 characters long")
 	}
-	if c.SessionSecret == "" {
-		panic("FATAL: SESSION_SECRET environment variable is required")
+	if len(strings.TrimSpace(c.SessionSecret)) < 32 {
+		panic("FATAL: SESSION_SECRET must be set and at least 32 characters long")
 	}
-	if c.TiDBHost == "" {
+	if strings.TrimSpace(c.TiDBHost) == "" {
 		panic("FATAL: TIDB_HOST environment variable is required")
 	}
-	if c.RedisHost == "" {
+	if strings.TrimSpace(c.RedisHost) == "" {
 		panic("FATAL: REDIS_HOST environment variable is required")
 	}
 }
@@ -186,4 +168,23 @@ func getEnv(key, defaultVal string) string {
 		return val
 	}
 	return defaultVal
+}
+
+func parseCSVEnv(key string, fallback string) []string {
+	raw := strings.TrimSpace(getEnv(key, ""))
+	if raw == "" {
+		return []string{fallback}
+	}
+
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			values = append(values, trimmed)
+		}
+	}
+	if len(values) == 0 {
+		return []string{fallback}
+	}
+	return values
 }
