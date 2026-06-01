@@ -103,8 +103,8 @@ The `main()` function performs these steps in order:
 9. handler.NewWebSocketHub()        → Central broadcast hub
 10. go wsHub.Run()                  → Start event loop goroutine
 11. service.NewPolarService()       → Payment gateway (Polar.sh)
-12. service.NewResendService()      → Email service (Resend)
-13. service.NewServices()           → Wire all 11 services
+12. service.NewEmailService()       → Email: Resend (primary) + SMTP (fallback)
+13. service.NewServices()           → Wire all 13 services
 14. infrastructure.NewCache()       → L1 memory + L2 Redis cache
 15. infrastructure.NewBottleneck()  → Concurrency limiter (200 max, 1000 queue)
 16. infrastructure.NewJobQueue()    → Background jobs (10 workers)
@@ -121,9 +121,9 @@ The `main()` function performs these steps in order:
 
 ### 2.2 Layer 1: Handlers (`internal/handler/`)
 
-**File**: `internal/handler/handler.go` (1212 lines)
+**File**: `internal/handler/handler.go` (1804 lines)
 
-The `Handlers` struct aggregates all 13 sub-handlers:
+The `Handlers` struct aggregates all 15 sub-handlers:
 
 ```go
 type Handlers struct {
@@ -140,6 +140,8 @@ type Handlers struct {
     Widget       *WidgetHandler
     Inventory    *InventoryHandler
     Handoff      *HandoffHandler
+    OpenWA       *OpenWAHandler
+    Telegram     *TelegramHandler
 }
 ```
 
@@ -234,6 +236,18 @@ func (h *XxxHandler) SomeEndpoint(c *gin.Context) {
 - `GetByID` — fetch single handoff with customer and product details
 - `UpdateStatus` — mark handoff as sold/lost/expired with notes and final price
 
+**OpenWAHandler** (WhatsApp self-hosted):
+- `WhatsAppWebhook` — receives incoming messages from OpenWA, verifies HMAC signature, processes via ChatService
+- `GetSessionStatus` — returns WhatsApp session status (qr_read, connecting, connected, failed)
+- `RestartSession` — restarts OpenWA session
+- `HealthCheck` — pings OpenWA server
+- `PhonePing` — sends test message to verify WhatsApp connection
+- `ConnectWhatsApp` — creates OpenWA session, polls for QR code, returns session ID
+
+**TelegramHandler**:
+- `SetWebhook` — configures Telegram bot webhook
+- `HandleUpdate` — processes incoming Telegram updates (messages, callbacks)
+
 **WebSocket handler** (`internal/handler/websocket.go`, 145 lines):
 - `WebSocketHub` — central hub pattern: register/unregister/broadcast channels, client map, origin validation, 30s ping ticker
 - `HandleWebSocket` — origin validation → upgrade → register → read loop (discards client messages — server→client only)
@@ -245,9 +259,9 @@ func (h *XxxHandler) SomeEndpoint(c *gin.Context) {
 
 ### 2.3 Layer 2: Services (`internal/service/`)
 
-**File**: `internal/service/service.go` (1738 lines)
+**File**: `internal/service/service.go` (2988 lines)
 
-The `Services` struct aggregates all 13 services:
+The `Services` struct aggregates all 15 services:
 
 ```go
 type Services struct {
@@ -351,12 +365,32 @@ Customer sends message
 - `Trends` — daily conversation counts for N days
 
 **IntegrationService**:
+- `List` — returns all integrations for a user
+- `Connect` — creates/updates integration, broadcasts `integration_update` via WebSocket
+- `Disconnect` — sets status to `inactive`, broadcasts via WebSocket
 - `Test` — channel-specific connectivity tests:
   - Telegram: `getMe` API with bot token
-  - WhatsApp: Meta Graph API `/v21.0/{phone_number_id}`
+  - WhatsApp (Meta): Meta Graph API `/v21.0/{phone_number_id}`
+  - WhatsApp (OpenWA): health check + session status
   - Facebook: Meta Graph API page info
   - Instagram: Meta Graph API account info
+  - Gmail: IMAP/SMTP connection test
   - Web: always succeeds
+- `SyncTelegramWebhooks` — re-applies webhook configuration for active Telegram integrations
+
+**OpenWAService** (`internal/service/openwa.go`):
+- Manages self-hosted WhatsApp via OpenWA Docker API
+- `CreateSession`, `StartSession`, `DeleteSession`, `RestartSession`
+- `GetSessionStatus`, `GetSessionStatusByID`
+- `SendTextMessage`, `ListSessions`
+- `ParseWebhookEvent`, `ParseMessageData`, `ParseStatusData`
+- `VerifyWebhookSignature` — HMAC-SHA256 verification
+
+**TelegramService** (`internal/service/telegram.go`):
+- Manages Telegram bot integration
+- `SetWebhook`, `DeleteWebhook`
+- `GetMe`, `SendMessage`
+- `ProcessUpdate` — handles incoming Telegram updates
 
 **WidgetService**:
 - `Get` — returns config, creates default if none exists
@@ -410,13 +444,26 @@ Customer sends message
 
 ### 2.4 Layer 3: Repository (`internal/repository/`)
 
-**File**: `internal/repository/repository.go` (1170 lines)
+**File**: `internal/repository/repository.go` (1486 lines)
 
 ```go
 type Repositories struct {
-    User, Conversation, Message, QAPair, Category, UnknownQ, Integration,
-    Team, APIKey, Archive, Subscription, Audit, Notification, WidgetConfig,
-    Inventory, Handoff
+    User         *UserRepository
+    Conversation *ConversationRepository
+    Message      *MessageRepository
+    QAPair       *QAPairRepository
+    Category     *CategoryRepository
+    UnknownQ     *UnknownQuestionRepository
+    Integration  *IntegrationRepository
+    Team         *TeamRepository
+    APIKey       *APIKeyRepository
+    Archive      *ArchiveRepository
+    Subscription *SubscriptionRepository
+    Audit        *AuditRepository
+    Notification *NotificationRepository
+    WidgetConfig *WidgetConfigRepository
+    Inventory    *InventoryRepository
+    Handoff      *HandoffRepository
 }
 ```
 
@@ -640,6 +687,16 @@ users ──── conversations ──── messages
 | GET | /api/v1/handoffs | Yes | User | Yes |
 | GET | /api/v1/handoffs/:id | Yes | User | Yes |
 | PUT | /api/v1/handoffs/status | Yes | User | Yes |
+| **WhatsApp (OpenWA)** | | | | |
+| POST | /api/v1/openwa/webhook | HMAC sig | - | No |
+| GET | /api/v1/openwa/status | Yes | - | No |
+| POST | /api/v1/openwa/restart | Yes | - | No |
+| GET | /api/v1/openwa/health | Yes | - | No |
+| POST | /api/v1/openwa/ping | Yes | - | No |
+| POST | /api/v1/openwa/connect | Yes | - | No |
+| **Telegram** | | | | |
+| POST | /api/v1/telegram/webhook | No | - | No |
+| POST | /api/v1/telegram/set-webhook | Yes | - | No |
 | **System** | | | | |
 | GET | /health | No | - | No |
 | GET | /metrics | No | - | No |
@@ -1260,14 +1317,17 @@ backend/
 │   ├── service/
 │   │   ├── service.go          # Services struct + AIBrain (Groq) + Auth/Chat/Training/Analytics/Integration/Settings/Archive/Inventory/Handoff
 │   │   ├── embedding.go        # EmbeddingService: semantic search via Groq embeddings + cosine similarity
-│   │   ├── notifications.go    # NotificationService + WidgetService + ResendService
+│   │   ├── notifications.go    # NotificationService + WidgetService
 │   │   ├── polar.go            # PolarService: Polar.sh payment integration
-│   │   ├── resend.go           # ResendService: email sending
+│   │   ├── resend.go           # ResendService: email sending via Resend API
+│   │   ├── email.go            # EmailService: wraps Resend (primary) + SMTP (fallback)
+│   │   ├── openwa.go           # OpenWAService: self-hosted WhatsApp API integration
+│   │   ├── telegram.go         # TelegramService: Telegram bot integration
 │   │   ├── vector.go           # VectorSearch: keyword search with word-by-word fallback
 │   │   ├── retention.go        # RetentionService: data cleanup
 │   │   └── 2fa.go              # TFAService: TOTP two-factor auth
 │   ├── repository/
-│   │   ├── repository.go       # All 14 repositories (User, Conversation, Message, QAPair, etc.)
+│   │   ├── repository.go       # All 16 repositories (User, Conversation, Message, QAPair, etc.)
 │   │   ├── uow.go              # UnitOfWork: transaction wrapper
 │   │   ├── audit.go            # AuditRepository
 │   │   ├── notifications.go    # Notification + WidgetConfig repositories
