@@ -383,6 +383,7 @@ func main() {
 			channels.POST("/whatsapp/refresh/:sessionId", handlers.OpenWA.RefreshWhatsAppQR)
 			channels.POST("/whatsapp/disconnect", handlers.OpenWA.DisconnectWhatsApp)
 			channels.POST("/whatsapp/ping", handlers.OpenWA.PhonePing)
+			channels.POST("/whatsapp/check", handlers.OpenWA.CheckNumber)
 			channels.GET("/whatsapp/health", handlers.OpenWA.HealthCheck)
 		}
 	}

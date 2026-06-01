@@ -1522,8 +1522,8 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 		return
 	}
 
-	// Ignore non-text messages for now
-	if msg.Type != "text" && msg.Type != "" {
+	// Ignore non-text messages for now (OpenWA uses "chat" for standard text messages)
+	if msg.Type != "text" && msg.Type != "chat" && msg.Type != "" {
 		h.logger.Info("Ignoring non-text message", "type", msg.Type)
 		return
 	}
@@ -1694,6 +1694,19 @@ func (h *OpenWAHandler) PhonePing(c *gin.Context) {
 		utils.RespondInternalError(c, "WhatsApp integration is missing a session ID")
 		return
 	}
+
+	// Check if the number is on WhatsApp first
+	exists, err := h.openwa.CheckNumberExists(sessionID, req.Phone)
+	if err != nil {
+		h.logger.Error("Failed to check if number exists on WhatsApp", "error", err)
+		utils.RespondInternalError(c, "Failed to verify number on WhatsApp: "+err.Error())
+		return
+	}
+	if !exists {
+		utils.RespondValidationError(c, "The phone number is not registered on WhatsApp. Please check the number and try again.")
+		return
+	}
+
 	chatID := cleanPhone(req.Phone) + "@s.whatsapp.net"
 	h.logger.Info("Phone ping", "phone", req.Phone, "chatID", chatID, "session", sessionID)
 
@@ -1709,6 +1722,54 @@ func (h *OpenWAHandler) PhonePing(c *gin.Context) {
 		"message": "Test message sent to " + req.Phone,
 	})
 }
+
+// CheckNumber checks if a phone number is registered on WhatsApp
+func (h *OpenWAHandler) CheckNumber(c *gin.Context) {
+	var req struct {
+		Phone string `json:"phone" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Phone number is required")
+		return
+	}
+
+	// Find active session
+	userID, ok := c.Get("userID")
+	if !ok {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+
+	integration, err := h.chat.GetWhatsAppIntegration(c.Request.Context(), userID.(string))
+	if err != nil {
+		h.logger.Error("Failed to load WhatsApp integration", "error", err)
+		utils.RespondInternalError(c, "Failed to load WhatsApp integration")
+		return
+	}
+	if integration == nil {
+		utils.RespondInternalError(c, "No active WhatsApp integration. Connect first.")
+		return
+	}
+
+	sessionID, _ := integration.Config["session_id"].(string)
+	if sessionID == "" {
+		utils.RespondInternalError(c, "WhatsApp integration is missing a session ID")
+		return
+	}
+
+	exists, err := h.openwa.CheckNumberExists(sessionID, req.Phone)
+	if err != nil {
+		h.logger.Error("Failed to check WhatsApp number existence", "error", err)
+		utils.RespondInternalError(c, "Failed to verify number on WhatsApp: "+err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"phone":  req.Phone,
+		"exists": exists,
+	})
+}
+
 
 // ========== SIMPLIFIED WHATSAPP CHANNEL ENDPOINTS ==========
 
@@ -1840,8 +1901,8 @@ func (h *OpenWAHandler) ConnectWhatsApp(c *gin.Context) {
 		}
 	}
 
-	// Step 8: Store integration
-	h.chat.StoreWhatsAppIntegration(c.Request.Context(), userID.(string), sessionID, req.Phone)
+	// Step 8: Store integration initially as "connecting" until scanned
+	h.chat.StoreWhatsAppIntegrationWithStatus(c.Request.Context(), userID.(string), sessionID, req.Phone, "connecting")
 
 	// Step 9: Configure webhook (after session is ready)
 	// Use host.docker.internal for Docker compatibility
@@ -1876,6 +1937,10 @@ func (h *OpenWAHandler) GetWhatsAppStatus(c *gin.Context) {
 		return
 	}
 
+	// ?force=true allows the frontend "Done" button to force-confirm connection
+	// when the phone shows it's logged in but the status API still shows qr_ready
+	forceConnect := c.Query("force") == "true"
+
 	status, err := h.openwa.GetSessionStatusByID(sessionID)
 	if err != nil {
 		h.logger.Error("Failed to get WhatsApp status", "error", err)
@@ -1883,20 +1948,92 @@ func (h *OpenWAHandler) GetWhatsAppStatus(c *gin.Context) {
 		return
 	}
 
-	h.logger.Info("WhatsApp status check", "sessionID", sessionID, "status", status)
+	h.logger.Info("WhatsApp status check", "sessionID", sessionID, "status", status, "force", forceConnect)
 
 	// Also try to get QR code if status is not connected
 	var qrCode string
-	if status != "connected" && status != "CONNECTED" && status != "qr_read" {
+	isConnected := status == "connected"
+	if !isConnected {
 		qr, _ := h.openwa.GetQRCode(sessionID)
 		qrCode = qr
+	}
+
+	// Long poll: if not connected, not expired, and not force-connecting, wait up to 25 seconds for updates
+	if !isConnected && status != "expired" && !forceConnect {
+		h.logger.Info("Long-polling WhatsApp status starting", "sessionID", sessionID, "initialStatus", status)
+		
+		timeout := time.After(25 * time.Second)
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		initialStatus := status
+		initialQR := qrCode
+
+	LongPollLoop:
+		for {
+			select {
+			case <-c.Request.Context().Done():
+				h.logger.Info("Long-polling WhatsApp status cancelled by client connection close", "sessionID", sessionID)
+				return
+			case <-timeout:
+				h.logger.Info("Long-polling WhatsApp status timed out (no change)", "sessionID", sessionID)
+				break LongPollLoop
+			case <-ticker.C:
+				currentStatus, err := h.openwa.GetSessionStatusByID(sessionID)
+				if err != nil {
+					h.logger.Warn("Failed to get WhatsApp status during long-poll", "error", err)
+					continue
+				}
+
+				var currentQR string
+				if currentStatus != "connected" {
+					currentQR, _ = h.openwa.GetQRCode(sessionID)
+				}
+
+				if currentStatus != initialStatus || currentQR != initialQR {
+					h.logger.Info("WhatsApp status/QR changed during long-poll", "sessionID", sessionID, "oldStatus", initialStatus, "newStatus", currentStatus, "qrChanged", currentQR != initialQR)
+					status = currentStatus
+					qrCode = currentQR
+					isConnected = (currentStatus == "connected")
+					break LongPollLoop
+				}
+			}
+		}
+	}
+
+	// Force connect: user's phone shows logged in — trust the user and mark as connected
+	if forceConnect && !isConnected {
+		h.logger.Info("Force-connect requested by user — marking session as connected", "sessionID", sessionID)
+		isConnected = true
+		status = "connected"
+		qrCode = ""
+	}
+
+	// Update integration status if connected, and notify dashboard via WebSocket
+	if isConnected {
+		userID, ok := c.Get("userID")
+		if ok {
+			h.chat.StoreWhatsAppIntegrationWithStatus(c.Request.Context(), userID.(string), sessionID, "", "connected")
+
+			// Broadcast real-time status update to frontend
+			if h.wsHub != nil {
+				h.wsHub.BroadcastMessage(WebSocketMessage{
+					ConversationID: "",
+					Type:           "integration_update",
+					Data: map[string]interface{}{
+						"channel": "whatsapp",
+						"status":  "connected",
+					},
+				})
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":    status,
 		"qr_code":   qrCode,
 		"session":   sessionID,
-		"connected": status == "connected" || status == "CONNECTED",
+		"connected": isConnected,
 	})
 }
 
@@ -1910,34 +2047,72 @@ func (h *OpenWAHandler) RefreshWhatsAppQR(c *gin.Context) {
 
 	h.logger.Info("Refreshing QR", "sessionID", sessionID)
 
-	// Delete and recreate for fresh QR
-	_ = h.openwa.DeleteSession(sessionID)
-	time.Sleep(3 * time.Second)
+	// Look up the integration to get the phone number (so we reuse the correct session name)
+	userID, ok := c.Get("userID")
+	if !ok {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 
-	// Get session name from existing session data or use a default
-	sessionName := "noant-refresh-" + cleanPhone(sessionID)
+	integration, err := h.chat.GetWhatsAppIntegration(c.Request.Context(), userID.(string))
+	if err != nil || integration == nil {
+		utils.RespondInternalError(c, "No WhatsApp integration found")
+		return
+	}
+
+	phone, _ := integration.Config["phone"].(string)
+	if phone == "" {
+		utils.RespondInternalError(c, "Integration has no phone number — please reconnect")
+		return
+	}
+
+	// Reuse the same session name pattern as ConnectWhatsApp
+	sessionName := "noant-" + cleanPhone(phone)
+	h.logger.Info("QR refresh: recreating session", "name", sessionName, "oldID", sessionID)
+
+	// Delete stale session (best-effort — may already be gone)
+	_ = h.openwa.DeleteSession(sessionID)
+	time.Sleep(2 * time.Second)
+
+	// Recreate with the same name
 	newID, err := h.openwa.CreateSession(sessionName)
 	if err != nil {
 		h.logger.Error("Failed to recreate session for QR refresh", "error", err)
 		utils.RespondInternalError(c, "Failed to refresh QR")
 		return
 	}
-	sessionID = newID
+	h.logger.Info("QR refresh: new session", "id", newID)
 
-	// Wait and start
-	time.Sleep(5 * time.Second)
-	_ = h.openwa.StartSession(sessionID)
-	time.Sleep(5 * time.Second)
+	// Start the new session
+	time.Sleep(3 * time.Second)
+	_ = h.openwa.StartSession(newID)
 
-	// Get QR
-	qrCode, err := h.openwa.GetQRCode(sessionID)
-	if err != nil {
-		h.logger.Warn("QR not ready after refresh", "error", err)
+	// Wait for QR to be ready
+	var qrCode string
+	for i := 0; i < 10; i++ {
+		time.Sleep(3 * time.Second)
+		qr, qrErr := h.openwa.GetQRCode(newID)
+		if qrErr == nil && qr != "" {
+			qrCode = qr
+			h.logger.Info("QR refresh: code obtained", "attempt", i+1)
+			break
+		}
+		h.logger.Info("QR refresh: waiting for QR...", "attempt", i+1)
+	}
+
+	// Update DB integration to use the new session ID
+	h.chat.StoreWhatsAppIntegrationWithStatus(c.Request.Context(), userID.(string), newID, phone, "connecting")
+
+	// Reconfigure webhook on new session
+	webhookURL := "http://host.docker.internal:8080/api/v1/openwa/webhook"
+	if wErr := h.openwa.ConfigureWebhook(newID, webhookURL, h.cfg.OpenWAWebhookSecret); wErr != nil {
+		h.logger.Warn("QR refresh: webhook config failed, trying localhost fallback", "error", wErr)
+		_ = h.openwa.ConfigureWebhook(newID, "http://localhost:8080/api/v1/openwa/webhook", h.cfg.OpenWAWebhookSecret)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"qr_code":    qrCode,
-		"session_id": sessionID,
+		"session_id": newID,
 	})
 }
 

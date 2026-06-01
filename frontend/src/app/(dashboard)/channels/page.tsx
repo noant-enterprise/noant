@@ -23,7 +23,6 @@ import {
   Copy,
   ShieldCheck,
   Unplug,
-  Plus,
 } from 'lucide-react'
 
 const channelConfig: Record<string, { name: string; desc: string }> = {
@@ -36,7 +35,11 @@ const channelConfig: Record<string, { name: string; desc: string }> = {
 type IntegrationConfig = Record<string, unknown>
 
 function isConnected(status: string) {
-  return status === 'connected' || status === 'active'
+  return status === 'connected' || status === 'active' || status === 'CONNECTED'
+}
+
+function isPending(status: string) {
+  return status === 'connecting' || status === 'qr_ready'
 }
 
 function getConfigValue(config: IntegrationConfig | undefined, keys: string[]) {
@@ -245,13 +248,14 @@ export default function ChannelsPage() {
               const integration = integrationMap.get(key)
               const config = (integration?.config || {}) as IntegrationConfig
               const connected = integration && isConnected(integration.status)
+              const pending = integration && !connected && isPending(integration.status)
 
               return (
                 <ChannelCard
                   key={key}
                   channel={key}
                   name={cfg.name}
-                  desc={cfg.desc}
+                  desc={pending ? `${cfg.desc} — awaiting QR scan` : cfg.desc}
                   status={connected ? 'connected' : 'disconnected'}
                   details={connected ? getCardDetails(integration) : undefined}
                   webhookUrl={connected ? (integration.webhook_url || getConfigValue(config, ['webhook_url'])) : undefined}
@@ -407,6 +411,10 @@ export default function ChannelsPage() {
         open={activeModal === 'whatsapp'}
         onClose={() => setActiveModal(null)}
         loading={connectLoading}
+        onConnect={() => {
+          getIntegrations('/integrations/list')
+          setActiveModal(null)
+        }}
       />
 
       <TelegramModal

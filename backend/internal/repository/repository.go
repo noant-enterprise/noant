@@ -919,7 +919,7 @@ func (r *IntegrationRepository) GetByUserAndChannel(ctx context.Context, userID,
 
 func (r *IntegrationRepository) GetByChannelAndSessionID(ctx context.Context, channel, sessionID string) (*domain.Integration, error) {
 	query := `SELECT id, user_id, channel, status, config, webhook_url, last_error, created_at, updated_at
-	FROM integrations WHERE channel = ? AND status IN ('active', 'connected')`
+	FROM integrations WHERE channel = ?`
 	rows, err := r.db.QueryContext(ctx, query, channel)
 	if err != nil {
 		return nil, err

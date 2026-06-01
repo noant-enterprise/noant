@@ -14,6 +14,7 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"noant/config"
@@ -44,18 +45,21 @@ type OpenWAWebhookPayload struct {
 	Event     string          `json:"event"`
 	SessionID string          `json:"sessionId"`
 	Data      json.RawMessage `json:"data"`
-	Timestamp int64           `json:"timestamp"`
+	// Timestamp is declared as interface{} because OpenWA may send it
+	// as either a JSON number or a JSON string depending on the version.
+	Timestamp interface{} `json:"timestamp"`
 }
 
 type OpenWAMessageData struct {
-	ID        string `json:"id"`
-	From      string `json:"from"`      // phone@s.whatsapp.net
-	To        string `json:"to"`
-	Body      string `json:"body"`
-	Type      string `json:"type"`      // text, image, etc.
-	Timestamp int64  `json:"timestamp"`
-	FromMe    bool   `json:"fromMe"`
-	HasMedia  bool   `json:"hasMedia"`
+	ID       string `json:"id"`
+	From     string `json:"from"` // phone@s.whatsapp.net
+	To       string `json:"to"`
+	Body     string `json:"body"`
+	Type     string `json:"type"` // text, image, etc.
+	// Timestamp flexible: OpenWA sends string or number
+	Timestamp interface{} `json:"timestamp"`
+	FromMe   bool   `json:"fromMe"`
+	HasMedia bool   `json:"hasMedia"`
 }
 
 type OpenWAStatusData struct {
@@ -224,6 +228,10 @@ func (s *OpenWAService) RestartSession() error {
 func (s *OpenWAService) VerifyWebhookSignature(payload []byte, signature string) bool {
 	if s.cfg.OpenWAWebhookSecret == "" {
 		return true // No secret configured, skip verification
+	}
+
+	if len(signature) > 7 && signature[:7] == "sha256=" {
+		signature = signature[7:]
 	}
 
 	mac := hmac.New(sha256.New, []byte(s.cfg.OpenWAWebhookSecret))
@@ -601,14 +609,89 @@ func (s *OpenWAService) GetSessionStatusByID(sessionID string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	// 404 = session no longer exists in OpenWA (QR expired / session dropped)
+	if resp.StatusCode == http.StatusNotFound {
+		return "expired", nil
+	}
+
+	body, _ := io.ReadAll(resp.Body)
 	var result struct {
 		Status string `json:"status"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return "unknown", err
 	}
 
-	return result.Status, nil
+	// Normalize different OpenWA connected status variants to a consistent "connected"
+	normalized := normalizeSessionStatus(result.Status)
+	return normalized, nil
+}
+
+// CheckNumberExists checks if a phone number exists on WhatsApp
+func (s *OpenWAService) CheckNumberExists(sessionID string, phone string) (bool, error) {
+	if !s.cfg.OpenWAEnabled {
+		return false, nil
+	}
+
+	cleaned := CleanPhoneNumber(phone)
+	url := fmt.Sprintf("%s/api/sessions/%s/contacts/check/%s", s.cfg.OpenWABaseURL, sessionID, cleaned)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, err
+	}
+	if s.cfg.OpenWAApiKey != "" {
+		req.Header.Set("X-API-Key", s.cfg.OpenWAApiKey)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("failed to check number existence: %d %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Exists bool `json:"exists"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, err
+	}
+
+	return result.Exists, nil
+}
+
+
+// normalizeSessionStatus maps all variants of a connected session status to "connected"
+func normalizeSessionStatus(status string) string {
+	lower := strings.ToLower(strings.TrimSpace(status))
+	switch lower {
+	case "connected", "authenticated", "ready", "open":
+		return "connected"
+	// qr_read = phone scanned, session is confirming — treat as connected
+	case "qr_read":
+		return "connected"
+	case "qr_ready", "scan_qr_code", "waitforlogin":
+		return "qr_ready"
+	case "starting", "initializing", "connecting":
+		return "initializing"
+	case "failed", "timeout", "error":
+		return "failed"
+	case "disconnected", "stopped", "inactive":
+		return "disconnected"
+	// expired = OpenWA returned 404 (session no longer exists)
+	case "expired":
+		return "expired"
+	default:
+		if status == "" {
+			return "unknown"
+		}
+		return status
+	}
 }
 
 // RestartSessionByID restarts a specific session

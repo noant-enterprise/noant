@@ -50,7 +50,7 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 	embeddings := aiBrain.embeddings
 	telegramSvc := NewTelegramService(cfg, logger)
 	openwaSvc := NewOpenWAService(cfg, logger)
-	chatSvc := NewChatService(cfg, repos, redis, aiBrain, logger)
+	chatSvc := NewChatService(cfg, repos, redis, aiBrain, logger, openwaSvc, telegramSvc)
 	return &Services{
 		Auth:         NewAuthService(cfg, repos.User, redis, logger, email),
 		Chat:         chatSvc,
@@ -1150,18 +1150,26 @@ func (s *AuthService) Me(ctx context.Context, userID string) (*domain.User, erro
 	return s.userRepo.GetByID(ctx, userID)
 }
 
-// ========== CHAT SERVICE ==========
-
 type ChatService struct {
-	cfg     *config.Config
-	repos   *repository.Repositories
-	redis   *infrastructure.RedisClient
-	aiBrain *AIBrain
-	logger  *infrastructure.Logger
+	cfg      *config.Config
+	repos    *repository.Repositories
+	redis    *infrastructure.RedisClient
+	aiBrain  *AIBrain
+	logger   *infrastructure.Logger
+	openwa   *OpenWAService
+	telegram *TelegramService
 }
 
-func NewChatService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, aiBrain *AIBrain, logger *infrastructure.Logger) *ChatService {
-	return &ChatService{cfg: cfg, repos: repos, redis: redis, aiBrain: aiBrain, logger: logger}
+func NewChatService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, aiBrain *AIBrain, logger *infrastructure.Logger, openwa *OpenWAService, telegram *TelegramService) *ChatService {
+	return &ChatService{
+		cfg:      cfg,
+		repos:    repos,
+		redis:    redis,
+		aiBrain:  aiBrain,
+		logger:   logger,
+		openwa:   openwa,
+		telegram: telegram,
+	}
 }
 
 func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, customerKey, message, channel string) (*domain.Conversation, *domain.Message, error) {
@@ -1281,6 +1289,10 @@ func (s *ChatService) GetConversation(ctx context.Context, userID, conversationI
 	return conv, messages, nil
 }
 
+func (s *ChatService) GetConversationOnly(ctx context.Context, conversationID, userID string) (*domain.Conversation, error) {
+	return s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
+}
+
 func (s *ChatService) GetConversationPaginated(ctx context.Context, userID, conversationID string, limit, offset int) (*domain.Conversation, []domain.Message, int, error) {
 	conv, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
 	if err != nil {
@@ -1332,19 +1344,70 @@ func (s *ChatService) Escalate(ctx context.Context, userID, conversationID, reas
 }
 
 func (s *ChatService) SendMessage(ctx context.Context, userID, conversationID, senderType, content string) (*domain.Message, error) {
-	_, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
+	conv, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("conversation not found or unauthorized")
 	}
+	if conv == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	// Determine if this is an agent/human sending the message
+	role := senderType
+	isAgent := senderType == "agent" || senderType == "human"
+
+	// If the message is sent from the dashboard, treat it as an agent reply unless it is the internal AI chat
+	if senderType == "customer" && conv.CustomerName != "Noant AI" {
+		role = "agent"
+		isAgent = true
+	}
+
 	msg := &domain.Message{
 		ConversationID: conversationID,
-		Role:           senderType,
+		Role:           role,
 		Content:        content,
-		IsRead:         false,
+		IsRead:         true, // Agent replies are read by default
 	}
 	if err := s.repos.Message.Create(ctx, msg); err != nil {
 		return nil, err
 	}
+
+	// If it is an agent reply, send it to the external customer channel
+	if isAgent {
+		if conv.Channel == "whatsapp" && s.openwa != nil {
+			// Find active WhatsApp integration to get sessionID
+			integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+			if err == nil && integration != nil {
+				if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
+					chatID := FormatChatID(conv.CustomerPhone)
+					s.logger.Info("Sending manual agent WhatsApp reply", "session", sessionID, "chatID", chatID)
+					// Send text message asynchronously to avoid blocking the HTTP response
+					go func() {
+						if err := s.openwa.SendTextMessage(sessionID, chatID, content); err != nil {
+							s.logger.Error("Failed to send manual agent WhatsApp message", "error", err)
+						}
+					}()
+				}
+			}
+		} else if conv.Channel == "telegram" && s.telegram != nil {
+			// Find active Telegram integration to get bot token
+			integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "telegram")
+			if err == nil && integration != nil {
+				if botToken, _ := integration.Config["bot_token"].(string); botToken != "" {
+					chatID, err := strconv.ParseInt(conv.CustomerPhone, 10, 64)
+					if err == nil {
+						s.logger.Info("Sending manual agent Telegram reply", "chatID", chatID)
+						go func() {
+							if err := s.telegram.SendTextMessage(context.Background(), botToken, chatID, content); err != nil {
+								s.logger.Error("Failed to send manual agent Telegram message", "error", err)
+							}
+						}()
+					}
+				}
+			}
+		}
+	}
+
 	return msg, nil
 }
 
@@ -1382,15 +1445,29 @@ func (s *ChatService) GenerateAIResponse(ctx context.Context, conversationID, us
 
 // StoreWhatsAppIntegration stores the WhatsApp integration config
 func (s *ChatService) StoreWhatsAppIntegration(ctx context.Context, userID, sessionID, phone string) {
+	s.StoreWhatsAppIntegrationWithStatus(ctx, userID, sessionID, phone, "connected")
+}
+
+// StoreWhatsAppIntegrationWithStatus stores the WhatsApp integration config with a custom status
+func (s *ChatService) StoreWhatsAppIntegrationWithStatus(ctx context.Context, userID, sessionID, phone, status string) {
 	existing, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+	phoneVal := phone
+	if phoneVal == "" && existing != nil {
+		if p, ok := existing.Config["phone"].(string); ok {
+			phoneVal = p
+		}
+	}
+	if status == "" {
+		status = "connected"
+	}
 	integration := &domain.Integration{
 		UserID:     userID,
 		Channel:    "whatsapp",
-		Status:     "connected",
+		Status:     status,
 		WebhookURL: fmt.Sprintf("%s/api/v1/openwa/webhook", s.cfg.APIURL),
 		Config: map[string]interface{}{
 			"session_id": sessionID,
-			"phone":      phone,
+			"phone":      phoneVal,
 			"type":       "openwa",
 		},
 	}
@@ -1402,13 +1479,16 @@ func (s *ChatService) StoreWhatsAppIntegration(ctx context.Context, userID, sess
 	_ = s.repos.Integration.Create(ctx, integration)
 }
 
-// GetWhatsAppIntegration returns the connected WhatsApp integration for a user
+// GetWhatsAppIntegration returns the WhatsApp integration for a user regardless of
+// connection state, so callers can operate on connecting / qr_ready sessions too.
+// Returns nil only when no record exists or a hard error occurred.
 func (s *ChatService) GetWhatsAppIntegration(ctx context.Context, userID string) (*domain.Integration, error) {
 	integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
 	if err != nil || integration == nil {
 		return integration, err
 	}
-	if integration.Status != "active" && integration.Status != "connected" {
+	// Exclude only hard-failed or explicitly disconnected integrations
+	if integration.Status == "error" || integration.Status == "disconnected" || integration.Status == "inactive" {
 		return nil, nil
 	}
 	return integration, nil
@@ -2323,6 +2403,14 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 		return true, fmt.Sprintf("✓ Test email sent to %s", toEmail)
 
 	case "whatsapp":
+		if s.cfg.OpenWAEnabled && s.chat != nil && s.chat.openwa != nil {
+			err := s.chat.openwa.Ping()
+			if err != nil {
+				return false, fmt.Sprintf("OpenWA server unreachable: %v", err)
+			}
+			return true, fmt.Sprintf("✓ OpenWA WhatsApp channel healthy (session: %s)", s.cfg.OpenWASessionID)
+		}
+
 		phoneNumberID := ""
 		accessToken := ""
 		if config != nil {
