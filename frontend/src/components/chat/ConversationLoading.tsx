@@ -6,13 +6,18 @@ interface ConversationLoadingProps {
 }
 
 const sizes = {
-  sm: { circle: 60, dots: 40, dot1: 5, dot2: 7, dot3: 9, gap: 4 },
-  md: { circle: 80, dots: 56, dot1: 7, dot2: 10, dot3: 13, gap: 6 },
-  lg: { circle: 120, dots: 84, dot1: 10, dot2: 14, dot3: 18, gap: 8 },
+  sm: { circle: 20, outerRing: 15, innerCircle: 11, dot1: 1, dot2: 1.5, dot3: 2, gap: 0.5, strokeWidth: 1, strokeDash: "1 1.5" },
+  md: { circle: 60, outerRing: 46, innerCircle: 32, dot1: 3, dot2: 4, dot3: 5, gap: 2, strokeWidth: 3, strokeDash: "3 4" },
+  lg: { circle: 120, outerRing: 90, innerCircle: 64, dot1: 5.5, dot2: 8, dot3: 10.5, gap: 4, strokeWidth: 4.5, strokeDash: "5.5 8" },
 }
 
-const dotKeyframes = `
-  @keyframes dotPulse {
+const loaderKeyframes = `
+  @keyframes rotateLogoRing {
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to { transform: translate(-50%, -50%) rotate(360deg); }
+  }
+
+  @keyframes logoDotPulse {
     0%, 100% { transform: scale(0.85); opacity: 0.6; }
     50% { transform: scale(1.1); opacity: 1; }
   }
@@ -23,50 +28,78 @@ export function ConversationLoading({ className, size = 'md' }: ConversationLoad
 
   return (
     <>
-      <style>{dotKeyframes}</style>
+      <style>{loaderKeyframes}</style>
       <div
-        className={cn('flex items-center justify-center', className)}
-        style={{ width: s.circle, height: s.circle }}
+        className={cn('relative flex items-center justify-center shrink-0', className)}
+        style={{
+          width: s.circle,
+          height: s.circle,
+        }}
       >
-        {/* Inner circle — adapts to theme via CSS variables */}
-        <div
-          className="rounded-full flex items-center justify-center"
+        {/* Spinning dashed ring */}
+        <svg
+          className="absolute top-1/2 left-1/2"
           style={{
-            width: s.dots,
-            height: s.dots,
+            width: s.outerRing,
+            height: s.outerRing,
+            transform: 'translate(-50%, -50%)',
+            animation: 'rotateLogoRing 8s linear infinite',
+          }}
+          viewBox="0 0 148 148"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle
+            cx="74"
+            cy="74"
+            r="68"
+            stroke="var(--text-primary)"
+            strokeWidth={7}
+            strokeDasharray="9 13"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+
+        {/* Inner circle with pulsing dots */}
+        <div
+          className="absolute top-1/2 left-1/2 rounded-full flex items-center justify-center"
+          style={{
+            width: s.innerCircle,
+            height: s.innerCircle,
             background: 'var(--text-primary)',
-            boxShadow: '0 0 25px rgba(0, 0, 0, 0.3)',
+            border: `${size === 'sm' ? 1 : size === 'md' ? 3 : 6}px solid var(--text-primary)`,
+            transform: 'translate(-50%, -50%)',
           }}
         >
-          {/* Pulsing dots — adapts to theme via CSS variables */}
           <div className="flex items-center" style={{ gap: s.gap }}>
-            <span
+            <div
               className="rounded-full"
               style={{
                 width: s.dot1,
                 height: s.dot1,
                 background: 'var(--bg-surface)',
-                animation: 'dotPulse 1.4s ease-in-out infinite',
+                animation: 'logoDotPulse 1.4s ease-in-out infinite',
                 animationDelay: '0s',
               }}
             />
-            <span
+            <div
               className="rounded-full"
               style={{
                 width: s.dot2,
                 height: s.dot2,
                 background: 'var(--bg-surface)',
-                animation: 'dotPulse 1.4s ease-in-out infinite',
+                animation: 'logoDotPulse 1.4s ease-in-out infinite',
                 animationDelay: '0.2s',
               }}
             />
-            <span
+            <div
               className="rounded-full"
               style={{
                 width: s.dot3,
                 height: s.dot3,
                 background: 'var(--bg-surface)',
-                animation: 'dotPulse 1.4s ease-in-out infinite',
+                animation: 'logoDotPulse 1.4s ease-in-out infinite',
                 animationDelay: '0.4s',
               }}
             />

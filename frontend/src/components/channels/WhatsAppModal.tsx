@@ -25,6 +25,7 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
   const [testMessage, setTestMessage] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [qrExpired, setQrExpired] = useState(false)
+  const [sessionStatus, setSessionStatus] = useState<string>('')
 
   // Auto-poll while QR is displayed using long polling
   useEffect(() => {
@@ -40,6 +41,7 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
           )
 
           if (!active) return
+          setSessionStatus(res.status)
 
           if (res.connected) {
             setStep('success')
@@ -50,6 +52,14 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
             setQrExpired(true)
             setQrCode('')
             setErrorMsg('QR code expired. Click "Refresh QR" to generate a new one.')
+            break
+          } else if (res.status === 'failed') {
+            setQrCode('')
+            setErrorMsg('Session initialization failed. Click "Refresh QR" or check your server status.')
+            break
+          } else if (res.status === 'disconnected') {
+            setQrCode('')
+            setErrorMsg('Session disconnected. Click "Refresh QR" to reconnect.')
             break
           } else if (res.qr_code && res.qr_code !== qrCode) {
             setQrCode(res.qr_code)
@@ -85,6 +95,7 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
       }>('/channels/whatsapp/connect', { phone: phone.trim() })
 
       setSessionId(res.session_id)
+      setSessionStatus(res.status)
       const qr = res.qr_code || res.qrCode || ''
 
       if (res.status === 'connected') {
@@ -153,6 +164,7 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
         setQrCode(res.qr_code)
       }
       setQrExpired(false)
+      setSessionStatus('initializing')
     } catch (err: any) {
       setErrorMsg((err as any)?.data?.message || err?.message || 'Failed to refresh QR code')
     } finally {
@@ -188,6 +200,7 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
     setTestMessage('')
     setQrExpired(false)
     setIsRefreshing(false)
+    setSessionStatus('')
     onClose()
   }
 
@@ -284,10 +297,28 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
           <div className="space-y-4">
             {/* QR Code */}
             <div className="flex flex-col items-center gap-4 py-4 bg-inset/50 rounded-2xl border border-dashed border-default p-4">
-              {qrExpired ? (
+              {sessionStatus === 'expired' || qrExpired ? (
                 <div className="w-52 h-52 bg-red-500/5 rounded-2xl flex flex-col items-center justify-center gap-2 border border-red-500/20 text-red-600 dark:text-red-400 p-4 text-center animate-fade-in">
                   <AlertTriangle className="w-8 h-8 text-red-500 animate-bounce" />
                   <span className="text-xs font-semibold">QR Code Expired</span>
+                </div>
+              ) : sessionStatus === 'initializing' ? (
+                <div className="w-52 h-52 bg-inset rounded-2xl flex flex-col items-center justify-center gap-2 border border-default p-4 text-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+                  <span className="text-xs font-semibold text-secondary">Starting session...</span>
+                  <span className="text-[10px] text-tertiary animate-pulse">Checking with self-hosted server</span>
+                </div>
+              ) : sessionStatus === 'failed' ? (
+                <div className="w-52 h-52 bg-red-500/5 rounded-2xl flex flex-col items-center justify-center gap-2 border border-red-500/20 text-red-600 dark:text-red-400 p-4 text-center animate-fade-in">
+                  <XCircle className="w-8 h-8 text-red-500 animate-pulse" />
+                  <span className="text-xs font-semibold">Initialization Failed</span>
+                  <span className="text-[10px] text-tertiary">Restart your self-hosted server</span>
+                </div>
+              ) : sessionStatus === 'disconnected' ? (
+                <div className="w-52 h-52 bg-amber-500/5 rounded-2xl flex flex-col items-center justify-center gap-2 border border-amber-500/20 text-amber-600 dark:text-amber-400 p-4 text-center animate-fade-in">
+                  <AlertTriangle className="w-8 h-8 text-amber-500 animate-pulse" />
+                  <span className="text-xs font-semibold">Session Disconnected</span>
+                  <span className="text-[10px] text-tertiary">Click "Refresh QR" to reconnect</span>
                 </div>
               ) : qrCode ? (
                 <div className="relative group">
@@ -303,20 +334,42 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
               )}
 
               {/* Live scanning indicator */}
-              {!qrExpired ? (
+              {sessionStatus === 'initializing' ? (
+                <div className="flex items-center gap-2 bg-blue-500/10 px-3.5 py-1.5 rounded-full border border-blue-500/20 text-xs font-semibold text-blue-600 dark:text-blue-400 animate-pulse">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                  </span>
+                  Initializing...
+                </div>
+              ) : sessionStatus === 'failed' ? (
+                <div className="flex items-center gap-2 bg-red-500/10 px-3.5 py-1.5 rounded-full border border-red-500/20 text-xs font-semibold text-red-600 dark:text-red-400">
+                  <span className="relative flex h-2 w-2">
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                  </span>
+                  Failed to start
+                </div>
+              ) : sessionStatus === 'disconnected' ? (
+                <div className="flex items-center gap-2 bg-amber-500/10 px-3.5 py-1.5 rounded-full border border-amber-500/20 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  <span className="relative flex h-2 w-2">
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                  </span>
+                  Disconnected
+                </div>
+              ) : sessionStatus === 'expired' || qrExpired ? (
+                <div className="flex items-center gap-2 bg-red-500/10 px-3.5 py-1.5 rounded-full border border-red-500/20 text-xs font-semibold text-red-600 dark:text-red-400">
+                  <span className="relative flex h-2 w-2">
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                  </span>
+                  Expired
+                </div>
+              ) : (
                 <div className="flex items-center gap-2 bg-emerald-500/10 dark:bg-emerald-500/20 px-3.5 py-1.5 rounded-full border border-emerald-500/20 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                   </span>
                   Waiting for scan...
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 bg-red-500/10 px-3.5 py-1.5 rounded-full border border-red-500/20 text-xs font-semibold text-red-600 dark:text-red-400">
-                  <span className="relative flex h-2 w-2">
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-                  </span>
-                  Connection expired
                 </div>
               )}
 

@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import { Check, CheckCheck, Bot, UserCheck, Zap } from 'lucide-react'
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
 import { ConversationLoading } from './ConversationLoading'
+import { TypingIndicator } from './TypingIndicator'
 import type { Message } from '@/types'
 
 interface ChatMessagesProps {
@@ -12,6 +13,7 @@ interface ChatMessagesProps {
   loadingMore?: boolean
   isLoading?: boolean
   onLoadMore?: () => void
+  conversationId?: string | null
 }
 
 function SourceBadge({ message }: { message: Message }) {
@@ -63,6 +65,7 @@ export function ChatMessages({
   loadingMore = false,
   isLoading = false,
   onLoadMore,
+  conversationId = null,
 }: ChatMessagesProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -209,6 +212,11 @@ export function ChatMessages({
           </div>
         )
       })}
+      {conversationId && (
+        <div className="flex flex-col gap-1 w-full shrink-0">
+          <TypingIndicator conversationId={conversationId} />
+        </div>
+      )}
       <div ref={bottomRef} className="h-2 shrink-0" />
     </div>
   )

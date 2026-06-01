@@ -1958,8 +1958,8 @@ func (h *OpenWAHandler) GetWhatsAppStatus(c *gin.Context) {
 		qrCode = qr
 	}
 
-	// Long poll: if not connected, not expired, and not force-connecting, wait up to 25 seconds for updates
-	if !isConnected && status != "expired" && !forceConnect {
+	// Long poll: if not connected, not expired, not failed, not disconnected, and not force-connecting, wait up to 25 seconds for updates
+	if !isConnected && status != "expired" && status != "failed" && status != "disconnected" && !forceConnect {
 		h.logger.Info("Long-polling WhatsApp status starting", "sessionID", sessionID, "initialStatus", status)
 		
 		timeout := time.After(25 * time.Second)

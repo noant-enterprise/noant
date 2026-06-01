@@ -279,12 +279,7 @@ export default function ChatsPage() {
     setOptimisticMessages(prev => [...prev, optimisticMsg])
     setSending(true)
     
-    // Mark AI as pending immediately so the typing state starts immediately!
-    setPendingAI(prev => {
-      const next = new Set(prev)
-      next.add(activeId)
-      return next
-    })
+
 
     // Optimistically update conversation's last message and move it to top in sidebar
     setAllConversations(prev =>
@@ -300,24 +295,14 @@ export default function ChatsPage() {
       setMsgHasMore(syncRes.has_more || false)
       setMsgPage(1)
 
-      // Ensure AI is still marked as pending
-      setPendingAI(prev => {
-        const next = new Set(prev)
-        next.add(activeId)
-        return next
-      })
+
     } catch (err) {
       console.error('Send failed:', err)
       toast('Failed to send message', 'error')
       setOptimisticMessages(prev => prev.map(m =>
         m.id === tempId ? { ...m, content: `${m.content} (failed)` } : m
       ))
-      // Clear pending AI since sending failed
-      setPendingAI(prev => {
-        const next = new Set(prev)
-        next.delete(activeId)
-        return next
-      })
+
       setTyping(false)
     } finally {
       setSending(false)
@@ -487,6 +472,7 @@ export default function ChatsPage() {
               loadingMore={msgLoadingMore}
               isLoading={messagesLoading}
               onLoadMore={handleLoadMoreMessages}
+              conversationId={activeId}
             />
             <ChatInput
               onSend={handleSend}
