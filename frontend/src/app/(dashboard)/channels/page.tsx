@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
+import type { Integration } from '@/types'
 import { useAPI } from '@/hooks/useAPI'
 import {
   ChannelCard,
   WhatsAppModal,
   TelegramModal,
-  FacebookModal,
-  InstagramModal,
-  WebWidgetModal
+  WebWidgetModal,
+  GmailModal,
 } from '@/components/channels'
+import { ChannelIcon } from '@/components/channels/ChannelIcon'
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Badge } from '@/components/ui/Badge'
@@ -16,45 +17,76 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { useModal } from '@/hooks/useModal'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useWidgetConfig } from '@/contexts/WidgetConfigContext'
-
-interface Integration {
-  id?: string
-  channel: string
-  status: 'connected' | 'disconnected' | 'error'
-  token?: string
-  webhook_url?: string
-  connected_at?: string
-  config?: any
-}
+import {
+  AlertTriangle,
+  Check,
+  Copy,
+  ShieldCheck,
+  Unplug,
+  Plus,
+} from 'lucide-react'
 
 const channelConfig: Record<string, { name: string; desc: string }> = {
-  telegram: { name: 'Telegram', desc: 'Bot integration with webhook' },
-  whatsapp: { name: 'WhatsApp', desc: 'Business API messaging' },
-  instagram: { name: 'Instagram', desc: 'Direct Messages automation' },
-  facebook: { name: 'Facebook', desc: 'Messenger integration' },
-  discord: { name: 'Discord', desc: 'Server bot integration' },
-  web: { name: 'Web Chat', desc: 'Embeddable widget for your site' },
+  whatsapp: { name: 'WhatsApp', desc: 'OpenWA self-hosted WhatsApp API' },
+  telegram: { name: 'Telegram', desc: 'Bot integration with webhook or local polling' },
+  gmail: { name: 'Gmail', desc: 'Email customer support via IMAP/SMTP' },
+  web: { name: 'Web Widget', desc: 'Embeddable chat widget for your site' },
+}
+
+type IntegrationConfig = Record<string, unknown>
+
+function isConnected(status: string) {
+  return status === 'connected' || status === 'active'
+}
+
+function getConfigValue(config: IntegrationConfig | undefined, keys: string[]) {
+  if (!config) return ''
+  for (const key of keys) {
+    const raw = config[key]
+    if (typeof raw === 'string' && raw.trim()) return raw.trim()
+    if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw)
+    if (typeof raw === 'boolean') return raw ? 'true' : 'false'
+  }
+  return ''
+}
+
+function formatShortDate(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function shorten(value: string, head = 10, tail = 8) {
+  if (value.length <= head + tail + 3) return value
+  return `${value.slice(0, head)}...${value.slice(-tail)}`
 }
 
 export default function ChannelsPage() {
   const intAPI = useAPI() as any
   const { data, get: getIntegrations, loading } = intAPI
-  
+
   const postAPI = useAPI() as any
   const { post } = postAPI
 
   const { config: widgetConfig, setConfig: setWidgetConfig } = useWidgetConfig()
-
   const { subscribe } = useWebSocket()
   const { open: showDisconnect, openModal: openDisconnect, closeModal: closeDisconnect } = useModal()
+
   const [disconnectChannel, setDisconnectChannel] = useState('')
   const [disconnectLoading, setDisconnectLoading] = useState(false)
+  const [copiedWebhookId, setCopiedWebhookId] = useState('')
+  const [activeModal, setActiveModal] = useState<'telegram' | 'whatsapp' | 'gmail' | 'web' | null>(null)
+  const [connectLoading, setConnectLoading] = useState(false)
 
   useEffect(() => {
     getIntegrations('/integrations/list')
-  }, [])
+  }, [getIntegrations])
 
-  // Listen for real-time channel status updates
   useEffect(() => {
     const unsub = subscribe((msg) => {
       if (msg.type === 'integration_update') {
@@ -64,21 +96,31 @@ export default function ChannelsPage() {
     return unsub
   }, [subscribe, getIntegrations])
 
-  const [activeModal, setActiveModal] = useState<'telegram' | 'whatsapp' | 'instagram' | 'facebook' | 'web' | null>(null)
-  const [connectLoading, setConnectLoading] = useState(false)
+  const integrations: Integration[] = data?.integrations || []
+  const connectedIntegrations = integrations.filter((i) => isConnected(i.status))
+  const integrationMap = new Map<string, Integration>(
+    integrations.map((i) => [i.channel, i])
+  )
+
+  const issueCount = integrations.filter((i) => i.status === 'error').length
+
+  let lastUpdated = ''
+  for (const integration of connectedIntegrations) {
+    const candidate = integration.updated_at || integration.created_at || integration.connected_at || ''
+    if (candidate && candidate > lastUpdated) {
+      lastUpdated = candidate
+    }
+  }
 
   const handleConnectClick = (channel: string) => {
-    if (channel === 'discord') {
-      handleConnectSubmit('discord', {})
-    } else {
-      setActiveModal(channel as any)
-    }
+    setActiveModal(channel as any)
   }
 
   const handleConnectSubmit = async (channel: string, config: any) => {
     setConnectLoading(true)
     try {
       await post('/integrations/connect', { channel, config })
+
       if (channel === 'web') {
         const updatedWidget = {
           bot_name: config.botName,
@@ -91,10 +133,11 @@ export default function ChannelsPage() {
         setWidgetConfig(updatedWidget)
         await post('/widget/config', updatedWidget)
       }
+
       getIntegrations('/integrations/list')
       setActiveModal(null)
     } catch {
-      // error handled by API hook
+      // handled by API hook
     } finally {
       setConnectLoading(false)
     }
@@ -107,20 +150,21 @@ export default function ChannelsPage() {
 
   const handleDisconnectConfirm = async () => {
     if (!disconnectChannel) return
+
     setDisconnectLoading(true)
     try {
       await post(`/integrations/disconnect/${disconnectChannel}`)
       if (disconnectChannel === 'web') {
-        setWidgetConfig(c => {
-          if (!c) return null
-          const updated = { ...c, is_active: false }
+        setWidgetConfig((current) => {
+          if (!current) return null
+          const updated = { ...current, is_active: false }
           post('/widget/config', updated)
           return updated
         })
       }
       getIntegrations('/integrations/list')
     } catch {
-      // error handled by API hook
+      // handled by API hook
     } finally {
       setDisconnectLoading(false)
       closeDisconnect()
@@ -128,21 +172,63 @@ export default function ChannelsPage() {
     }
   }
 
-  const integrations: Integration[] = data?.integrations || []
-  // Only show truly connected channels in the summary table
-  const connectedIntegrations = integrations.filter((i: Integration) => i.status === 'connected')
-  const integrationMap = new Map<string, Integration>(integrations.map((i: Integration) => [i.channel, i]))
+  const handleCopyWebhook = async (integration: Integration, webhookUrl: string) => {
+    try {
+      await navigator.clipboard.writeText(webhookUrl)
+      const copyKey = integration.id || integration.channel
+      setCopiedWebhookId(copyKey)
+      window.setTimeout(() => {
+        setCopiedWebhookId((current) => (current === copyKey ? '' : current))
+      }, 1800)
+    } catch {
+      // non-blocking
+    }
+  }
+
+  function getCardDetails(integration: Integration) {
+    const config = (integration.config || {}) as IntegrationConfig
+    const details: Array<{ label: string; value: string }> = []
+
+    if (integration.channel === 'whatsapp') {
+      const phone = getConfigValue(config, ['phone'])
+      const sessionId = getConfigValue(config, ['session_id'])
+      if (phone) details.push({ label: 'Number', value: phone })
+      if (sessionId) details.push({ label: 'Session', value: shorten(sessionId) })
+    }
+
+    if (integration.channel === 'telegram') {
+      const botUsername = getConfigValue(config, ['bot_username'])
+      if (botUsername) {
+        details.push({
+          label: 'Bot',
+          value: botUsername.startsWith('@') ? botUsername : `@${botUsername}`,
+        })
+      }
+    }
+
+    if (integration.channel === 'gmail') {
+      const email = getConfigValue(config, ['email', 'username'])
+      if (email) details.push({ label: 'Mailbox', value: email })
+    }
+
+    if (integration.channel === 'web') {
+      const widgetKey = getConfigValue(config, ['widget_api_key'])
+      if (widgetKey) details.push({ label: 'Widget key', value: shorten(widgetKey) })
+    }
+
+    return details
+  }
 
   return (
     <div className="animate-page-in space-y-5 lg:space-y-6 pt-2">
-      {/* Channel cards */}
+      {/* Channel Cards Grid — shows all available channels */}
       <div className="px-1">
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="rounded-2xl border border-default bg-surface p-4 lg:p-5 space-y-4">
                 <div className="flex items-center gap-3">
-                  <Skeleton className="w-10 h-10 rounded-xl" />
+                  <Skeleton className="h-10 w-10 rounded-xl" />
                   <div className="space-y-1.5 flex-1">
                     <Skeleton className="h-4 w-24 rounded" />
                     <Skeleton className="h-3 w-32 rounded" />
@@ -154,19 +240,22 @@ export default function ChannelsPage() {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:gap-4">
             {Object.entries(channelConfig).map(([key, cfg]) => {
               const integration = integrationMap.get(key)
+              const config = (integration?.config || {}) as IntegrationConfig
+              const connected = integration && isConnected(integration.status)
+
               return (
                 <ChannelCard
                   key={key}
                   channel={key}
                   name={cfg.name}
                   desc={cfg.desc}
-                  status={integration?.status || 'disconnected'}
-                  token={integration?.token}
-                  webhookUrl={integration?.webhook_url}
-                  connectedAt={integration?.connected_at}
+                  status={connected ? 'connected' : 'disconnected'}
+                  details={connected ? getCardDetails(integration) : undefined}
+                  webhookUrl={connected ? (integration.webhook_url || getConfigValue(config, ['webhook_url'])) : undefined}
+                  connectedAt={connected ? (integration.updated_at || integration.created_at || integration.connected_at) : undefined}
                   onConnect={() => handleConnectClick(key)}
                   onDisconnect={() => handleDisconnectClick(key)}
                 />
@@ -176,89 +265,133 @@ export default function ChannelsPage() {
         )}
       </div>
 
-      {/* Connected channels list */}
-      <div className="px-1 pb-4">
-        <Card>
-          <CardHeader className="px-4 py-3 lg:px-6 lg:py-4">
-            <CardTitle>Connected channels</CardTitle>
-          </CardHeader>
-          <CardBody className="p-0">
-            {loading ? (
-              <div className="p-4 space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="flex items-center justify-between py-3">
-                    <Skeleton className="h-4 w-32 rounded" />
-                    <Skeleton className="h-6 w-20 rounded" />
-                  </div>
-                ))}
+      {/* Connected Channels List */}
+      {connectedIntegrations.length > 0 && (
+        <div className="px-1 pb-4">
+          <Card className="overflow-hidden">
+            <CardHeader className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-start lg:justify-between lg:px-6 lg:py-5">
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <CardTitle>Integration details</CardTitle>
+                  <Badge variant="success">{connectedIntegrations.length} live</Badge>
+                </div>
+                <p className="max-w-2xl text-sm text-secondary">
+                  Real-time view of every channel handling customer messages.
+                </p>
               </div>
-            ) : connectedIntegrations.length === 0 ? (
-              <EmptyChannels />
-            ) : (
-              <>
-                {/* Desktop table */}
-                <div className="hidden lg:block">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-tertiary bg-inset">
-                        <th className="px-4 py-3 rounded-l-lg">Channel</th>
-                        <th className="px-4 py-3">Status</th>
-                        <th className="px-4 py-3">Token</th>
-                        <th className="px-4 py-3">Connected</th>
-                        <th className="px-4 py-3 rounded-r-lg text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {connectedIntegrations.map((i: Integration, idx: number) => (
-                        <tr key={`desktop-${i.id || i.channel}-${idx}`} className="border-b border-subtle hover:bg-surface-hover transition-colors">
-                          <td className="px-4 py-3">
-                            <span className="font-semibold text-sm text-primary capitalize">{i.channel}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge variant={i.status === 'connected' ? 'success' : 'error'}>{i.status}</Badge>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="font-mono text-xs text-secondary">
-                              {i.token ? '••••••••' : '—'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-secondary">
-                            {i.connected_at ? new Date(i.connected_at).toLocaleDateString() : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <Button variant="ghost" size="sm" onClick={() => handleDisconnectClick(i.channel)}>
-                              Disconnect
+
+              <div className="flex flex-wrap items-center gap-2 text-xs text-secondary">
+                {issueCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-red-100 bg-red-50 px-3 py-1.5 text-red-700">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {issueCount} need attention
+                  </span>
+                )}
+                {lastUpdated && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-default bg-inset px-3 py-1.5">
+                    <ShieldCheck className="h-3.5 w-3.5 text-tertiary" />
+                    Updated {formatShortDate(lastUpdated)}
+                  </span>
+                )}
+              </div>
+            </CardHeader>
+
+            <CardBody className="p-0">
+              <div className="space-y-3 p-4 lg:p-6">
+                {connectedIntegrations.map((integration) => {
+                  const meta = channelConfig[integration.channel] || {
+                    name: integration.channel,
+                    desc: 'Connected integration',
+                  }
+                  const config = (integration.config || {}) as IntegrationConfig
+                  const webhookUrl = integration.webhook_url || getConfigValue(config, ['webhook_url'])
+                  const copyKey = integration.id || integration.channel
+
+                  return (
+                    <div
+                      key={copyKey}
+                      className="group rounded-2xl border border-default bg-surface p-4 lg:p-5 transition-all duration-200 hover:border-noant-sky/30 hover:shadow-md"
+                    >
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                        <div className="flex min-w-0 gap-4">
+                          <div className="relative shrink-0">
+                            <ChannelIcon channel={integration.channel} size="lg" className="shadow-sm ring-1 ring-black/5" />
+                            <span className="absolute -right-1 -bottom-1 h-3.5 w-3.5 rounded-full border-2 border-surface bg-emerald-500" />
+                          </div>
+
+                          <div className="min-w-0 space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-sm font-semibold text-primary">{meta.name}</h3>
+                              <Badge variant="success" className="capitalize">connected</Badge>
+                            </div>
+
+                            <p className="max-w-2xl text-sm leading-relaxed text-secondary">{meta.desc}</p>
+
+                            <div className="flex flex-wrap gap-2">
+                              {getCardDetails(integration).map((detail) => (
+                                <span
+                                  key={`${copyKey}-${detail.label}`}
+                                  className="inline-flex items-center gap-2 rounded-full border border-default bg-inset px-3 py-1.5 text-xs text-secondary"
+                                >
+                                  <span className="font-semibold text-primary">{detail.label}:</span>
+                                  <span className="max-w-[18rem] truncate">{detail.value}</span>
+                                </span>
+                              ))}
+                            </div>
+
+                            {integration.last_error && (
+                              <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+                                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                <p className="leading-relaxed">{integration.last_error}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 flex-col gap-2 sm:flex-row xl:flex-col">
+                          {webhookUrl && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleCopyWebhook(integration, webhookUrl)}
+                              className="min-w-[132px] justify-center"
+                            >
+                              {copiedWebhookId === copyKey ? (
+                                <>
+                                  <Check className="h-3.5 w-3.5" />
+                                  Copied
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="h-3.5 w-3.5" />
+                                  Copy webhook
+                                </>
+                              )}
                             </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                          )}
 
-                {/* Mobile list */}
-                <div className="lg:hidden divide-y divide-subtle">
-                  {connectedIntegrations.map((i: Integration, idx: number) => (
-                    <div key={`mobile-${i.id || i.channel}-${idx}`} className="flex items-center justify-between p-3">
-                      <div className="flex items-center gap-3">
-                        <span className="font-semibold text-sm text-primary capitalize">{i.channel}</span>
-                        <Badge variant={i.status === 'connected' ? 'success' : 'error'} className="text-[9px]">{i.status}</Badge>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDisconnectClick(integration.channel)}
+                            className="min-w-[132px] justify-center text-red-600 hover:border-red-200 hover:text-red-700"
+                          >
+                            <Unplug className="h-3.5 w-3.5" />
+                            Disconnect
+                          </Button>
+                        </div>
                       </div>
-                      <Button variant="ghost" size="sm" className="text-red-600 px-2" onClick={() => handleDisconnectClick(i.channel)}>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </Button>
                     </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </CardBody>
-        </Card>
-      </div>
+                  )
+                })}
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      )}
 
-      {/* Disconnect Confirmation Modal */}
       <ConfirmModal
         open={showDisconnect}
         onClose={closeDisconnect}
@@ -270,11 +403,9 @@ export default function ChannelsPage() {
         loading={disconnectLoading}
       />
 
-      {/* Connection Modals */}
       <WhatsAppModal
         open={activeModal === 'whatsapp'}
         onClose={() => setActiveModal(null)}
-        onConnect={(config) => handleConnectSubmit('whatsapp', config)}
         loading={connectLoading}
       />
 
@@ -282,20 +413,6 @@ export default function ChannelsPage() {
         open={activeModal === 'telegram'}
         onClose={() => setActiveModal(null)}
         onConnect={(config) => handleConnectSubmit('telegram', config)}
-        loading={connectLoading}
-      />
-
-      <FacebookModal
-        open={activeModal === 'facebook'}
-        onClose={() => setActiveModal(null)}
-        onConnect={(config) => handleConnectSubmit('facebook', config)}
-        loading={connectLoading}
-      />
-
-      <InstagramModal
-        open={activeModal === 'instagram'}
-        onClose={() => setActiveModal(null)}
-        onConnect={(config) => handleConnectSubmit('instagram', config)}
         loading={connectLoading}
       />
 
@@ -313,25 +430,16 @@ export default function ChannelsPage() {
                 brandColor: widgetConfig.brand_color,
                 position: widgetConfig.position === 'bottom-left' ? 'left' : 'right',
               }
-            : integrationMap.get('web')?.config
+            : null
         }
       />
-    </div>
-  )
-}
 
-function EmptyChannels() {
-  return (
-    <div className="flex flex-col items-center justify-center py-12 lg:py-16 text-center px-4">
-      <div className="w-14 h-14 lg:w-16 lg:h-16 bg-inset rounded-2xl flex items-center justify-center mb-4 animate-float">
-        <svg className="w-7 h-7 lg:w-8 lg:h-8 text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
-        </svg>
-      </div>
-      <p className="text-base lg:text-lg font-semibold text-primary mb-1">No channels connected</p>
-      <p className="text-sm text-secondary max-w-xs">
-        Connect your first channel to start receiving customer messages.
-      </p>
+      <GmailModal
+        open={activeModal === 'gmail'}
+        onClose={() => setActiveModal(null)}
+        onConnect={(config) => handleConnectSubmit('gmail', config)}
+        loading={connectLoading}
+      />
     </div>
   )
 }

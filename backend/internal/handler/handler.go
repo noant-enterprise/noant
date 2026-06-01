@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"noant/config"
 	"noant/internal/domain"
 	"noant/internal/infrastructure"
 	"noant/internal/middleware"
@@ -28,9 +29,13 @@ type Handlers struct {
 	Audit        *AuditHandler
 	Notification *NotificationHandler
 	Widget       *WidgetHandler
+	Inventory    *InventoryHandler
+	Handoff      *HandoffHandler
+	OpenWA       *OpenWAHandler
+	Telegram     *TelegramHandler
 }
 
-func NewHandlers(services *service.Services, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
+func NewHandlers(cfg *config.Config, services *service.Services, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
 	return &Handlers{
 		Auth:         NewAuthHandler(services.Auth, logger),
 		Chat:         NewChatHandler(services.Chat, logger, wsHub),
@@ -43,6 +48,10 @@ func NewHandlers(services *service.Services, logger *infrastructure.Logger, wsHu
 		Audit:        NewAuditHandler(services.Audit, logger),
 		Notification: NewNotificationHandler(services.Notification, logger),
 		Widget:       NewWidgetHandler(services.Widget, logger),
+		Inventory:    NewInventoryHandler(services.Inventory, logger),
+		Handoff:      NewHandoffHandler(services.Handoff, logger),
+		OpenWA:       NewOpenWAHandler(cfg, services.OpenWA, services.Chat, logger, wsHub),
+		Telegram:     NewTelegramHandler(services.Integration, logger),
 	}
 }
 
@@ -285,7 +294,7 @@ func (h *ChatHandler) DirectChat(c *gin.Context) {
 	}
 
 	userID, _ := c.Get("userID")
-	conv, msg, err := h.service.DirectChat(c.Request.Context(), userID.(string), req.CustomerName, req.Message, req.Channel)
+	conv, msg, err := h.service.DirectChat(c.Request.Context(), userID.(string), req.CustomerName, req.CustomerName, req.Message, req.Channel)
 	if err != nil {
 		h.logger.Error("Direct chat failed", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -1213,4 +1222,757 @@ func (h *AuditHandler) ListLogs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"audit_logs": logs, "count": len(logs)})
+}
+
+// ========== INVENTORY HANDLER ==========
+
+type InventoryHandler struct {
+	service *service.InventoryService
+	logger  *infrastructure.Logger
+}
+
+func NewInventoryHandler(service *service.InventoryService, logger *infrastructure.Logger) *InventoryHandler {
+	return &InventoryHandler{service: service, logger: logger}
+}
+
+func (h *InventoryHandler) Create(c *gin.Context) {
+	var req struct {
+		Type          string   `json:"type" binding:"required"`
+		Name          string   `json:"name" binding:"required"`
+		Description   string   `json:"description"`
+		Price         float64  `json:"price" binding:"required"`
+		MinPrice      *float64 `json:"min_price"`
+		StockQuantity *int     `json:"stock_quantity"`
+		ImageURL      *string  `json:"image_url"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, err.Error())
+		return
+	}
+
+	userID, _ := c.Get("userID")
+	item := &domain.InventoryItem{
+		Type:          req.Type,
+		Name:          req.Name,
+		Description:   req.Description,
+		Price:         req.Price,
+		MinPrice:      req.MinPrice,
+		StockQuantity: req.StockQuantity,
+		ImageURL:      req.ImageURL,
+	}
+
+	if err := h.service.Create(c.Request.Context(), userID.(string), item); err != nil {
+		h.logger.Error("Failed to create inventory item", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"item": item})
+}
+
+func (h *InventoryHandler) List(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	itemType := c.Query("type")
+
+	items, err := h.service.List(c.Request.Context(), userID.(string), itemType)
+	if err != nil {
+		h.logger.Error("Failed to list inventory", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": items, "count": len(items)})
+}
+
+func (h *InventoryHandler) GetByID(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	id := c.Param("id")
+
+	item, err := h.service.GetByID(c.Request.Context(), id, userID.(string))
+	if err != nil {
+		h.logger.Error("Failed to get inventory item", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	if item == nil {
+		utils.RespondNotFound(c, "Item not found")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"item": item})
+}
+
+func (h *InventoryHandler) Update(c *gin.Context) {
+	var req struct {
+		ID            string   `json:"id" binding:"required"`
+		Type          string   `json:"type"`
+		Name          string   `json:"name"`
+		Description   string   `json:"description"`
+		Price         float64  `json:"price"`
+		MinPrice      *float64 `json:"min_price"`
+		StockQuantity *int     `json:"stock_quantity"`
+		ImageURL      *string  `json:"image_url"`
+		IsActive      *bool    `json:"is_active"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, err.Error())
+		return
+	}
+
+	userID, _ := c.Get("userID")
+	item, err := h.service.GetByID(c.Request.Context(), req.ID, userID.(string))
+	if err != nil || item == nil {
+		utils.RespondNotFound(c, "Item not found")
+		return
+	}
+
+	if req.Type != "" {
+		item.Type = req.Type
+	}
+	if req.Name != "" {
+		item.Name = req.Name
+	}
+	if req.Description != "" {
+		item.Description = req.Description
+	}
+	if req.Price > 0 {
+		item.Price = req.Price
+	}
+	if req.MinPrice != nil {
+		item.MinPrice = req.MinPrice
+	}
+	if req.StockQuantity != nil {
+		item.StockQuantity = req.StockQuantity
+	}
+	if req.ImageURL != nil {
+		item.ImageURL = req.ImageURL
+	}
+	if req.IsActive != nil {
+		item.IsActive = *req.IsActive
+	}
+
+	if err := h.service.Update(c.Request.Context(), item); err != nil {
+		h.logger.Error("Failed to update inventory item", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"item": item})
+}
+
+func (h *InventoryHandler) Delete(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	id := c.Param("id")
+
+	if err := h.service.Delete(c.Request.Context(), id, userID.(string)); err != nil {
+		h.logger.Error("Failed to delete inventory item", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Item deleted"})
+}
+
+func (h *InventoryHandler) Search(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	q := c.Query("q")
+
+	items, err := h.service.Search(c.Request.Context(), userID.(string), q)
+	if err != nil {
+		h.logger.Error("Failed to search inventory", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": items, "count": len(items)})
+}
+
+// ========== HANDOFF HANDLER ==========
+
+type HandoffHandler struct {
+	service *service.HandoffService
+	logger  *infrastructure.Logger
+}
+
+func NewHandoffHandler(service *service.HandoffService, logger *infrastructure.Logger) *HandoffHandler {
+	return &HandoffHandler{service: service, logger: logger}
+}
+
+func (h *HandoffHandler) List(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	status := c.Query("status")
+
+	handoffs, err := h.service.List(c.Request.Context(), userID.(string), status)
+	if err != nil {
+		h.logger.Error("Failed to list handoffs", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"handoffs": handoffs, "count": len(handoffs)})
+}
+
+func (h *HandoffHandler) GetByID(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	id := c.Param("id")
+
+	handoff, err := h.service.GetByID(c.Request.Context(), id, userID.(string))
+	if err != nil {
+		h.logger.Error("Failed to get handoff", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	if handoff == nil {
+		utils.RespondNotFound(c, "Handoff not found")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"handoff": handoff})
+}
+
+func (h *HandoffHandler) UpdateStatus(c *gin.Context) {
+	var req struct {
+		ID         string   `json:"id" binding:"required"`
+		Status     string   `json:"status" binding:"required"`
+		Notes      string   `json:"notes"`
+		FinalPrice *float64 `json:"final_price"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, err.Error())
+		return
+	}
+
+	userID, _ := c.Get("userID")
+	if err := h.service.UpdateStatus(c.Request.Context(), req.ID, userID.(string), req.Status, req.Notes, req.FinalPrice); err != nil {
+		h.logger.Error("Failed to update handoff status", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Handoff updated"})
+}
+
+// ========== OPENWA HANDLER ==========
+
+type OpenWAHandler struct {
+	cfg    *config.Config
+	openwa *service.OpenWAService
+	chat   *service.ChatService
+	logger *infrastructure.Logger
+	wsHub  *WebSocketHub
+}
+
+func NewOpenWAHandler(cfg *config.Config, openwa *service.OpenWAService, chat *service.ChatService, logger *infrastructure.Logger, wsHub *WebSocketHub) *OpenWAHandler {
+	return &OpenWAHandler{cfg: cfg, openwa: openwa, chat: chat, logger: logger, wsHub: wsHub}
+}
+
+// WhatsAppWebhook receives incoming messages from OpenWA
+func (h *OpenWAHandler) WhatsAppWebhook(c *gin.Context) {
+	// Read raw body for signature verification
+	rawBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		h.logger.Error("Failed to read OpenWA webhook body", "error", err)
+		utils.RespondValidationError(c, "Failed to read request body")
+		return
+	}
+
+	// Verify HMAC signature if configured
+	signature := c.GetHeader("X-Hub-Signature-256")
+	if signature != "" && !h.openwa.VerifyWebhookSignature(rawBody, signature) {
+		h.logger.Warn("OpenWA webhook signature verification failed")
+		utils.RespondUnauthorized(c, "Invalid signature")
+		return
+	}
+
+	// Parse webhook event
+	event, err := h.openwa.ParseWebhookEvent(rawBody)
+	if err != nil {
+		h.logger.Error("Failed to parse OpenWA webhook", "error", err)
+		utils.RespondValidationError(c, "Invalid payload")
+		return
+	}
+
+	h.logger.Info("OpenWA webhook received", "event", event.Event, "session", event.SessionID)
+
+	switch event.Event {
+	case "message.received":
+		h.handleIncomingMessage(c, event)
+	case "message.status":
+		h.handleMessageStatus(c, event)
+	default:
+		h.logger.Info("Unhandled OpenWA event", "event", event.Event)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// handleIncomingMessage processes an incoming WhatsApp message
+func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.OpenWAWebhookPayload) {
+	msg, err := h.openwa.ParseMessageData(event.Data)
+	if err != nil {
+		h.logger.Error("Failed to parse incoming message", "error", err)
+		return
+	}
+
+	// Ignore messages sent by us
+	if msg.FromMe {
+		return
+	}
+
+	// Ignore non-text messages for now
+	if msg.Type != "text" && msg.Type != "" {
+		h.logger.Info("Ignoring non-text message", "type", msg.Type)
+		return
+	}
+
+	chatID := msg.From
+	customerPhone := service.CleanPhoneNumber(chatID)
+	content := msg.Body
+
+	h.logger.Info("OpenWA incoming message", "from", customerPhone, "body", content)
+
+	integration, err := h.chat.GetWhatsAppIntegrationBySessionID(c.Request.Context(), event.SessionID)
+	if err != nil {
+		h.logger.Error("Failed to resolve WhatsApp integration", "error", err, "session", event.SessionID)
+		return
+	}
+	if integration == nil {
+		h.logger.Warn("No WhatsApp integration found for session", "session", event.SessionID)
+		return
+	}
+	userID := integration.UserID
+	if userID == "" {
+		h.logger.Warn("WhatsApp integration has no user owner", "session", event.SessionID)
+		return
+	}
+
+	// Process through chat service (same flow as web widget)
+	conv, aiResp, err := h.chat.DirectChat(c.Request.Context(), userID, customerPhone, customerPhone, content, "whatsapp")
+	if err != nil {
+		h.logger.Error("Failed to process OpenWA message", "error", err)
+		return
+	}
+
+	// Send AI reply back via OpenWA
+	if aiResp != nil && aiResp.Content != "" {
+		if err := h.openwa.SendTextMessage(event.SessionID, chatID, aiResp.Content); err != nil {
+			h.logger.Error("Failed to send OpenWA reply", "error", err, "chatID", chatID)
+		}
+	}
+
+	// Broadcast to WebSocket dashboard
+	if h.wsHub != nil && conv != nil {
+		h.wsHub.BroadcastMessage(WebSocketMessage{
+			ConversationID: conv.ID,
+			Type:           "new_message",
+			Data: map[string]interface{}{
+				"content":     aiResp.Content,
+				"sender_type": "ai",
+				"customer":    customerPhone,
+				"channel":     "whatsapp",
+			},
+		})
+	}
+}
+
+// handleMessageStatus handles delivery/read status updates
+func (h *OpenWAHandler) handleMessageStatus(c *gin.Context, event *service.OpenWAWebhookPayload) {
+	status, err := h.openwa.ParseStatusData(event.Data)
+	if err != nil {
+		h.logger.Error("Failed to parse status update", "error", err)
+		return
+	}
+
+	h.logger.Info("OpenWA status update", "id", status.ID, "status", status.Status)
+}
+
+// GetSessionStatus returns the WhatsApp session status
+func (h *OpenWAHandler) GetSessionStatus(c *gin.Context) {
+	if userID, ok := c.Get("userID"); ok {
+		if integration, err := h.chat.GetWhatsAppIntegration(c.Request.Context(), userID.(string)); err == nil && integration != nil {
+			if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
+				status, err := h.openwa.GetSessionStatusByID(sessionID)
+				if err != nil {
+					h.logger.Error("Failed to get OpenWA session status", "error", err, "sessionID", sessionID)
+					utils.RespondInternalError(c, err.Error())
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"status": status, "session_id": sessionID})
+				return
+			}
+		}
+	}
+
+	status, err := h.openwa.GetSessionStatus()
+	if err != nil {
+		h.logger.Error("Failed to get OpenWA session status", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": status})
+}
+
+// RestartSession restarts the WhatsApp session
+func (h *OpenWAHandler) RestartSession(c *gin.Context) {
+	if userID, ok := c.Get("userID"); ok {
+		if integration, err := h.chat.GetWhatsAppIntegration(c.Request.Context(), userID.(string)); err == nil && integration != nil {
+			if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
+				if err := h.openwa.RestartSessionByID(sessionID); err != nil {
+					h.logger.Error("Failed to restart OpenWA session", "error", err, "sessionID", sessionID)
+					utils.RespondInternalError(c, err.Error())
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"message": "Session restart initiated", "session_id": sessionID})
+				return
+			}
+		}
+	}
+
+	if err := h.openwa.RestartSession(); err != nil {
+		h.logger.Error("Failed to restart OpenWA session", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Session restart initiated"})
+}
+
+// HealthCheck returns OpenWA server status
+func (h *OpenWAHandler) HealthCheck(c *gin.Context) {
+	err := h.openwa.Ping()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "unhealthy",
+			"error":  err.Error(),
+			"openwa": h.cfg.OpenWABaseURL,
+		})
+		return
+	}
+
+	sessions, _ := h.openwa.ListSessions()
+	c.JSON(http.StatusOK, gin.H{
+		"status":   "healthy",
+		"openwa":   h.cfg.OpenWABaseURL,
+		"sessions": len(sessions),
+	})
+}
+
+// PhonePing sends a test message to verify WhatsApp connection
+func (h *OpenWAHandler) PhonePing(c *gin.Context) {
+	var req struct {
+		Phone string `json:"phone" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Phone number is required")
+		return
+	}
+
+	// Find active session
+	userID, ok := c.Get("userID")
+	if !ok {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+
+	integration, err := h.chat.GetWhatsAppIntegration(c.Request.Context(), userID.(string))
+	if err != nil {
+		h.logger.Error("Failed to load WhatsApp integration", "error", err)
+		utils.RespondInternalError(c, "Failed to load WhatsApp integration")
+		return
+	}
+	if integration == nil {
+		utils.RespondInternalError(c, "No active WhatsApp integration. Connect first.")
+		return
+	}
+
+	sessionID, _ := integration.Config["session_id"].(string)
+	if sessionID == "" {
+		utils.RespondInternalError(c, "WhatsApp integration is missing a session ID")
+		return
+	}
+	chatID := cleanPhone(req.Phone) + "@s.whatsapp.net"
+	h.logger.Info("Phone ping", "phone", req.Phone, "chatID", chatID, "session", sessionID)
+
+	err = h.openwa.SendTextMessage(sessionID, chatID, "Hello! This is a test message from NOANT AI. Your WhatsApp is connected!")
+	if err != nil {
+		h.logger.Error("Phone ping failed", "error", err)
+		utils.RespondInternalError(c, "Failed to send test message: "+err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Test message sent to " + req.Phone,
+	})
+}
+
+// ========== SIMPLIFIED WHATSAPP CHANNEL ENDPOINTS ==========
+
+// ConnectWhatsApp creates an OpenWA session and returns QR code
+func (h *OpenWAHandler) ConnectWhatsApp(c *gin.Context) {
+	var req struct {
+		Phone string `json:"phone" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Phone number is required")
+		return
+	}
+
+	sessionName := "noant-" + cleanPhone(req.Phone)
+	h.logger.Info("Connecting WhatsApp", "phone", req.Phone, "session", sessionName)
+
+	// Step 1: Check if OpenWA is reachable
+	if err := h.openwa.Ping(); err != nil {
+		h.logger.Error("OpenWA not reachable", "error", err)
+		utils.RespondInternalError(c, "OpenWA server is not running. Start Docker container: docker compose up -d")
+		return
+	}
+
+	userID, ok := c.Get("userID")
+	if !ok {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+
+	// Step 2: Clean up only this user's previous WhatsApp session
+	if existing, err := h.chat.GetWhatsAppIntegration(c.Request.Context(), userID.(string)); err == nil && existing != nil {
+		if oldSessionID, _ := existing.Config["session_id"].(string); oldSessionID != "" {
+			h.logger.Info("Deleting previous session for user", "sessionID", oldSessionID)
+			_ = h.openwa.DeleteSession(oldSessionID)
+		}
+	}
+
+	// Step 3: Create fresh session with retry
+	var sessionID string
+	var createErr error
+	for i := 0; i < 3; i++ {
+		sessionID, createErr = h.openwa.CreateSession(sessionName)
+		if createErr == nil {
+			break
+		}
+		h.logger.Warn("Session create attempt failed", "attempt", i+1, "error", createErr)
+		time.Sleep(2 * time.Second)
+	}
+	if createErr != nil {
+		h.logger.Error("Failed to create session after 3 attempts", "error", createErr)
+		utils.RespondInternalError(c, "Failed to create OpenWA session after 3 attempts")
+		return
+	}
+	h.logger.Info("Session created", "sessionID", sessionID)
+
+	// Step 4: Wait for OpenWA to initialize
+	time.Sleep(5 * time.Second)
+
+	// Step 5: Start session with retry
+	var startErr error
+	for i := 0; i < 3; i++ {
+		startErr = h.openwa.StartSession(sessionID)
+		if startErr == nil {
+			break
+		}
+		h.logger.Warn("Session start attempt failed", "attempt", i+1, "error", startErr)
+		time.Sleep(3 * time.Second)
+	}
+	if startErr != nil {
+		h.logger.Warn("Start session failed, will try to get QR anyway", "error", startErr)
+	}
+
+	// Step 6: Wait for session to leave "initializing" or be ready
+	pollSessionStatus := func(id string, maxAttempts int) (string, bool) {
+		var lastStatus string
+		for i := 0; i < maxAttempts; i++ {
+			time.Sleep(3 * time.Second)
+			st, _ := h.openwa.GetSessionStatusByID(id)
+			lastStatus = st
+			h.logger.Info("Session status", "status", st, "attempt", i+1, "sessionID", id)
+			if st == "qr_read" || st == "connecting" || st == "connected" {
+				return st, false
+			}
+			if st == "failed" {
+				return st, true
+			}
+		}
+		return lastStatus, false
+	}
+
+	finalStatus, sessionFailed := pollSessionStatus(sessionID, 20)
+	if sessionFailed {
+		h.logger.Warn("OpenWA session reported failed, recreating session", "sessionID", sessionID)
+		_ = h.openwa.DeleteSession(sessionID)
+		time.Sleep(2 * time.Second)
+
+		sessionID, createErr = h.openwa.CreateSession(sessionName)
+		if createErr != nil {
+			h.logger.Error("Failed to recreate session after failure", "error", createErr)
+			utils.RespondInternalError(c, "OpenWA session failed. Run: docker compose restart")
+			return
+		}
+
+		time.Sleep(5 * time.Second)
+		startErr = h.openwa.StartSession(sessionID)
+		if startErr != nil {
+			h.logger.Warn("Restart after recreate failed, continuing to QR check", "error", startErr)
+		}
+		finalStatus, sessionFailed = pollSessionStatus(sessionID, 20)
+		if sessionFailed {
+			h.logger.Error("OpenWA session failed to initialize after recreate")
+			utils.RespondInternalError(c, "OpenWA session failed. Run: docker compose restart")
+			return
+		}
+	}
+
+	// Step 7: Get QR code with retry
+	var qrCode string
+	if finalStatus != "connected" {
+		for i := 0; i < 15; i++ {
+			time.Sleep(3 * time.Second)
+			qr, err := h.openwa.GetQRCode(sessionID)
+			if err == nil && qr != "" {
+				qrCode = qr
+				h.logger.Info("QR code obtained", "attempt", i+1)
+				break
+			}
+			h.logger.Info("Waiting for QR...", "attempt", i+1)
+		}
+	}
+
+	// Step 8: Store integration
+	h.chat.StoreWhatsAppIntegration(c.Request.Context(), userID.(string), sessionID, req.Phone)
+
+	// Step 9: Configure webhook (after session is ready)
+	// Use host.docker.internal for Docker compatibility
+	webhookURL := "http://host.docker.internal:8080/api/v1/openwa/webhook"
+	h.logger.Info("Configuring webhook", "url", webhookURL)
+	if err := h.openwa.ConfigureWebhook(sessionID, webhookURL, h.cfg.OpenWAWebhookSecret); err != nil {
+		h.logger.Warn("Webhook configuration failed (non-critical)", "error", err)
+		// Try localhost as fallback
+		altURL := "http://localhost:8080/api/v1/openwa/webhook"
+		h.logger.Info("Trying alternative webhook URL", "url", altURL)
+		_ = h.openwa.ConfigureWebhook(sessionID, altURL, h.cfg.OpenWAWebhookSecret)
+	}
+
+	status := finalStatus
+	if qrCode != "" {
+		status = "qr_ready"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"session_id": sessionID,
+		"qr_code":    qrCode,
+		"phone":      req.Phone,
+		"status":     status,
+	})
+}
+
+// GetWhatsAppStatus returns the status of a WhatsApp session
+func (h *OpenWAHandler) GetWhatsAppStatus(c *gin.Context) {
+	sessionID := c.Param("sessionId")
+	if sessionID == "" {
+		utils.RespondValidationError(c, "Session ID is required")
+		return
+	}
+
+	status, err := h.openwa.GetSessionStatusByID(sessionID)
+	if err != nil {
+		h.logger.Error("Failed to get WhatsApp status", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	h.logger.Info("WhatsApp status check", "sessionID", sessionID, "status", status)
+
+	// Also try to get QR code if status is not connected
+	var qrCode string
+	if status != "connected" && status != "CONNECTED" && status != "qr_read" {
+		qr, _ := h.openwa.GetQRCode(sessionID)
+		qrCode = qr
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":    status,
+		"qr_code":   qrCode,
+		"session":   sessionID,
+		"connected": status == "connected" || status == "CONNECTED",
+	})
+}
+
+// RefreshWhatsAppQR refreshes the QR code for a session
+func (h *OpenWAHandler) RefreshWhatsAppQR(c *gin.Context) {
+	sessionID := c.Param("sessionId")
+	if sessionID == "" {
+		utils.RespondValidationError(c, "Session ID is required")
+		return
+	}
+
+	h.logger.Info("Refreshing QR", "sessionID", sessionID)
+
+	// Delete and recreate for fresh QR
+	_ = h.openwa.DeleteSession(sessionID)
+	time.Sleep(3 * time.Second)
+
+	// Get session name from existing session data or use a default
+	sessionName := "noant-refresh-" + cleanPhone(sessionID)
+	newID, err := h.openwa.CreateSession(sessionName)
+	if err != nil {
+		h.logger.Error("Failed to recreate session for QR refresh", "error", err)
+		utils.RespondInternalError(c, "Failed to refresh QR")
+		return
+	}
+	sessionID = newID
+
+	// Wait and start
+	time.Sleep(5 * time.Second)
+	_ = h.openwa.StartSession(sessionID)
+	time.Sleep(5 * time.Second)
+
+	// Get QR
+	qrCode, err := h.openwa.GetQRCode(sessionID)
+	if err != nil {
+		h.logger.Warn("QR not ready after refresh", "error", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"qr_code":    qrCode,
+		"session_id": sessionID,
+	})
+}
+
+// DisconnectWhatsApp disconnects a WhatsApp session
+func (h *OpenWAHandler) DisconnectWhatsApp(c *gin.Context) {
+	var req struct {
+		SessionID string `json:"session_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Session ID is required")
+		return
+	}
+
+	if err := h.openwa.DeleteSession(req.SessionID); err != nil {
+		h.logger.Error("Failed to delete OpenWA session", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	// Remove integration
+	userID, _ := c.Get("userID")
+	if userID != nil {
+		h.chat.RemoveWhatsAppIntegration(c.Request.Context(), userID.(string))
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// cleanPhone removes all non-digit characters
+func cleanPhone(phone string) string {
+	result := make([]byte, 0, len(phone))
+	for _, c := range phone {
+		if c >= '0' && c <= '9' {
+			result = append(result, byte(c))
+		}
+	}
+	return string(result)
 }

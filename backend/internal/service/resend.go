@@ -15,13 +15,21 @@ type ResendService struct {
 	apiKey string
 	client *http.Client
 	from   string
+	apiURL string
 }
 
-func NewResendService(apiKey string) *ResendService {
+func NewResendService(apiKey, from, apiURL string) *ResendService {
+	if from == "" {
+		from = "onboarding@resend.dev"
+	}
+	if apiURL == "" {
+		apiURL = "http://localhost:8080"
+	}
 	return &ResendService{
 		apiKey: apiKey,
 		client: &http.Client{Timeout: 10 * time.Second},
-		from:   "noreply@noant.com",
+		from:   from,
+		apiURL: apiURL,
 	}
 }
 
@@ -34,9 +42,7 @@ func (s *ResendService) SendPasswordReset(ctx context.Context, toEmail, resetTok
 		return "", fmt.Errorf("resend API key not configured")
 	}
 
-	// Use localhost for development, production domain otherwise
-	baseURL := "http://localhost:3000"
-	resetURL := fmt.Sprintf("%s/reset-password?token=%s", baseURL, url.QueryEscape(resetToken))
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.apiURL, url.QueryEscape(resetToken))
 	safeURL := html.EscapeString(resetURL)
 
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>

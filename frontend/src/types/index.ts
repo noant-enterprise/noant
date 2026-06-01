@@ -146,10 +146,15 @@ export interface ChannelDistribution {
 
 // Integration
 export interface Integration {
+  id?: string;
   channel: string;
-  status: 'connected' | 'disconnected' | 'error';
+  status: string;
+  config?: Record<string, unknown>;
   webhook_url?: string;
   connected_at?: string;
+  created_at?: string;
+  updated_at?: string;
+  last_error?: string | null;
 }
 
 // Team

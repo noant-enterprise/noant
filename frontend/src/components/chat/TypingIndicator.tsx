@@ -7,6 +7,13 @@ interface TypingIndicatorProps {
   conversationId: string | null
 }
 
+const dotKeyframes = `
+  @keyframes dotPulse {
+    0%, 100% { transform: scale(0.85); opacity: 0.6; }
+    50% { transform: scale(1.1); opacity: 1; }
+  }
+`
+
 export function TypingIndicator({ conversationId }: TypingIndicatorProps) {
   const [isTyping, setIsTyping] = useState(false)
   const { subscribe } = useWebSocket()
@@ -34,19 +41,43 @@ export function TypingIndicator({ conversationId }: TypingIndicatorProps) {
   if (!isTyping) return null
 
   return (
-    <div
-      className={cn(
-        'max-w-[85%] lg:max-w-[75%] px-4 py-3 rounded-2xl rounded-bl-md',
-        'self-start bg-surface border border-default text-primary',
-        'flex items-center gap-1.5'
-      )}
-    >
-      <div className="flex gap-1">
-        <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-        <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-        <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+    <>
+      <style>{dotKeyframes}</style>
+      <div
+        className={cn(
+          'max-w-[85%] lg:max-w-[75%] px-4 py-3 rounded-2xl rounded-bl-md',
+          'self-start bg-surface border border-default text-primary',
+          'flex items-center gap-1.5'
+        )}
+      >
+        <div className="flex items-center gap-1.5">
+          <span
+            className="w-2 h-2 rounded-full"
+            style={{
+              background: 'var(--text-primary)',
+              animation: 'dotPulse 1.4s ease-in-out infinite',
+              animationDelay: '0s',
+            }}
+          />
+          <span
+            className="w-2.5 h-2.5 rounded-full"
+            style={{
+              background: 'var(--text-primary)',
+              animation: 'dotPulse 1.4s ease-in-out infinite',
+              animationDelay: '0.2s',
+            }}
+          />
+          <span
+            className="w-3 h-3 rounded-full"
+            style={{
+              background: 'var(--text-primary)',
+              animation: 'dotPulse 1.4s ease-in-out infinite',
+              animationDelay: '0.4s',
+            }}
+          />
+        </div>
+        <span className="text-xs text-tertiary ml-1">AI is thinking...</span>
       </div>
-      <span className="text-xs text-tertiary ml-1">AI is thinking...</span>
-    </div>
+    </>
   )
 }

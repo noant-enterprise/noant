@@ -20,10 +20,10 @@ type NotificationService struct {
 	repos  *repository.Repositories
 	redis  *infrastructure.RedisClient
 	logger *infrastructure.Logger
-	email  *ResendService
+	email  *EmailService
 }
 
-func NewNotificationService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *ResendService) *NotificationService {
+func NewNotificationService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *NotificationService {
 	return &NotificationService{cfg: cfg, repos: repos, redis: redis, logger: logger, email: email}
 }
 
@@ -58,10 +58,10 @@ type WidgetService struct {
 	redis   *infrastructure.RedisClient
 	aiBrain *AIBrain
 	logger  *infrastructure.Logger
-	email   *ResendService
+	email   *EmailService
 }
 
-func NewWidgetService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, aiBrain *AIBrain, logger *infrastructure.Logger, email *ResendService) *WidgetService {
+func NewWidgetService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, aiBrain *AIBrain, logger *infrastructure.Logger, email *EmailService) *WidgetService {
 	return &WidgetService{cfg: cfg, repos: repos, redis: redis, aiBrain: aiBrain, logger: logger, email: email}
 }
 

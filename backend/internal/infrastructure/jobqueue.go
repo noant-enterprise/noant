@@ -299,3 +299,9 @@ func NotificationBatchHandler(notifFn func(ctx context.Context, payload map[stri
 		return notifFn(ctx, job.Payload)
 	}
 }
+
+func HandoffReminderHandler(handoffProcessor interface{ ProcessReminders(ctx context.Context) error }) JobHandler {
+	return func(ctx context.Context, job *Job) error {
+		return handoffProcessor.ProcessReminders(ctx)
+	}
+}

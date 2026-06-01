@@ -76,9 +76,10 @@
 **Key principles:**
 - **Decoupled layers**: Handlers → Services → Repositories → Database
 - **Multi-tenant isolation**: Every query scoped by `user_id`
-- **Hybrid AI model**: High-confidence auto-answer (≥0.70) vs human escalation (<0.70)
+- **Hybrid AI model**: Semantic search + LLM intent classification + inventory-aware sales
 - **Real-time push**: WebSocket hub broadcasts all events to connected dashboards
 - **Optional Redis**: App degrades gracefully to in-memory caches if Redis is down
+- **Zero hallucination**: AI only answers from training data and inventory — never from general knowledge
 
 ---
 
@@ -116,12 +117,13 @@ The `main()` function performs these steps in order:
 **Background routines** (started via JobQueue):
 - `health_check` every 5 minutes — pings Telegram, WhatsApp, Facebook, Instagram APIs
 - `cache_cleanup` every 15 minutes — evicts stale cache entries
+- `handoff_reminder` every 15 minutes — processes pending handoffs, sends reminders (max 3), auto-expires
 
 ### 2.2 Layer 1: Handlers (`internal/handler/`)
 
 **File**: `internal/handler/handler.go` (1212 lines)
 
-The `Handlers` struct aggregates all 11 sub-handlers:
+The `Handlers` struct aggregates all 13 sub-handlers:
 
 ```go
 type Handlers struct {
@@ -136,6 +138,8 @@ type Handlers struct {
     Audit        *AuditHandler
     Notification *NotificationHandler
     Widget       *WidgetHandler
+    Inventory    *InventoryHandler
+    Handoff      *HandoffHandler
 }
 ```
 
@@ -198,6 +202,7 @@ func (h *XxxHandler) SomeEndpoint(c *gin.Context) {
 
 **SettingsHandler** (13 endpoints):
 - Profile CRUD, API key management (`noant_`-prefixed keys), team management (invite/remove), notification preferences, account deletion, GDPR data export
+- `InviteTeamMember` — creates team member record + sends invite email via Resend/SMTP
 
 **ArchiveHandler** (6 endpoints):
 - Folder CRUD (archive folders), move/remove chats, get status
@@ -216,6 +221,19 @@ func (h *XxxHandler) SomeEndpoint(c *gin.Context) {
 - `GetPublic` (API key) — public config for embedded widget
 - `PublicChat` (API key) — unauthenticated chat via embedded widget
 
+**InventoryHandler** (6 endpoints):
+- `Create` — create product/service/package with name, price, min_price, stock
+- `List` — list all inventory items with optional type filter
+- `GetByID` — fetch single item
+- `Update` — update item fields
+- `Delete` — remove item
+- `Search` — search items by name/description
+
+**HandoffHandler** (3 endpoints):
+- `List` — list handoffs with optional status filter (pending/sold/lost/expired)
+- `GetByID` — fetch single handoff with customer and product details
+- `UpdateStatus` — mark handoff as sold/lost/expired with notes and final price
+
 **WebSocket handler** (`internal/handler/websocket.go`, 145 lines):
 - `WebSocketHub` — central hub pattern: register/unregister/broadcast channels, client map, origin validation, 30s ping ticker
 - `HandleWebSocket` — origin validation → upgrade → register → read loop (discards client messages — server→client only)
@@ -229,12 +247,13 @@ func (h *XxxHandler) SomeEndpoint(c *gin.Context) {
 
 **File**: `internal/service/service.go` (1738 lines)
 
-The `Services` struct aggregates all 11 services:
+The `Services` struct aggregates all 13 services:
 
 ```go
 type Services struct {
     Auth, Chat, Training, Analytics, Integration,
-    Settings, Archive, Payment, Audit, Notification, Widget
+    Settings, Archive, Payment, Audit, Notification, Widget,
+    Inventory, Handoff, OpenWA, Telegram
 }
 ```
 
@@ -250,32 +269,56 @@ type AIBrain struct {
     keyMutex    sync.RWMutex
     cb          *CircuitBreaker  // 3 failures → 60s block
     broadcastFn func(convID, msgType string, data interface{})
+    embeddings  *EmbeddingService  // semantic search
 }
 ```
 
-**AIBrain flow** (`GenerateResponse`):
+**AIBrain flow** (`GenerateResponse`) — Zero hallucination architecture:
 
 ```
-1. Fetch conversation + user from DB
-2. Search Q&A pairs matching user query (SQL LIKE)
-3a. NO MATCHES → confidence 0.3
-    → Create UnknownQuestion record
-    → Create Notification
-    → Broadcast "unknown_question" via WebSocket
-    → Return fallback: "I don't have that information yet..."
-3b. MATCHES FOUND → Build LangChain-style prompt:
-    System: "You are Noant, an enterprise AI customer support agent"
-    Context: Top 3 matching Q&A pairs
-    History: Last 10 conversation turns (from Redis)
-    User query
-4. Call Groq API (round-robin keys, circuit breaker)
-   POST https://api.groq.com/openai/v1/chat/completions
-   Model: llama-3.3-70b-versatile
-   Temperature: 0.1 | Max tokens: 500 | Timeout: 30s
-5. On success → confidence 0.95, store turn in Redis
-   On failure → fallback, zero confidence, escalate
-6. Return AIResponse
+Customer sends message
+  │
+  ▼
+1. Greeting check → "Hi!" → local reply, no AI call
+  │
+  ▼
+2. LLM Intent Classification (classifyIntent)
+   ├── "handoff" → handleHandoff (create handoff record, notify owner)
+   ├── "sales"   → handleSalesMode (search inventory, negotiate)
+   └── "support" → default path
+  │
+  ▼
+3. Support Mode:
+   ├── Semantic search training data (embeddings + cosine similarity)
+   │   └── Falls back to SQL LIKE if embeddings unavailable
+   ├── Semantic search inventory
+   ├── If training data match → return answer DIRECTLY (no Groq call)
+   ├── If inventory match → return product info DIRECTLY (no Groq call)
+   └── If nothing found → escalate + suggest similar Q&As
+  │
+  ▼
+4. Sales Mode:
+   ├── Search inventory (semantic search)
+   ├── Build prompt with inventory context + min_price guardrails
+   ├── Call Groq with strict "ONLY show inventory items" prompt
+   ├── Validate response (no hallucinated prices/products)
+   └── Local fallback if Groq fails (show inventory directly)
+  │
+  ▼
+5. Handoff Mode:
+   ├── Search inventory for mentioned product
+   ├── Create handoff record in DB
+   ├── Notify owner via WebSocket + notification
+   └── Return: "Message [owner] on WhatsApp: [number]"
 ```
+
+**Key AI rules enforced in prompts:**
+- NEVER use general knowledge — only training data and inventory
+- NEVER invent prices, products, or services
+- NEVER say "I'm an AI" or mention platform names
+- If training data contradicts general knowledge → training data wins
+- Negotiation: offer small discounts, never below min_price
+- Date/time aware for greetings and time-based context
 
 **CircuitBreaker** states:
 - `closed` → normal operation, allows requests
@@ -326,7 +369,16 @@ type AIBrain struct {
 - `VerifyWebhook` — HMAC-SHA256 signature verification
 - `ProcessWebhook` — handles subscription.created/active/cancelled/updated events
 
-**ResendService** (`internal/service/resend.go`, 175 lines):
+**EmailService** (`internal/service/email.go`, 184 lines):
+- Wraps Resend (primary) and SMTP (fallback)
+- If `RESEND_API_KEY` is set → tries Resend first, falls back to SMTP on failure
+- If no Resend key → uses SMTP directly
+- `SendPasswordReset` — styled HTML email with reset link
+- `SendNotificationEmail` — plain notification email
+
+**ResendService** (`internal/service/resend.go`, 178 lines):
+- Configurable `from` address via `RESEND_FROM` env var (default: `onboarding@resend.dev` — no domain needed)
+- Configurable `apiURL` for reset links (uses `APIURL` from config)
 - `SendPasswordReset` — styled HTML email with reset link
 - `SendNotificationEmail` — plain notification email
 - Both POST to `https://api.resend.com/emails` with Bearer auth
@@ -336,6 +388,26 @@ type AIBrain struct {
 - Falls back to word-by-word search for words > 4 chars
 - TODO: Pinecone/Weaviate integration
 
+**EmbeddingService** (`internal/service/embedding.go`, 392 lines):
+- `GenerateEmbedding` — single text → vector via Groq `text-embedding-3-small`
+- `GenerateEmbeddings` — batch text → vectors (one API call)
+- `CosineSimilarity` — compares two vectors, returns 0.0–1.0
+- `SemanticSearchQAPairs` — query embedding vs all Q&A embeddings → top matches above threshold (0.65)
+- `SemanticSearchInventory` — same for inventory (threshold 0.6)
+- `FindSimilarQA` — finds similar Q&As for unknown question suggestions
+- **In-memory cache** per user, auto-refreshes every hour, invalidated on data changes
+- Falls back to SQL LIKE if embedding API unavailable
+
+**InventoryService**:
+- Full CRUD for products/services/packages
+- Cache invalidation on create/update/delete (triggers embedding rebuild)
+
+**HandoffService**:
+- `Create` — creates handoff record, notifies owner via WebSocket + notification
+- `List` / `GetByID` — fetch handoffs with status filter
+- `UpdateStatus` — mark sold/lost/expired, decrease inventory stock on sold
+- `ProcessReminders` — background job: pending handoffs → reminders (max 3) → expire
+
 ### 2.4 Layer 3: Repository (`internal/repository/`)
 
 **File**: `internal/repository/repository.go` (1170 lines)
@@ -343,7 +415,8 @@ type AIBrain struct {
 ```go
 type Repositories struct {
     User, Conversation, Message, QAPair, Category, UnknownQ, Integration,
-    Team, APIKey, Archive, Subscription, Audit, Notification, WidgetConfig
+    Team, APIKey, Archive, Subscription, Audit, Notification, WidgetConfig,
+    Inventory, Handoff
 }
 ```
 
@@ -371,6 +444,8 @@ func NewXxxRepository(db *sql.DB, redis *infrastructure.RedisClient) *XxxReposit
 | `UnknownQuestionRepository` | Create, List (filtered), UpdateStatus | No |
 | `IntegrationRepository` | Create, ListByUser, ListActive, UpdateStatus, GetByUserAndChannel, Disconnect | No |
 | `WidgetConfigRepository` | Get, GetByAPIKey, Upsert (ON DUPLICATE KEY UPDATE) | No |
+| `InventoryRepository` | Create, GetByID, List (with type filter), Search (LIKE on name+description), Update, Delete, DecreaseStock | No |
+| `HandoffRepository` | Create, GetByID, List (with status filter), UpdateStatus, GetPending, GetReadyForReminder, IncrementReminder, Expire | No |
 
 **Unit of Work** (`internal/repository/uow.go`, 59 lines):
 - Transaction wrapper: `Begin()`, `Commit()`, `Rollback()`
@@ -390,6 +465,8 @@ All core domain structs with `json` and `db` tags:
 | `UnknownQuestion` | AI knowledge gap | ID, UserID, Question, ConversationID, Channel, Status (pending/trained/ignored) |
 | `Integration` | Connected channel | ID, UserID, Channel, Status, Config (map), WebhookURL, LastError |
 | `WidgetConfig` | Chat widget settings | ID, UserID, BrandColor, Greeting, BotName, Position, WidgetAPIKey, IsActive |
+| `InventoryItem` | Product/service/package | ID, UserID, Type (product/service/package), Name, Description, Price, MinPrice, StockQuantity, ImageURL, IsActive |
+| `Handoff` | Sales handoff from AI to owner | ID, UserID, ConversationID, CustomerName/Phone/Whatsapp, ProductName, OriginalPrice, AgreedPrice, Quantity, Status (pending/sold/lost/expired), FinalPrice, OwnerNotes, ReminderCount, NextReminderAt |
 | `AnalyticsOverview` | Dashboard stats | TotalConversations, ConversationsToday, ActiveConversations, ResolvedToday, AIResolutionRate, AvgResponseTime, Satisfaction |
 
 ### 2.6 Middleware Stack (`internal/middleware/`)
@@ -445,7 +522,7 @@ WebSocketHub
 
 ### 2.9 Database Schema
 
-**7 migration files** in `backend/migrations/`:
+**8 migration files** in `backend/migrations/`:
 
 | Migration | Tables Created |
 |---|---|
@@ -454,6 +531,7 @@ WebSocketHub
 | `005_user_isolation.sql` | Adds user_id columns to categories, qa_pairs, unknown_questions (multi-tenant isolation) |
 | `006_notifications_widget.sql` | notifications, widget_configs, user notification preference columns |
 | `007_message_source.sql` | Adds `source` column to messages |
+| `008_inventory_leads.sql` | inventory_items (products/services/packages), handoffs (sales leads), adds owner_whatsapp to users |
 
 **Schema diagram (simplified):**
 
@@ -471,6 +549,10 @@ users ──── conversations ──── messages
   ├──── notifications
   │
   ├──── subscriptions ──── payments
+  │
+  ├──── inventory_items
+  │
+  ├──── handoffs
   │
   └──── team_members
 ```
@@ -547,6 +629,17 @@ users ──── conversations ──── messages
 | POST | /api/v1/payments/subscribe | Yes | - | Yes |
 | POST | /api/v1/payments/webhook | No | - | No |
 | GET | /api/v1/payments/status | Yes | - | No |
+| **Inventory** (60 req/min per user) | | | | |
+| GET | /api/v1/inventory | Yes | User | Yes |
+| POST | /api/v1/inventory | Yes | User | Yes |
+| GET | /api/v1/inventory/search | Yes | User | Yes |
+| GET | /api/v1/inventory/:id | Yes | User | Yes |
+| PUT | /api/v1/inventory/:id | Yes | User | Yes |
+| DELETE | /api/v1/inventory/:id | Yes | User | Yes |
+| **Handoffs** (60 req/min per user) | | | | |
+| GET | /api/v1/handoffs | Yes | User | Yes |
+| GET | /api/v1/handoffs/:id | Yes | User | Yes |
+| PUT | /api/v1/handoffs/status | Yes | User | Yes |
 | **System** | | | | |
 | GET | /health | No | - | No |
 | GET | /metrics | No | - | No |
@@ -608,6 +701,8 @@ const router = createBrowserRouter([
           { path: 'billing',      element: <BillingPage /> },
           { path: 'team',         element: <TeamPage /> },
           { path: 'widget',       element: <WidgetPage /> },
+          { path: 'leads',        element: <LeadsPage /> },
+          { path: 'inventory',    element: <InventoryPage /> },
         ]
       },
       { path: '*', element: <Navigate to='/' /> },
@@ -636,6 +731,8 @@ const router = createBrowserRouter([
 /billing        → DashboardLayout > BillingPage
 /team           → DashboardLayout > TeamPage
 /widget         → DashboardLayout > WidgetPage
+/leads          → DashboardLayout > LeadsPage
+/inventory      → DashboardLayout > InventoryPage
 ```
 
 ### 3.3 Context Layer (4 contexts)
@@ -644,7 +741,7 @@ const router = createBrowserRouter([
 |---|---|---|
 | `NetworkContext` | `contexts/NetworkContext.tsx` | Tracks `navigator.onLine`, exposes `isOnline` + `wasOffline` |
 | `WidgetConfigContext` | `contexts/WidgetConfigContext.tsx` | Fetches/saves widget config from `/widget/config`, syncs with integrations |
-| `SidebarAlertsContext` | `contexts/SidebarAlertsContext.tsx` | Polls + WebSocket for unread counts, unknown Qs, notifications, issues, billing |
+| `SidebarAlertsContext` | `contexts/SidebarAlertsContext.tsx` | Polls + WebSocket for unread counts, unknown Qs, notifications, channel errors, billing. `channelIssues` counts only `status === 'error'` (not inactive/disconnected) |
 | `ModalContext` | `contexts/ModalContext.tsx` | Imperative `showModal()` with confirm/cancel, loading, ESC/overlay-close |
 
 ### 3.4 Custom Hooks (8 hooks)
@@ -706,7 +803,7 @@ All components live in `frontend/src/components/`:
 |---|---|
 | `AuthLayout` | Split screen: dark brand panel (left) + form Outlet (right) |
 | `DashboardLayout` | Shell: Sidebar + Header + BottomNav + `<Outlet />` |
-| `Sidebar` | Nav links, sections, alerts indicator, logout, collapsible on mobile |
+| `Sidebar` | Nav links, sections (Your Workspace, Build Your Noant, Manage), alerts indicator, logout, collapsible on mobile |
 | `Header` | Page title, notifications bell (with badge), theme toggle, user avatar dropdown |
 | `BottomNav` | Mobile-only bottom tab bar (hides in chat thread view) |
 | `MobileOverlay` | Backdrop overlay for mobile sidebar |
@@ -715,10 +812,11 @@ All components live in `frontend/src/components/`:
 | Component | Purpose |
 |---|---|
 | `ChatList` | Searchable conversation list with infinite scroll, status badges, unread counts |
-| `ChatMessages` | Message thread with date separators, sender badges, confidence indicators, delivery status |
+| `ChatMessages` | Message thread with date separators, sender badges, confidence indicators, delivery status. Loading state uses `ConversationLoading` |
 | `ChatInput` | Message input field + Send button + Takeover button + typing indicator |
 | `CustomerInfo` | Customer details sidebar + conversation history timeline |
-| `TypingIndicator` | Animated typing dots (WebSocket-driven) |
+| `TypingIndicator` | Animated pulsing dots (WebSocket-driven), uses `dotPulse` keyframe animation |
+| `ConversationLoading` | Theme-aware loading state: circle with pulsing dots. Sizes: sm/md/lg |
 
 **Channels** (`components/channels/`):
 | Component | Purpose |
@@ -1155,12 +1253,13 @@ backend/
 │   │   ├── models.go           # All domain models (User, Conversation, Message, QAPair, etc.)
 │   │   └── audit.go            # AuditLog model
 │   ├── handler/
-│   │   ├── handler.go          # Handlers struct + Auth/Chat/Training/Analytics/Integration/Settings/Archive/Payment/Audit handlers
+│   │   ├── handler.go          # Handlers struct + Auth/Chat/Training/Analytics/Integration/Settings/Archive/Payment/Audit/Inventory/Handoff handlers
 │   │   ├── websocket.go        # WebSocketHub: register/unregister/broadcast + HandleWebSocket
 │   │   ├── health.go           # Health check handler
 │   │   └── notifications.go    # Notification + Widget + SettingsNotif handlers
 │   ├── service/
-│   │   ├── service.go          # Services struct + AIBrain (Groq) + Auth/Chat/Training/Analytics/Integration/Settings/Archive
+│   │   ├── service.go          # Services struct + AIBrain (Groq) + Auth/Chat/Training/Analytics/Integration/Settings/Archive/Inventory/Handoff
+│   │   ├── embedding.go        # EmbeddingService: semantic search via Groq embeddings + cosine similarity
 │   │   ├── notifications.go    # NotificationService + WidgetService + ResendService
 │   │   ├── polar.go            # PolarService: Polar.sh payment integration
 │   │   ├── resend.go           # ResendService: email sending
@@ -1171,7 +1270,8 @@ backend/
 │   │   ├── repository.go       # All 14 repositories (User, Conversation, Message, QAPair, etc.)
 │   │   ├── uow.go              # UnitOfWork: transaction wrapper
 │   │   ├── audit.go            # AuditRepository
-│   │   └── notifications.go    # Notification + WidgetConfig repositories
+│   │   ├── notifications.go    # Notification + WidgetConfig repositories
+│   │   ├── inventory.go        # InventoryRepository + HandoffRepository
 │   ├── middleware/
 │   │   ├── auth.go             # AuthMiddleware, RateLimit, SecurityHeaders, Logger, Cookies, etc.
 │   │   ├── audit.go            # AuditMiddleware: async action logging
@@ -1195,7 +1295,8 @@ backend/
 │   ├── 004_audit_logs.sql       # Duplicate of 003
 │   ├── 005_user_isolation.sql   # Multi-tenant: add user_id to categories, qa_pairs, unknown_questions
 │   ├── 006_notifications_widget.sql  # notifications, widget_configs, user prefs
-│   └── 007_message_source.sql   # Add source column to messages
+│   ├── 007_message_source.sql   # Add source column to messages
+│   └── 008_inventory_leads.sql  # inventory_items, handoffs, owner_whatsapp
 └── scripts/
     └── update_pagination.py      # Pagination helper script
 ```
@@ -1252,7 +1353,9 @@ frontend/
 │   │       ├── notifications/page.tsx # Notifications list
 │   │       ├── billing/page.tsx # Billing: pricing plans
 │   │       ├── team/page.tsx    # Team: member list + invite
-│   │       └── widget/page.tsx  # Widget: config editor + preview + embed code
+│   │       ├── widget/page.tsx  # Widget: config editor + preview + embed code
+│   │       ├── leads/page.tsx   # Leads: handoff pipeline (HOT/SOLD/LOST), status filters
+│   │       └── inventory/page.tsx # Inventory: product/service/package CRUD, search, cards
 │   ├── components/
 │   │   ├── layout/
 │   │   │   ├── AuthLayout.tsx, DashboardLayout.tsx, Sidebar.tsx
@@ -1261,7 +1364,7 @@ frontend/
 │   │   │   └── ProtectedRoute.tsx
 │   │   ├── chat/
 │   │   │   ├── ChatList.tsx, ChatMessages.tsx, ChatInput.tsx
-│   │   │   ├── CustomerInfo.tsx, TypingIndicator.tsx
+│   │   │   ├── CustomerInfo.tsx, TypingIndicator.tsx, ConversationLoading.tsx
 │   │   ├── channels/
 │   │   │   ├── ChannelCard.tsx, ChannelIcon.tsx, TokenDisplay.tsx
 │   │   │   ├── WhatsAppModal.tsx, TelegramModal.tsx
@@ -1280,7 +1383,7 @@ frontend/
 │   │       ├── CommandPalette.tsx, HelpModal.tsx
 │   │       ├── ErrorBoundary.tsx, OfflineBanner.tsx
 │   └── public/
-│       ├── favicon.ico, favicon-16x16.png, favicon-32x32.png
-│       ├── apple-touch-icon.png, logo.png
-│       └── favicon.svg
+│       ├── Logo A.png (favicon), Logo B.png, Logo&Name A.png
+│       ├── favicon.svg, widget.js
+│       └── (favicon references in index.html use Logo A.png)
 ```

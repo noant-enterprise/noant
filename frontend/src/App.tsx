@@ -18,6 +18,8 @@ import NotificationsPage from '@/app/(dashboard)/notifications/page'
 import BillingPage from '@/app/(dashboard)/billing/page'
 import TeamPage from '@/app/(dashboard)/team/page'
 import WidgetPage from '@/app/(dashboard)/widget/page'
+import LeadsPage from '@/app/(dashboard)/leads/page'
+import InventoryPage from '@/app/(dashboard)/inventory/page'
 
 import { useEffect } from 'react'
 import { OfflineBanner } from '@/components/OfflineBanner'
@@ -105,6 +107,8 @@ const router = createBrowserRouter([
           { path: 'billing', element: <BillingPage /> },
           { path: 'team', element: <TeamPage /> },
           { path: 'widget', element: <WidgetPage /> },
+          { path: 'leads', element: <LeadsPage /> },
+          { path: 'inventory', element: <InventoryPage /> },
         ],
       },
       { path: '*', element: <Navigate to='/' replace /> },

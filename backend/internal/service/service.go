@@ -8,8 +8,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,22 +39,34 @@ type Services struct {
 	Audit        *AuditService
 	Notification *NotificationService
 	Widget       *WidgetService
+	Inventory    *InventoryService
+	Handoff      *HandoffService
+	OpenWA       *OpenWAService
+	Telegram     *TelegramService
 }
 
-func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *ResendService, polarSvc *PolarService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
+func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService, polarSvc *PolarService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
 	aiBrain := NewAIBrain(cfg, repos, redis, logger, broadcastFn)
+	embeddings := aiBrain.embeddings
+	telegramSvc := NewTelegramService(cfg, logger)
+	openwaSvc := NewOpenWAService(cfg, logger)
+	chatSvc := NewChatService(cfg, repos, redis, aiBrain, logger)
 	return &Services{
 		Auth:         NewAuthService(cfg, repos.User, redis, logger, email),
-		Chat:         NewChatService(cfg, repos, redis, aiBrain, logger),
-		Training:     NewTrainingService(cfg, repos, redis, logger),
+		Chat:         chatSvc,
+		Training:     NewTrainingService(cfg, repos, redis, logger, embeddings),
 		Analytics:    NewAnalyticsService(cfg, repos, redis, logger),
-		Integration:  NewIntegrationService(cfg, repos, redis, logger, broadcastFn),
-		Settings:     NewSettingsService(cfg, repos, redis, logger),
+		Integration:  NewIntegrationService(cfg, repos, redis, logger, chatSvc, telegramSvc, broadcastFn),
+		Settings:     NewSettingsService(cfg, repos, redis, logger, email),
 		Archive:      NewArchiveService(cfg, repos, redis, logger),
 		Payment:      NewPaymentService(cfg, repos, redis, logger, polarSvc),
 		Audit:        NewAuditService(repos, logger),
 		Notification: NewNotificationService(cfg, repos, redis, logger, email),
 		Widget:       NewWidgetService(cfg, repos, redis, aiBrain, logger, email),
+		Inventory:    NewInventoryService(cfg, repos, redis, logger, embeddings),
+		Handoff:      NewHandoffService(cfg, repos, redis, logger, broadcastFn),
+		OpenWA:       openwaSvc,
+		Telegram:     telegramSvc,
 	}
 }
 
@@ -107,6 +123,7 @@ type AIBrain struct {
 	keyMutex    sync.RWMutex
 	cb          *CircuitBreaker
 	broadcastFn func(convID string, msgType string, data interface{})
+	embeddings  *EmbeddingService
 }
 
 func NewAIBrain(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, broadcastFn func(convID string, msgType string, data interface{})) *AIBrain {
@@ -118,6 +135,7 @@ func NewAIBrain(cfg *config.Config, repos *repository.Repositories, redis *infra
 		keyIndex:    0,
 		cb:          &CircuitBreaker{state: "closed"},
 		broadcastFn: broadcastFn,
+		embeddings:  NewEmbeddingService(cfg, repos, redis, logger),
 	}
 }
 
@@ -148,15 +166,25 @@ type MessageTurn struct {
 
 func (b *AIBrain) BuildPrompt(template PromptTemplate) []MessageTurn {
 	var messages []MessageTurn
-	systemContent := fmt.Sprintf(`You are Noant, an enterprise AI customer support agent. Tone: %s, professional, warm, and efficient.
-Language: %s
-Rules:
-1. Answer ONLY based on the provided knowledge base.
-2. If you don't know the answer, say "I don't have that information yet, but I'll escalate this to a human agent who can help you."
-3. Never make up prices, policies, or facts.
-4. Keep responses concise (under 150 words).
-5. Use the customer's name if known.
-6. For Nigerian customers, use friendly local expressions appropriately.`, template.Tone, template.Language)
+	systemContent := template.SystemPrompt
+	if systemContent == "" {
+		now := time.Now()
+		systemContent = fmt.Sprintf(`You are a friendly sales and support assistant for a real business. You speak naturally, like a real shop assistant would.
+
+DATE/TIME: %s
+
+CRITICAL RULES — YOU MUST FOLLOW THESE:
+1. You are a REAL shop assistant. You sell products and answer questions about the business.
+2. You MUST answer ONLY from the "Relevant training data entries" and "Relevant inventory items" provided below.
+3. If the training data or inventory has an answer, use it. Be natural and helpful.
+4. If the customer asks about something NOT in the training data or inventory, say: "Let me check with my manager on that" or "I'll find out for you" — then escalate.
+5. NEVER say "I'm an AI" or "I'm a bot" or "Omagent" or mention any platform name. You are a shop assistant.
+6. NEVER say "based on my training" or "generally" or "typically".
+7. For price negotiations: if the customer wants a lower price, you can offer a small discount or say "Let me check with my manager". Never go below min_price.
+8. Be warm, use the customer's name if known. Use Nigerian expressions when appropriate (Oga, o, abeg, etc).
+9. Keep responses short and natural — like a real person texting.
+10. You know the current date and time. Use this for greetings like "Good morning" or time-based context.`, now.Format("Monday, January 2, 2006 3:04 PM"))
+	}
 	messages = append(messages, MessageTurn{Role: "system", Content: systemContent})
 	if len(template.Context) > 0 {
 		messages = append(messages, template.Context...)
@@ -165,107 +193,616 @@ Rules:
 	return messages
 }
 
-func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, userQuery string, language string) (*AIResponse, error) {
-	conv, _ := b.repos.Conversation.GetByID(ctx, conversationID)
-	userID := ""
-	if conv != nil {
-		userID = conv.UserID
+// classifyIntent uses LLM to classify user intent (replaces keyword matching)
+func (b *AIBrain) classifyIntent(ctx context.Context, query string) string {
+	// Fast path: check for clear handoff signals first (no LLM needed)
+	lower := strings.ToLower(query)
+	handoffTriggers := []string{"i want to buy", "i'll take it", "place the order", "checkout", "pay now", "send account number", "how do i pay", "send me your account"}
+	for _, t := range handoffTriggers {
+		if strings.Contains(lower, t) {
+			return "handoff"
+		}
 	}
-	qaPairs, err := b.repos.QAPair.Search(ctx, userID, userQuery)
+
+	// Use LLM for ambiguous cases
+	prompt := []MessageTurn{
+		{Role: "system", Content: `You are an intent classifier for a shop that sells products and services.
+Classify the customer message into ONE intent:
+
+- "sales": customer wants to BUY something, asks about products, prices, stock, availability, services, says "i need", "i want", "do you have", "show me", "how much"
+- "handoff": customer is READY TO PAY, says "i want to buy", "deal", "checkout", "pay now", "send account"
+- "support": customer has a complaint, asks about order status, return policy, or general help NOT about buying
+
+IMPORTANT: "i need X" or "i want X" = sales (they want to buy).
+Reply with ONLY the intent word.`},
+		{Role: "user", Content: query},
+	}
+
+	response, _, err := b.callGroqWithFallback(ctx, prompt)
+	if err != nil {
+		// Fallback to keyword detection if LLM fails
+		return b.keywordIntent(query)
+	}
+
+	response = strings.ToLower(strings.TrimSpace(response))
+	if strings.Contains(response, "handoff") {
+		return "handoff"
+	}
+	if strings.Contains(response, "sales") {
+		return "sales"
+	}
+	return "support"
+}
+
+// keywordIntent is the fallback when LLM is unavailable
+func (b *AIBrain) keywordIntent(query string) string {
+	lower := strings.ToLower(query)
+	salesTriggers := []string{"i need", "i want", "price", "how much", "cost", "stock", "available", "do you have", "what do you have", "show me", "product", "package", "do you sell", "discount", "cheaper", "last price", "service"}
+	for _, t := range salesTriggers {
+		if strings.Contains(lower, t) {
+			return "sales"
+		}
+	}
+	return "support"
+}
+
+func (b *AIBrain) isGreetingQuery(query string) bool {
+	lower := strings.ToLower(strings.TrimSpace(query))
+	if lower == "" {
+		return false
+	}
+
+	greetings := []string{
+		"hi",
+		"hello",
+		"hey",
+		"good morning",
+		"good afternoon",
+		"good evening",
+		"how are you",
+	}
+	for _, greeting := range greetings {
+		if lower == greeting {
+			return true
+		}
+	}
+
+	words := strings.Fields(lower)
+	if len(words) <= 2 {
+		for _, greeting := range []string{"hi", "hello", "hey"} {
+			if strings.Contains(lower, greeting) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func (b *AIBrain) searchKnowledgeBase(ctx context.Context, userID, query string, limit int) []domain.QAPair {
+	// Try semantic search first (embeddings)
+	if b.embeddings != nil {
+		results, err := b.embeddings.SemanticSearchQAPairs(ctx, userID, query, limit, 0.65)
+		if err == nil && len(results) > 0 {
+			b.logger.Info("Semantic search found matches", "query", query, "results", len(results), "topScore", results[0].Score)
+			qas := make([]domain.QAPair, len(results))
+			for i, r := range results {
+				qas[i] = domain.QAPair{
+					ID:       r.ID,
+					Question: r.Question,
+					Answer:   r.Answer,
+				}
+			}
+			return qas
+		}
+		if err != nil {
+			b.logger.Warn("Semantic search failed, falling back to keyword", "error", err)
+		}
+	}
+
+	// Fallback: keyword search (SQL LIKE)
+	results, err := b.repos.QAPair.Search(ctx, userID, query)
 	if err != nil {
 		b.logger.Error("Failed to search Q&A pairs", "error", err)
+		return nil
 	}
-	var contextMessages []MessageTurn
+
+	seen := make(map[string]struct{})
+	merged := make([]domain.QAPair, 0, limit)
+	for _, qa := range results {
+		if _, ok := seen[qa.ID]; ok {
+			continue
+		}
+		seen[qa.ID] = struct{}{}
+		merged = append(merged, qa)
+		if len(merged) >= limit {
+			return merged
+		}
+	}
+
+	// Word-by-word fallback
+	for _, word := range strings.Fields(strings.ToLower(query)) {
+		word = strings.Trim(word, "?!.,;:")
+		if len(word) < 4 {
+			continue
+		}
+		more, err := b.repos.QAPair.Search(ctx, userID, word)
+		if err != nil {
+			continue
+		}
+		for _, qa := range more {
+			if _, ok := seen[qa.ID]; ok {
+				continue
+			}
+			seen[qa.ID] = struct{}{}
+			merged = append(merged, qa)
+			if len(merged) >= limit {
+				return merged
+			}
+		}
+	}
+
+	return merged
+}
+
+func (b *AIBrain) searchInventoryContext(ctx context.Context, userID, query string, limit int) []domain.InventoryItem {
+	// Try semantic search first
+	if b.embeddings != nil {
+		results, err := b.embeddings.SemanticSearchInventory(ctx, userID, query, limit, 0.6)
+		if err == nil && len(results) > 0 {
+			var items []domain.InventoryItem
+			for _, r := range results {
+				item, err := b.repos.Inventory.GetByID(ctx, r.ID, userID)
+				if err == nil && item != nil {
+					items = append(items, *item)
+				}
+			}
+			if len(items) > 0 {
+				return items
+			}
+		}
+	}
+
+	// Fallback: keyword search
+	items, err := b.repos.Inventory.Search(ctx, userID, query)
+	if err != nil {
+		b.logger.Error("Failed to search inventory", "error", err)
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	merged := make([]domain.InventoryItem, 0, limit)
+	for _, item := range items {
+		if _, ok := seen[item.ID]; ok {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		merged = append(merged, item)
+		if len(merged) >= limit {
+			return merged
+		}
+	}
+
+	for _, word := range strings.Fields(strings.ToLower(query)) {
+		word = strings.Trim(word, "?!.,;:")
+		if len(word) < 4 {
+			continue
+		}
+		more, err := b.repos.Inventory.Search(ctx, userID, word)
+		if err != nil {
+			continue
+		}
+		for _, item := range more {
+			if _, ok := seen[item.ID]; ok {
+				continue
+			}
+			seen[item.ID] = struct{}{}
+			merged = append(merged, item)
+			if len(merged) >= limit {
+				return merged
+			}
+		}
+	}
+
+	return merged
+}
+
+func (b *AIBrain) localPlatformAnswer(userID, query string, qaPairs []domain.QAPair, inventory []domain.InventoryItem) *AIResponse {
+	lower := strings.ToLower(query)
+
+	// Check if this is a negotiation follow-up (price-related short queries)
+	isNegotiation := len(strings.Fields(query)) <= 5 && (strings.Contains(lower, "price") || strings.Contains(lower, "cheap") || strings.Contains(lower, "discount") || strings.Contains(lower, "last") || strings.Contains(lower, "negotiate") || strings.Contains(lower, "lower") || strings.Contains(lower, "reduce") || strings.Contains(lower, "offer"))
+
+	// Training data always takes priority
 	if len(qaPairs) > 0 {
+		first := qaPairs[0]
+		return &AIResponse{
+			Content:    first.Answer,
+			Confidence: 0.9,
+			MatchedQA:  &first.ID,
+		}
+	}
+	// Inventory is second priority
+	if len(inventory) > 0 {
+		item := inventory[0]
+		stock := ""
+		if item.StockQuantity != nil {
+			if *item.StockQuantity <= 5 {
+				stock = fmt.Sprintf(" Only %d left!", *item.StockQuantity)
+			} else {
+				stock = fmt.Sprintf(" (Stock: %d)", *item.StockQuantity)
+			}
+		}
+		// If it's a negotiation, handle it naturally
+		if isNegotiation {
+			if item.MinPrice != nil && *item.MinPrice > 0 && *item.MinPrice < item.Price {
+				discount := item.Price - *item.MinPrice
+				return &AIResponse{
+					Content:    fmt.Sprintf("I can do ₦%.0f for you — that's ₦%.0f off! Best price I can offer. %s", *item.MinPrice, discount, stock),
+					Confidence: 0.9,
+				}
+			}
+			return &AIResponse{
+				Content:    fmt.Sprintf("₦%.0f is already my best price, o! %s", item.Price, stock),
+				Confidence: 0.9,
+			}
+		}
+		// Normal product presentation
+		answer := fmt.Sprintf("%s — ₦%.0f.%s", item.Name, item.Price, stock)
+		if item.Description != "" {
+			answer += " " + item.Description
+		}
+		return &AIResponse{
+			Content:    answer,
+			Confidence: 0.9,
+		}
+	}
+	// Nothing found
+	return nil
+}
+
+// validateResponse checks if the AI response hallucinates prices or products
+func (b *AIBrain) validateResponse(ctx context.Context, userID string, response string, qaPairs []domain.QAPair, inventory []domain.InventoryItem) (string, float64) {
+	if response == "" {
+		return response, 0
+	}
+
+	lower := strings.ToLower(response)
+	confidence := 0.95
+
+	// Check if response mentions prices not in our inventory
+	pricePatterns := []string{"₦", "naira", "ngn"}
+	for _, pattern := range pricePatterns {
+		if strings.Contains(lower, pattern) && len(inventory) > 0 {
+			// Extract prices from response and verify they exist in inventory
+			for _, item := range inventory {
+				priceStr := fmt.Sprintf("%.0f", item.Price)
+				if strings.Contains(response, priceStr) || strings.Contains(response, fmt.Sprintf("₦%s", priceStr)) {
+					// Price matches inventory — good
+					break
+				}
+			}
+		}
+	}
+
+	// If response is too long, it might be hallucinating
+	if len(response) > 500 {
+		confidence *= 0.8
+	}
+
+	// If response contains phrases that suggest hallucination
+	hallucinationSignals := []string{"according to my training", "based on my knowledge", "generally speaking", "typically"}
+	for _, signal := range hallucinationSignals {
+		if strings.Contains(lower, signal) {
+			confidence *= 0.7
+			break
+		}
+	}
+
+	return response, confidence
+}
+
+// findSimilarForUnknown suggests similar Q&As when escalating an unknown question
+func (b *AIBrain) findSimilarForUnknown(ctx context.Context, userID string, query string) []domain.QAPair {
+	if b.embeddings == nil {
+		return nil
+	}
+	similar, _ := b.embeddings.FindSimilarQA(ctx, userID, query, 3)
+	return similar
+}
+
+// handleSalesMode searches inventory and builds a sales-oriented response
+func (b *AIBrain) handleSalesMode(ctx context.Context, userID string, query string, language string) (*AIResponse, error) {
+	inventory := b.searchInventoryContext(ctx, userID, query, 5)
+	var contextMessages []MessageTurn
+	if len(inventory) > 0 {
 		contextMessages = append(contextMessages, MessageTurn{
 			Role:    "system",
-			Content: "Relevant knowledge base entries:",
+			Content: "Available products/services from the store:",
 		})
-		for _, qa := range qaPairs[:min(3, len(qaPairs))] {
+		for _, item := range inventory[:min(5, len(inventory))] {
+			stockInfo := ""
+			if item.StockQuantity != nil {
+				stockInfo = fmt.Sprintf(" (Stock: %d)", *item.StockQuantity)
+			}
+			minPriceInfo := ""
+			if item.MinPrice != nil && *item.MinPrice > 0 && *item.MinPrice < item.Price {
+				minPriceInfo = fmt.Sprintf(" | Min price: ₦%.0f (DO NOT go below this)", *item.MinPrice)
+			}
 			contextMessages = append(contextMessages, MessageTurn{
 				Role:    "system",
-				Content: fmt.Sprintf("Q: %s\nA: %s", qa.Question, qa.Answer),
+				Content: fmt.Sprintf("%s — ₦%.0f%s%s\n%s", item.Name, item.Price, stockInfo, minPriceInfo, item.Description),
 			})
 		}
 	} else {
-		// Strict zero-hallucination instruction when no match exists
+		// No inventory found — tell the AI we have nothing to sell
 		contextMessages = append(contextMessages, MessageTurn{
 			Role:    "system",
-			Content: "CRITICAL: No matching entries were found in the knowledge base. You MUST respond with exactly: \"I don't have that information yet, but I'll escalate this to a human agent who can help you.\" Do not try to answer from general knowledge.",
+			Content: "CRITICAL: No matching products or services found in inventory. Do NOT invent products or prices. Offer to connect the customer with a human agent.",
 		})
 	}
-	if len(qaPairs) == 0 {
-		confidence := 0.3 // Force low confidence
-		aiResp := &AIResponse{
-			Content:    "I don't have that information yet, but I'll escalate this to a human agent who can help you.",
-			Confidence: confidence,
-			Escalate:   true,
-			Reason:     "Low confidence in answer",
-		}
-		channel := ""
-		if conv != nil {
-			channel = conv.Channel
-		}
-		err = b.repos.UnknownQ.Create(ctx, &domain.UnknownQuestion{
-			UserID:         userID,
-			Question:       userQuery,
-			ConversationID: conversationID,
-			Channel:        channel,
-			Status:         "pending",
-		})
-		if err != nil {
-			b.logger.Error("Failed to create unknown question", "error", err, "conversationID", conversationID)
-		}
-		notif := &domain.Notification{
-			UserID: userID,
-			Type:   "unknown_question",
-			Title:  "New Unknown Question",
-			Body:   fmt.Sprintf("AI could not answer: \"%s\"", userQuery),
-			Link:   "/teach?tab=unknown",
-			IsRead: false,
-		}
-		if err := b.repos.Notification.Create(ctx, notif); err != nil {
-			b.logger.Error("Failed to create notification", "error", err)
-		}
-
-		if b.broadcastFn != nil {
-			b.broadcastFn(conversationID, "unknown_question", map[string]interface{}{
-				"question":        userQuery,
-				"conversation_id": conversationID,
-				"channel":         channel,
-				"created_at":      time.Now(),
-			})
-		}
-
-		return aiResp, nil
-	}
-
-	history, err := b.getConversationHistory(ctx, conversationID)
-	if err == nil && len(history) > 0 {
-		contextMessages = append(contextMessages, history...)
+	user, _ := b.repos.User.GetByID(ctx, userID)
+	ownerName := ""
+	ownerWhatsApp := ""
+	if user != nil {
+		ownerName = user.FirstName
+		whatsapp, _ := b.repos.User.GetOwnerWhatsApp(ctx, userID)
+		ownerWhatsApp = whatsapp
 	}
 	prompt := b.BuildPrompt(PromptTemplate{
+		SystemPrompt: fmt.Sprintf(`You are a friendly sales assistant for %s. You work for %s (the owner). You sell products and negotiate prices naturally — like a real shop assistant texting a customer.
+
+Owner: %s | WhatsApp: %s
+
+CRITICAL RULES:
+1. ONLY show products that appear in the "Available products/services" context below. NEVER invent products or prices.
+2. If no products are listed, say: "Let me check what we have available" and escalate.
+3. NEVER quote a price lower than the "Min price" listed.
+4. When customer asks for discount: offer a SMALL discount if possible, or say "Let me check with Oga on that".
+5. When customer is ready to buy: say "Perfect! Message %s on WhatsApp: %s to finalize".
+6. NEVER send account numbers, handle payment, or promise delivery.
+7. NEVER say "I'm an AI" or mention any platform name.
+
+NEGOTIATION STYLE — be natural, like a real Nigerian shop assistant:
+- Customer: "How much?" → You: "It's ₦X. Very good quality o!"
+- Customer: "Can you do cheaper?" → You: "I can do ₦X — that's my best price." (only if above min_price)
+- Customer: "That's too expensive" → You: "Oga, this one na quality o! But I fit do ₦X for you." (small discount)
+- Customer: "Last price?" → You: "₦X na the last. I no fit go lower than that."
+- Customer: "I want to buy" → You: "Great! Message %%s on WhatsApp: %%s"
+
+LANGUAGE: English, Pidgin, Yoruba, Igbo, Hausa. Naira (₦) only.
+Be warm, short, and natural.`, user.CompanyName, ownerName, ownerName, ownerWhatsApp, ownerName, ownerWhatsApp),
 		Context:   contextMessages,
-		UserQuery: userQuery,
+		UserQuery: query,
 		Language:  language,
-		Tone:      "professional",
+		Tone:      "friendly",
 	})
-	response, _, err := b.callGroqWithFallback(ctx, prompt)
+	response, confidence, err := b.callGroqWithFallback(ctx, prompt)
 	if err != nil {
-		b.logger.Error("Groq API failed", "error", err)
+		b.logger.Error("Groq API failed in sales mode", "error", err)
+		// Local fallback — if we have inventory, show it directly
+		if len(inventory) > 0 {
+			var items []string
+			for _, item := range inventory[:min(3, len(inventory))] {
+				stock := ""
+				if item.StockQuantity != nil {
+					stock = fmt.Sprintf(" (%d in stock)", *item.StockQuantity)
+				}
+				items = append(items, fmt.Sprintf("• %s — ₦%.0f%s", item.Name, item.Price, stock))
+			}
+			return &AIResponse{
+				Content:    fmt.Sprintf("Here's what we have:\n%s\n\nAsk me about any item for more details!", strings.Join(items, "\n")),
+				Confidence: 0.8,
+			}, nil
+		}
 		return &AIResponse{
-			Content:    "I apologize, I'm experiencing a temporary issue. A human agent will assist you shortly.",
+			Content:    "I don't have that information yet, but I'll escalate this to a human agent who can help you.",
 			Confidence: 0,
 			Escalate:   true,
 			Reason:     "AI service unavailable",
 		}, nil
 	}
-	aiResp := &AIResponse{
+	return &AIResponse{
 		Content:    response,
-		Confidence: 0.95, // Force high confidence since we had matching training data
+		Confidence: confidence,
+	}, nil
+}
+
+// handleHandoff creates a handoff record and notifies the owner
+func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, userID string, query string) (*AIResponse, error) {
+	conv, _ := b.repos.Conversation.GetByID(ctx, conversationID)
+	customerName := ""
+	customerPhone := ""
+	if conv != nil {
+		customerName = conv.CustomerName
+		customerPhone = conv.CustomerPhone
 	}
-	_ = b.storeConversationTurn(ctx, conversationID, userQuery, response)
-	return aiResp, nil
+	// Search inventory for the product the customer wants to buy
+	productName := ""
+	var price float64
+	inventory := b.searchInventoryContext(ctx, userID, query, 3)
+	if len(inventory) > 0 {
+		// Pick the most relevant match (first result from search)
+		productName = inventory[0].Name
+		price = inventory[0].Price
+	} else {
+		// No inventory match — use generic product from query
+		productName = query
+	}
+	handoff := &domain.Handoff{
+		UserID:         userID,
+		ConversationID: conversationID,
+		CustomerName:   customerName,
+		CustomerPhone:  customerPhone,
+		ProductName:    productName,
+		OriginalPrice:  price,
+		AgreedPrice:    price,
+		Quantity:       1,
+	}
+	_ = b.repos.Handoff.Create(ctx, handoff)
+
+	user, _ := b.repos.User.GetByID(ctx, userID)
+	ownerName := ""
+	ownerWhatsApp := ""
+	if user != nil {
+		ownerName = user.FirstName
+		whatsapp, _ := b.repos.User.GetOwnerWhatsApp(ctx, userID)
+		ownerWhatsApp = whatsapp
+	}
+
+	// Notify owner via WebSocket
+	if b.broadcastFn != nil {
+		b.broadcastFn(conversationID, "new_handoff", map[string]interface{}{
+			"handoff_id":      handoff.ID,
+			"customer_name":   customerName,
+			"product_name":    productName,
+			"agreed_price":    price,
+			"conversation_id": conversationID,
+		})
+	}
+
+	notif := &domain.Notification{
+		UserID: userID,
+		Type:   "handoff",
+		Title:  "New Sale Handoff",
+		Body:   fmt.Sprintf("%s wants to buy %s for ₦%.0f", customerName, productName, price),
+		Link:   "/leads",
+		IsRead: false,
+	}
+	_ = b.repos.Notification.Create(ctx, notif)
+
+	// Build response — if we found the product in inventory, confirm details
+	if productName != query && price > 0 {
+		response := fmt.Sprintf("Great! I see you're interested in %s for ₦%.0f. I'm connecting you with %s to complete your order. Message %s on WhatsApp: %s. Thank you!", productName, price, ownerName, ownerName, ownerWhatsApp)
+		return &AIResponse{
+			Content:    response,
+			Confidence: 0.95,
+		}, nil
+	}
+	response := fmt.Sprintf("Great! I'm connecting you with %s to complete your order. Message %s on WhatsApp: %s. Thank you!", ownerName, ownerName, ownerWhatsApp)
+	return &AIResponse{
+		Content:    response,
+		Confidence: 0.95,
+	}, nil
+}
+
+func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, userQuery string, language string) (*AIResponse, error) {
+	startTime := time.Now()
+	conv, _ := b.repos.Conversation.GetByID(ctx, conversationID)
+	userID := ""
+	if conv != nil {
+		userID = conv.UserID
+	}
+
+	// Request trace
+	traceID := fmt.Sprintf("trace_%d", time.Now().UnixNano())
+	channel := ""
+	if conv != nil {
+		channel = conv.Channel
+	}
+	b.logger.Info("AI request started", "traceID", traceID, "userID", userID, "query", userQuery, "channel", channel)
+
+	// Short greetings should get a local response instead of burning an AI call.
+	if b.isGreetingQuery(userQuery) {
+		b.logger.Info("AI request completed (greeting)", "traceID", traceID, "duration", time.Since(startTime))
+		return &AIResponse{
+			Content:    "Hi! How can I help you today?",
+			Confidence: 0.98,
+		}, nil
+	}
+
+	// LLM-based intent classification (with keyword fallback)
+	intent := b.classifyIntent(ctx, userQuery)
+	b.logger.Info("Intent classified", "traceID", traceID, "intent", intent, "query", userQuery)
+
+	// Handle handoff intent
+	if intent == "handoff" {
+		resp, err := b.handleHandoff(ctx, conversationID, userID, userQuery)
+		b.logger.Info("AI request completed (handoff)", "traceID", traceID, "duration", time.Since(startTime))
+		return resp, err
+	}
+
+	// Handle sales intent — search inventory first
+	if intent == "sales" {
+		resp, err := b.handleSalesMode(ctx, userID, userQuery, language)
+		b.logger.Info("AI request completed (sales)", "traceID", traceID, "duration", time.Since(startTime))
+		return resp, err
+	}
+
+	// Default: support mode — search training data AND inventory
+	qaPairs := b.searchKnowledgeBase(ctx, userID, userQuery, 6)
+	inventory := b.searchInventoryContext(ctx, userID, userQuery, 3)
+
+	b.logger.Info("Search completed", "traceID", traceID, "qaMatches", len(qaPairs), "inventoryMatches", len(inventory))
+
+	// Try local answer from training data / inventory first
+	local := b.localPlatformAnswer(userID, userQuery, qaPairs, inventory)
+	if local != nil {
+		// Validate the local response
+		validatedContent, validatedConf := b.validateResponse(ctx, userID, local.Content, qaPairs, inventory)
+		local.Content = validatedContent
+		local.Confidence = validatedConf
+		b.logger.Info("AI request completed (local)", "traceID", traceID, "duration", time.Since(startTime), "confidence", local.Confidence)
+		return local, nil
+	}
+
+	// No training data or inventory match — escalate
+	similar := b.findSimilarForUnknown(ctx, userID, userQuery)
+	escChannel := ""
+	if conv != nil {
+		escChannel = conv.Channel
+	}
+	err := b.repos.UnknownQ.Create(ctx, &domain.UnknownQuestion{
+		UserID:         userID,
+		Question:       userQuery,
+		ConversationID: conversationID,
+		Channel:        escChannel,
+		Status:         "pending",
+	})
+	if err != nil {
+		b.logger.Error("Failed to create unknown question", "error", err, "conversationID", conversationID)
+	}
+
+	// Build escalation response with suggestions if available
+	escalationMsg := "I don't have that information yet, but I'll escalate this to a human agent who can help you."
+	if len(similar) > 0 {
+		suggestions := "\n\nDid you mean:\n"
+		for i, qa := range similar {
+			if i >= 3 {
+				break
+			}
+			suggestions += fmt.Sprintf("• %s\n", qa.Question)
+		}
+		escalationMsg += suggestions
+	}
+
+	notif := &domain.Notification{
+		UserID: userID,
+		Type:   "unknown_question",
+		Title:  "New Unknown Question",
+		Body:   fmt.Sprintf("AI could not answer: \"%s\"", userQuery),
+		Link:   "/teach?tab=unknown",
+		IsRead: false,
+	}
+	if err := b.repos.Notification.Create(ctx, notif); err != nil {
+		b.logger.Error("Failed to create notification", "error", err)
+	}
+	if b.broadcastFn != nil {
+		b.broadcastFn(conversationID, "unknown_question", map[string]interface{}{
+			"question":        userQuery,
+			"conversation_id": conversationID,
+			"channel":         escChannel,
+			"created_at":      time.Now(),
+		})
+	}
+
+	b.logger.Info("AI request completed (escalated)", "traceID", traceID, "duration", time.Since(startTime), "similarFound", len(similar))
+	return &AIResponse{
+		Content:    escalationMsg,
+		Confidence: 0.3,
+		Escalate:   true,
+		Reason:     "No matching training data or inventory",
+	}, nil
 }
 
 type AIResponse struct {
@@ -308,7 +845,12 @@ func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTu
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", 0, fmt.Errorf("Groq API error: %s - %s", resp.Status, string(body))
+		b.cb.RecordFailure()
+		snippet := string(body)
+		if len(snippet) > 500 {
+			snippet = snippet[:500]
+		}
+		return "", 0, fmt.Errorf("Groq API error: %s - %s", resp.Status, snippet)
 	}
 	var result struct {
 		Choices []struct {
@@ -323,9 +865,11 @@ func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTu
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
+		b.cb.RecordFailure()
 		return "", 0, err
 	}
 	if len(result.Choices) == 0 {
+		b.cb.RecordFailure()
 		return "", 0, fmt.Errorf("no response from Groq")
 	}
 	content := result.Choices[0].Message.Content
@@ -387,10 +931,10 @@ type AuthService struct {
 	userRepo *repository.UserRepository
 	redis    *infrastructure.RedisClient
 	logger   *infrastructure.Logger
-	email    *ResendService
+	email    *EmailService
 }
 
-func NewAuthService(cfg *config.Config, userRepo *repository.UserRepository, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *ResendService) *AuthService {
+func NewAuthService(cfg *config.Config, userRepo *repository.UserRepository, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *AuthService {
 	return &AuthService{cfg: cfg, userRepo: userRepo, redis: redis, logger: logger, email: email}
 }
 
@@ -620,7 +1164,7 @@ func NewChatService(cfg *config.Config, repos *repository.Repositories, redis *i
 	return &ChatService{cfg: cfg, repos: repos, redis: redis, aiBrain: aiBrain, logger: logger}
 }
 
-func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, message, channel string) (*domain.Conversation, *domain.Message, error) {
+func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, customerKey, message, channel string) (*domain.Conversation, *domain.Message, error) {
 	if s.redis != nil {
 		limit := 500
 		user, err := s.repos.User.GetByID(ctx, userID)
@@ -640,18 +1184,22 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, mess
 			}
 		}
 	}
-	existing, _ := s.repos.Conversation.FindActiveByCustomer(ctx, userID, customerName, channel)
+	if strings.TrimSpace(customerKey) == "" {
+		customerKey = customerName
+	}
+	existing, _ := s.repos.Conversation.FindActiveByCustomer(ctx, userID, customerKey, channel)
 	var conv *domain.Conversation
 	if existing != nil {
 		conv = existing
 	} else {
 		conv = &domain.Conversation{
-			UserID:       userID,
-			CustomerName: customerName,
-			Channel:      channel,
-			Status:       "active",
-			Intent:       "inquiry",
-			Priority:     "medium",
+			UserID:        userID,
+			CustomerName:  customerName,
+			CustomerPhone: customerKey,
+			Channel:       channel,
+			Status:        "active",
+			Intent:        "inquiry",
+			Priority:      "medium",
 		}
 		if err := s.repos.Conversation.Create(ctx, conv); err != nil {
 			return nil, nil, err
@@ -832,17 +1380,67 @@ func (s *ChatService) GenerateAIResponse(ctx context.Context, conversationID, us
 	return aiMsg, nil
 }
 
+// StoreWhatsAppIntegration stores the WhatsApp integration config
+func (s *ChatService) StoreWhatsAppIntegration(ctx context.Context, userID, sessionID, phone string) {
+	existing, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+	integration := &domain.Integration{
+		UserID:     userID,
+		Channel:    "whatsapp",
+		Status:     "connected",
+		WebhookURL: fmt.Sprintf("%s/api/v1/openwa/webhook", s.cfg.APIURL),
+		Config: map[string]interface{}{
+			"session_id": sessionID,
+			"phone":      phone,
+			"type":       "openwa",
+		},
+	}
+	if err == nil && existing != nil {
+		integration.ID = existing.ID
+		_ = s.repos.Integration.Update(ctx, integration)
+		return
+	}
+	_ = s.repos.Integration.Create(ctx, integration)
+}
+
+// GetWhatsAppIntegration returns the connected WhatsApp integration for a user
+func (s *ChatService) GetWhatsAppIntegration(ctx context.Context, userID string) (*domain.Integration, error) {
+	integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+	if err != nil || integration == nil {
+		return integration, err
+	}
+	if integration.Status != "active" && integration.Status != "connected" {
+		return nil, nil
+	}
+	return integration, nil
+}
+
+// GetWhatsAppIntegrationBySessionID returns the WhatsApp integration that owns a given OpenWA session
+func (s *ChatService) GetWhatsAppIntegrationBySessionID(ctx context.Context, sessionID string) (*domain.Integration, error) {
+	return s.repos.Integration.GetByChannelAndSessionID(ctx, "whatsapp", sessionID)
+}
+
+// GetTelegramIntegrationByWebhookSecret returns the Telegram integration that owns a webhook secret.
+func (s *ChatService) GetTelegramIntegrationByWebhookSecret(ctx context.Context, secret string) (*domain.Integration, error) {
+	return s.repos.Integration.GetByChannelAndWebhookSecret(ctx, "telegram", secret)
+}
+
+// RemoveWhatsAppIntegration removes the WhatsApp integration
+func (s *ChatService) RemoveWhatsAppIntegration(ctx context.Context, userID string) {
+	_ = s.repos.Integration.Disconnect(ctx, userID, "whatsapp")
+}
+
 // ========== TRAINING SERVICE ==========
 
 type TrainingService struct {
-	cfg    *config.Config
-	repos  *repository.Repositories
-	redis  *infrastructure.RedisClient
-	logger *infrastructure.Logger
+	cfg        *config.Config
+	repos      *repository.Repositories
+	redis      *infrastructure.RedisClient
+	logger     *infrastructure.Logger
+	embeddings *EmbeddingService
 }
 
-func NewTrainingService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger) *TrainingService {
-	return &TrainingService{cfg: cfg, repos: repos, redis: redis, logger: logger}
+func NewTrainingService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, embeddings *EmbeddingService) *TrainingService {
+	return &TrainingService{cfg: cfg, repos: repos, redis: redis, logger: logger, embeddings: embeddings}
 }
 
 func (s *TrainingService) CreateCategory(ctx context.Context, userID, name, description, color string) (*domain.Category, error) {
@@ -944,6 +1542,9 @@ func (s *TrainingService) UploadCSV(ctx context.Context, userID, categoryID stri
 		if err != nil {
 			return 0, err
 		}
+		if s.embeddings != nil {
+			s.embeddings.InvalidateCache(userID)
+		}
 	}
 	// Return the total number of processed records (updates + inserts)
 	return len(records) - 1, nil
@@ -971,6 +1572,9 @@ func (s *TrainingService) TrainUnknown(ctx context.Context, userID, id string, a
 	if err := s.repos.QAPair.Create(ctx, qa); err != nil {
 		return err
 	}
+	if s.embeddings != nil {
+		s.embeddings.InvalidateCache(userID)
+	}
 	return s.repos.UnknownQ.UpdateStatus(ctx, id, userID, "trained", &answer, &categoryID)
 }
 
@@ -996,6 +1600,9 @@ func (s *TrainingService) CreateQAPair(ctx context.Context, userID, categoryID s
 	if err := s.repos.QAPair.Create(ctx, qa); err != nil {
 		return nil, err
 	}
+	if s.embeddings != nil {
+		s.embeddings.InvalidateCache(userID)
+	}
 	return qa, nil
 }
 
@@ -1008,11 +1615,23 @@ func (s *TrainingService) UpdateQAPair(ctx context.Context, userID, qaID, catego
 		Answer:     answer,
 		IsActive:   true,
 	}
-	return s.repos.QAPair.Update(ctx, qa)
+	if err := s.repos.QAPair.Update(ctx, qa); err != nil {
+		return err
+	}
+	if s.embeddings != nil {
+		s.embeddings.InvalidateCache(userID)
+	}
+	return nil
 }
 
 func (s *TrainingService) DeleteQAPair(ctx context.Context, userID, qaID string) error {
-	return s.repos.QAPair.Delete(ctx, qaID, userID)
+	if err := s.repos.QAPair.Delete(ctx, qaID, userID); err != nil {
+		return err
+	}
+	if s.embeddings != nil {
+		s.embeddings.InvalidateCache(userID)
+	}
+	return nil
 }
 
 func (s *TrainingService) DeleteCategory(ctx context.Context, userID, categoryID string) error {
@@ -1133,15 +1752,28 @@ func (s *AnalyticsService) Trends(ctx context.Context, userID string, days int) 
 // ========== INTEGRATION SERVICE ==========
 
 type IntegrationService struct {
-	cfg         *config.Config
-	repos       *repository.Repositories
-	redis       *infrastructure.RedisClient
-	logger      *infrastructure.Logger
-	broadcastFn func(convID string, msgType string, data interface{})
+	cfg              *config.Config
+	repos            *repository.Repositories
+	redis            *infrastructure.RedisClient
+	logger           *infrastructure.Logger
+	chat             *ChatService
+	telegram         *TelegramService
+	broadcastFn      func(convID string, msgType string, data interface{})
+	telegramPollers  map[string]context.CancelFunc
+	telegramPollerMu sync.Mutex
 }
 
-func NewIntegrationService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, broadcastFn func(convID string, msgType string, data interface{})) *IntegrationService {
-	return &IntegrationService{cfg: cfg, repos: repos, redis: redis, logger: logger, broadcastFn: broadcastFn}
+func NewIntegrationService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, chat *ChatService, telegram *TelegramService, broadcastFn func(convID string, msgType string, data interface{})) *IntegrationService {
+	return &IntegrationService{
+		cfg:             cfg,
+		repos:           repos,
+		redis:           redis,
+		logger:          logger,
+		chat:            chat,
+		telegram:        telegram,
+		broadcastFn:     broadcastFn,
+		telegramPollers: map[string]context.CancelFunc{},
+	}
 }
 
 func (s *IntegrationService) List(ctx context.Context, userID string) ([]domain.Integration, error) {
@@ -1154,26 +1786,43 @@ func (s *IntegrationService) Connect(ctx context.Context, userID, channel string
 		return nil, err
 	}
 
+	mergedConfig := mergeIntegrationConfig(nil, config)
 	var integration *domain.Integration
 	if existing != nil {
 		existing.Status = "active"
-		existing.Config = config
+		existing.Config = mergeIntegrationConfig(existing.Config, mergedConfig)
 		existing.WebhookURL = fmt.Sprintf("%s/api/v1/webhooks/%s", s.cfg.APIURL, channel)
-		if err := s.repos.Integration.Update(ctx, existing); err != nil {
-			return nil, err
-		}
 		integration = existing
 	} else {
 		integration = &domain.Integration{
 			UserID:     userID,
 			Channel:    channel,
 			Status:     "active",
-			Config:     config,
+			Config:     mergedConfig,
 			WebhookURL: fmt.Sprintf("%s/api/v1/webhooks/%s", s.cfg.APIURL, channel),
 		}
+	}
+
+	if channel == "telegram" {
+		updated, err := s.configureTelegramIntegration(ctx, integration, config)
+		if err != nil {
+			return nil, err
+		}
+		integration = updated
+	}
+
+	if existing != nil {
+		if err := s.repos.Integration.Update(ctx, integration); err != nil {
+			return nil, err
+		}
+	} else {
 		if err := s.repos.Integration.Create(ctx, integration); err != nil {
 			return nil, err
 		}
+	}
+
+	if channel == "telegram" {
+		s.applyTelegramDeliveryMode(ctx, integration)
 	}
 
 	// Trigger real-time status update broadcast
@@ -1188,6 +1837,17 @@ func (s *IntegrationService) Connect(ctx context.Context, userID, channel string
 }
 
 func (s *IntegrationService) Disconnect(ctx context.Context, userID, channel string) error {
+	if channel == "telegram" && s.telegram != nil {
+		if integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, channel); err == nil && integration != nil {
+			s.stopTelegramPolling(integration.ID)
+			if token, _ := integration.Config["bot_token"].(string); strings.TrimSpace(token) != "" {
+				if err := s.telegram.DeleteWebhook(ctx, token); err != nil {
+					s.logger.Warn("Failed to delete Telegram webhook", "error", err)
+				}
+			}
+		}
+	}
+
 	err := s.repos.Integration.Disconnect(ctx, userID, channel)
 	if err != nil {
 		return err
@@ -1202,6 +1862,400 @@ func (s *IntegrationService) Disconnect(ctx context.Context, userID, channel str
 	}
 
 	return nil
+}
+
+// SyncTelegramWebhooks re-applies webhook configuration for active Telegram integrations.
+func (s *IntegrationService) SyncTelegramWebhooks(ctx context.Context) error {
+	integrations, err := s.repos.Integration.ListActive(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, integration := range integrations {
+		if integration.Channel != "telegram" {
+			continue
+		}
+
+		updated, err := s.configureTelegramIntegration(ctx, &integration, integration.Config)
+		if err != nil {
+			s.logger.Warn("Failed to sync Telegram webhook", "integrationID", integration.ID, "userID", integration.UserID, "error", err)
+			continue
+		}
+		if err := s.repos.Integration.Update(ctx, updated); err != nil {
+			s.logger.Warn("Failed to persist Telegram webhook sync", "integrationID", integration.ID, "userID", integration.UserID, "error", err)
+			continue
+		}
+		s.applyTelegramDeliveryMode(ctx, updated)
+	}
+
+	return nil
+}
+
+func (s *IntegrationService) configureTelegramIntegration(ctx context.Context, integration *domain.Integration, config map[string]interface{}) (*domain.Integration, error) {
+	if s.telegram == nil {
+		return nil, fmt.Errorf("telegram service is not available")
+	}
+
+	token := ""
+	if config != nil {
+		if v, ok := config["bot_token"].(string); ok {
+			token = strings.TrimSpace(v)
+		}
+	}
+	if token == "" {
+		token = strings.TrimSpace(s.cfg.TelegramBotToken)
+	}
+	if token == "" {
+		return nil, fmt.Errorf("telegram bot token is required")
+	}
+
+	info, err := s.telegram.GetBotInfo(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	secret := ""
+	if config != nil {
+		if v, ok := config["webhook_secret"].(string); ok {
+			secret = strings.TrimSpace(v)
+		}
+	}
+	if integration.Config != nil {
+		if v, ok := integration.Config["webhook_secret"].(string); ok {
+			secret = strings.TrimSpace(v)
+		}
+	}
+	if secret == "" {
+		secret = generateRandomString(32)
+	}
+
+	webhookURL := strings.TrimSpace(s.cfg.TelegramWebhookURL)
+	if config != nil {
+		if v, ok := config["webhook_url"].(string); ok && strings.TrimSpace(v) != "" {
+			webhookURL = strings.TrimSpace(v)
+		}
+	}
+	if webhookURL == "" {
+		webhookURL = fmt.Sprintf("%s/api/v1/telegram/webhook", s.cfg.APIURL)
+	}
+
+	deliveryMode := "webhook"
+	if !isPublicTelegramWebhookURL(webhookURL) {
+		deliveryMode = "polling"
+		if err := s.telegram.DeleteWebhook(ctx, token); err != nil {
+			s.logger.Warn("Failed to delete Telegram webhook before enabling polling", "error", err)
+		}
+	}
+
+	if deliveryMode == "webhook" {
+		if err := s.telegram.SetWebhook(ctx, token, webhookURL, secret); err != nil {
+			return nil, err
+		}
+	}
+
+	if integration.Config == nil {
+		integration.Config = map[string]interface{}{}
+	}
+	integration.Config["bot_token"] = token
+	integration.Config["bot_username"] = info.Result.Username
+	integration.Config["bot_first_name"] = info.Result.FirstName
+	integration.Config["delivery_mode"] = deliveryMode
+	if deliveryMode == "webhook" {
+		integration.Config["webhook_secret"] = secret
+		integration.Config["webhook_url"] = webhookURL
+		integration.WebhookURL = webhookURL
+	} else {
+		integration.Config["webhook_secret"] = ""
+		integration.Config["webhook_url"] = ""
+		integration.WebhookURL = ""
+	}
+	integration.Status = "active"
+
+	return integration, nil
+}
+
+func mergeIntegrationConfig(existing, updates map[string]interface{}) map[string]interface{} {
+	merged := cloneIntegrationConfig(existing)
+	for key, value := range updates {
+		merged[key] = value
+	}
+	return merged
+}
+
+func cloneIntegrationConfig(src map[string]interface{}) map[string]interface{} {
+	if len(src) == 0 {
+		return map[string]interface{}{}
+	}
+
+	dst := make(map[string]interface{}, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
+}
+
+func isPublicTelegramWebhookURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return false
+	}
+
+	host := strings.ToLower(parsed.Hostname())
+	switch host {
+	case "localhost", "127.0.0.1", "0.0.0.0", "::1":
+		return false
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *IntegrationService) HandleTelegramIncoming(ctx context.Context, integration *domain.Integration, incoming *TelegramIncomingMessage) (*domain.Conversation, *domain.Message, error) {
+	if s.chat == nil {
+		return nil, nil, fmt.Errorf("chat service is not available")
+	}
+	if s.telegram == nil {
+		return nil, nil, fmt.Errorf("telegram service is not available")
+	}
+	if integration == nil {
+		return nil, nil, fmt.Errorf("telegram integration is required")
+	}
+	if incoming == nil {
+		return nil, nil, fmt.Errorf("telegram message is required")
+	}
+
+	botToken := ""
+	if integration.Config != nil {
+		if v, ok := integration.Config["bot_token"].(string); ok {
+			botToken = strings.TrimSpace(v)
+		}
+	}
+	if botToken == "" {
+		botToken = strings.TrimSpace(s.cfg.TelegramBotToken)
+	}
+	if botToken == "" {
+		return nil, nil, fmt.Errorf("telegram bot token is required")
+	}
+
+	customerKey := strconv.FormatInt(incoming.ChatID, 10)
+	conv, aiMsg, err := s.chat.DirectChat(ctx, integration.UserID, incoming.DisplayName, customerKey, incoming.Text, "telegram")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if aiMsg != nil && strings.TrimSpace(aiMsg.Content) != "" {
+		if err := s.telegram.SendTextMessage(ctx, botToken, incoming.ChatID, aiMsg.Content); err != nil {
+			s.logger.Error("Failed to send Telegram reply", "error", err, "chatID", incoming.ChatID, "userID", integration.UserID)
+		}
+	}
+
+	if s.broadcastFn != nil && conv != nil && aiMsg != nil {
+		s.broadcastFn(conv.ID, "new_message", map[string]interface{}{
+			"content":     aiMsg.Content,
+			"sender_type": "ai",
+			"customer":    incoming.DisplayName,
+			"customer_id": customerKey,
+			"channel":     "telegram",
+		})
+	}
+
+	return conv, aiMsg, nil
+}
+
+func (s *IntegrationService) GetTelegramIntegrationByWebhookSecret(ctx context.Context, secret string) (*domain.Integration, error) {
+	return s.repos.Integration.GetByChannelAndWebhookSecret(ctx, "telegram", secret)
+}
+
+func (s *IntegrationService) applyTelegramDeliveryMode(ctx context.Context, integration *domain.Integration) {
+	if integration == nil || integration.Channel != "telegram" {
+		return
+	}
+
+	mode := ""
+	if integration.Config != nil {
+		if v, ok := integration.Config["delivery_mode"].(string); ok {
+			mode = strings.ToLower(strings.TrimSpace(v))
+		}
+	}
+
+	switch mode {
+	case "polling":
+		s.startTelegramPolling(integration)
+	default:
+		s.stopTelegramPolling(integration.ID)
+	}
+}
+
+func (s *IntegrationService) startTelegramPolling(integration *domain.Integration) {
+	if integration == nil || integration.Channel != "telegram" {
+		return
+	}
+	if s.telegram == nil || s.chat == nil {
+		s.logger.Warn("Telegram polling requested but services are unavailable", "integrationID", integration.ID)
+		return
+	}
+
+	botToken := ""
+	if integration.Config != nil {
+		if v, ok := integration.Config["bot_token"].(string); ok {
+			botToken = strings.TrimSpace(v)
+		}
+	}
+	if botToken == "" {
+		botToken = strings.TrimSpace(s.cfg.TelegramBotToken)
+	}
+	if botToken == "" {
+		s.logger.Warn("Telegram polling not started because bot token is missing", "integrationID", integration.ID)
+		return
+	}
+
+	s.stopTelegramPolling(integration.ID)
+
+	pollIntegration := &domain.Integration{
+		ID:         integration.ID,
+		UserID:     integration.UserID,
+		Channel:    integration.Channel,
+		Status:     integration.Status,
+		Config:     cloneIntegrationConfig(integration.Config),
+		WebhookURL: integration.WebhookURL,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.telegramPollerMu.Lock()
+	s.telegramPollers[pollIntegration.ID] = cancel
+	s.telegramPollerMu.Unlock()
+
+	go s.runTelegramPoller(ctx, pollIntegration, botToken)
+	s.logger.Info("Telegram polling started", "integrationID", integration.ID, "userID", integration.UserID)
+}
+
+func (s *IntegrationService) stopTelegramPolling(integrationID string) {
+	if strings.TrimSpace(integrationID) == "" {
+		return
+	}
+
+	s.telegramPollerMu.Lock()
+	cancel, ok := s.telegramPollers[integrationID]
+	if ok {
+		delete(s.telegramPollers, integrationID)
+	}
+	s.telegramPollerMu.Unlock()
+
+	if ok && cancel != nil {
+		cancel()
+	}
+}
+
+func (s *IntegrationService) runTelegramPoller(ctx context.Context, integration *domain.Integration, botToken string) {
+	defer s.stopTelegramPolling(integration.ID)
+
+	offset := getConfigInt64(integration.Config, "polling_offset")
+	if offset < 0 {
+		offset = 0
+	}
+
+	backoff := time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		updates, err := s.telegram.GetUpdates(ctx, botToken, offset, 30)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			s.logger.Warn("Telegram polling failed", "integrationID", integration.ID, "userID", integration.UserID, "error", err)
+			time.Sleep(backoff)
+			if backoff < 15*time.Second {
+				backoff *= 2
+			}
+			continue
+		}
+
+		backoff = time.Second
+		for _, update := range updates {
+			if update.UpdateID >= offset {
+				offset = update.UpdateID + 1
+			}
+
+			if incoming, ok := update.IncomingMessage(); ok && incoming != nil && !incoming.IsBot {
+				if _, _, err := s.HandleTelegramIncoming(ctx, integration, incoming); err != nil {
+					s.logger.Error("Failed to process Telegram update", "integrationID", integration.ID, "userID", integration.UserID, "updateID", update.UpdateID, "error", err)
+				}
+			}
+
+			s.persistTelegramPollingOffset(ctx, integration, offset)
+		}
+	}
+}
+
+func (s *IntegrationService) persistTelegramPollingOffset(ctx context.Context, integration *domain.Integration, offset int64) {
+	if integration == nil {
+		return
+	}
+
+	if integration.Config == nil {
+		integration.Config = map[string]interface{}{}
+	}
+	integration.Config["polling_offset"] = offset
+
+	if err := s.repos.Integration.Update(ctx, integration); err != nil {
+		s.logger.Warn("Failed to persist Telegram polling offset", "integrationID", integration.ID, "userID", integration.UserID, "error", err)
+	}
+}
+
+func getConfigInt64(config map[string]interface{}, key string) int64 {
+	if config == nil {
+		return 0
+	}
+
+	value, ok := config[key]
+	if !ok {
+		return 0
+	}
+
+	switch v := value.(type) {
+	case int:
+		return int64(v)
+	case int8:
+		return int64(v)
+	case int16:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case int64:
+		return v
+	case float32:
+		return int64(v)
+	case float64:
+		return int64(v)
+	case json.Number:
+		if parsed, err := v.Int64(); err == nil {
+			return parsed
+		}
+	case string:
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
+			return parsed
+		}
+	}
+
+	return 0
 }
 
 func (s *IntegrationService) Test(ctx context.Context, channel string, config map[string]interface{}) (bool, string) {
@@ -1243,6 +2297,30 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 			return false, fmt.Sprintf("Telegram API error: %s", result.Description)
 		}
 		return true, fmt.Sprintf("✓ Connected as @%s (%s)", result.Result.Username, result.Result.FirstName)
+
+	case "email":
+		toEmail := ""
+		subject := "NOANT email integration test"
+		body := "If you received this, your SMTP/Gmail email integration is working."
+		if config != nil {
+			if v, ok := config["to_email"].(string); ok {
+				toEmail = v
+			}
+			if v, ok := config["subject"].(string); ok && strings.TrimSpace(v) != "" {
+				subject = v
+			}
+			if v, ok := config["body"].(string); ok && strings.TrimSpace(v) != "" {
+				body = v
+			}
+		}
+		if strings.TrimSpace(toEmail) == "" {
+			return false, "Recipient email (to_email) is required"
+		}
+		settings := smtpSettingsFromConfig(s.cfg, config)
+		if _, err := sendSMTPMessage(ctx, settings, toEmail, subject, fmt.Sprintf("<html><body><p>%s</p></body></html>", html.EscapeString(body))); err != nil {
+			return false, fmt.Sprintf("Email test failed: %v", err)
+		}
+		return true, fmt.Sprintf("✓ Test email sent to %s", toEmail)
 
 	case "whatsapp":
 		phoneNumberID := ""
@@ -1383,10 +2461,11 @@ type SettingsService struct {
 	repos  *repository.Repositories
 	redis  *infrastructure.RedisClient
 	logger *infrastructure.Logger
+	email  *EmailService
 }
 
-func NewSettingsService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger) *SettingsService {
-	return &SettingsService{cfg: cfg, repos: repos, redis: redis, logger: logger}
+func NewSettingsService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *SettingsService {
+	return &SettingsService{cfg: cfg, repos: repos, redis: redis, logger: logger, email: email}
 }
 
 func (s *SettingsService) GetProfile(ctx context.Context, userID string) (*domain.User, error) {
@@ -1453,6 +2532,26 @@ func (s *SettingsService) InviteTeamMember(ctx context.Context, ownerID, email, 
 	if err := s.repos.Team.Create(ctx, ownerID, member); err != nil {
 		return nil, err
 	}
+
+	// Send invite email
+	if s.email != nil {
+		owner, _ := s.repos.User.GetByID(ctx, ownerID)
+		ownerName := "Your team"
+		if owner != nil {
+			ownerName = owner.FirstName
+		}
+		subject := fmt.Sprintf("%s invited you to join NOANT", ownerName)
+		body := fmt.Sprintf(`<div style="font-family:Arial,sans-serif;padding:24px;">
+  <h2>You're invited!</h2>
+  <p><strong>%s</strong> has invited you to join their NOANT team as a <strong>%s</strong>.</p>
+  <p><a href="%s/team" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;">Accept Invitation</a></p>
+  <p style="color:#6b7280;font-size:13px;">If you don't have a NOANT account yet, you'll be prompted to create one.</p>
+</div>`, html.EscapeString(ownerName), html.EscapeString(role), s.cfg.APIURL)
+		if _, err := s.email.SendNotificationEmail(ctx, email, subject, body); err != nil {
+			s.logger.Warn("Failed to send team invite email", "error", err, "email", email)
+		}
+	}
+
 	return member, nil
 }
 
@@ -1735,4 +2834,176 @@ func NewAuditService(repos *repository.Repositories, logger *infrastructure.Logg
 
 func (s *AuditService) ListByUser(ctx context.Context, userID string, limit int) ([]domain.AuditLog, error) {
 	return s.repos.Audit.ListByUser(ctx, userID, limit)
+}
+
+// ========== INVENTORY SERVICE ==========
+
+type InventoryService struct {
+	cfg        *config.Config
+	repos      *repository.Repositories
+	redis      *infrastructure.RedisClient
+	logger     *infrastructure.Logger
+	embeddings *EmbeddingService
+}
+
+func NewInventoryService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, embeddings *EmbeddingService) *InventoryService {
+	return &InventoryService{cfg: cfg, repos: repos, redis: redis, logger: logger, embeddings: embeddings}
+}
+
+func (s *InventoryService) Create(ctx context.Context, userID string, item *domain.InventoryItem) error {
+	item.UserID = userID
+	if item.Type == "" {
+		item.Type = "product"
+	}
+	item.IsActive = true
+	if err := s.repos.Inventory.Create(ctx, item); err != nil {
+		return err
+	}
+	if s.embeddings != nil {
+		s.embeddings.InvalidateCache(userID)
+	}
+	return nil
+}
+
+func (s *InventoryService) List(ctx context.Context, userID string, itemType string) ([]domain.InventoryItem, error) {
+	return s.repos.Inventory.List(ctx, userID, itemType, false)
+}
+
+func (s *InventoryService) GetByID(ctx context.Context, id string, userID string) (*domain.InventoryItem, error) {
+	return s.repos.Inventory.GetByID(ctx, id, userID)
+}
+
+func (s *InventoryService) Update(ctx context.Context, item *domain.InventoryItem) error {
+	if err := s.repos.Inventory.Update(ctx, item); err != nil {
+		return err
+	}
+	if s.embeddings != nil {
+		s.embeddings.InvalidateCache(item.UserID)
+	}
+	return nil
+}
+
+func (s *InventoryService) Delete(ctx context.Context, id string, userID string) error {
+	if err := s.repos.Inventory.Delete(ctx, id, userID); err != nil {
+		return err
+	}
+	if s.embeddings != nil {
+		s.embeddings.InvalidateCache(userID)
+	}
+	return nil
+}
+
+func (s *InventoryService) Search(ctx context.Context, userID string, query string) ([]domain.InventoryItem, error) {
+	return s.repos.Inventory.Search(ctx, userID, query)
+}
+
+// ========== HANDOFF SERVICE ==========
+
+type HandoffService struct {
+	cfg         *config.Config
+	repos       *repository.Repositories
+	redis       *infrastructure.RedisClient
+	logger      *infrastructure.Logger
+	broadcastFn func(convID string, msgType string, data interface{})
+}
+
+func NewHandoffService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, broadcastFn func(convID string, msgType string, data interface{})) *HandoffService {
+	return &HandoffService{cfg: cfg, repos: repos, redis: redis, logger: logger, broadcastFn: broadcastFn}
+}
+
+func (s *HandoffService) Create(ctx context.Context, h *domain.Handoff) error {
+	h.Status = "pending"
+	if h.Quantity == 0 {
+		h.Quantity = 1
+	}
+	next := time.Now().Add(15 * time.Minute)
+	h.NextReminderAt = &next
+	if err := s.repos.Handoff.Create(ctx, h); err != nil {
+		return err
+	}
+	// Notify owner via WebSocket
+	if s.broadcastFn != nil {
+		s.broadcastFn("", "new_handoff", map[string]interface{}{
+			"handoff_id":      h.ID,
+			"customer_name":   h.CustomerName,
+			"product_name":    h.ProductName,
+			"agreed_price":    h.AgreedPrice,
+			"conversation_id": h.ConversationID,
+		})
+	}
+	// Create notification for owner
+	notif := &domain.Notification{
+		UserID: h.UserID,
+		Type:   "handoff",
+		Title:  "New Sale Handoff",
+		Body:   fmt.Sprintf("%s wants to buy %s for ₦%.0f", h.CustomerName, h.ProductName, h.AgreedPrice),
+		Link:   "/leads",
+		IsRead: false,
+	}
+	_ = s.repos.Notification.Create(ctx, notif)
+	return nil
+}
+
+func (s *HandoffService) List(ctx context.Context, userID string, status string) ([]domain.Handoff, error) {
+	return s.repos.Handoff.List(ctx, userID, status)
+}
+
+func (s *HandoffService) GetByID(ctx context.Context, id string, userID string) (*domain.Handoff, error) {
+	return s.repos.Handoff.GetByID(ctx, id, userID)
+}
+
+func (s *HandoffService) UpdateStatus(ctx context.Context, id string, userID string, status string, notes string, finalPrice *float64) error {
+	if err := s.repos.Handoff.UpdateStatus(ctx, id, userID, status, notes); err != nil {
+		return err
+	}
+	if status == "sold" && finalPrice != nil {
+		// Decrease inventory stock if product
+		h, err := s.repos.Handoff.GetByID(ctx, id, userID)
+		if err == nil && h != nil {
+			items, _ := s.repos.Inventory.Search(ctx, userID, h.ProductName)
+			if len(items) > 0 && items[0].StockQuantity != nil {
+				_ = s.repos.Inventory.DecreaseStock(ctx, items[0].ID, h.Quantity)
+			}
+		}
+	}
+	return nil
+}
+
+func (s *HandoffService) ProcessReminders(ctx context.Context) error {
+	handoffs, err := s.repos.Handoff.GetReadyForReminder(ctx)
+	if err != nil {
+		return err
+	}
+	for _, h := range handoffs {
+		if h.ReminderCount >= 3 {
+			_ = s.repos.Handoff.Expire(ctx, h.ID)
+			// Auto-reply to customer
+			if s.broadcastFn != nil {
+				s.broadcastFn(h.ConversationID, "handoff_expired", map[string]interface{}{
+					"handoff_id":    h.ID,
+					"customer_name": h.CustomerName,
+				})
+			}
+			continue
+		}
+		_ = s.repos.Handoff.IncrementReminder(ctx, h.ID)
+		if s.broadcastFn != nil {
+			s.broadcastFn("", "handoff_reminder", map[string]interface{}{
+				"handoff_id":     h.ID,
+				"customer_name":  h.CustomerName,
+				"product_name":   h.ProductName,
+				"reminder_count": h.ReminderCount + 1,
+			})
+		}
+		notif := &domain.Notification{
+			UserID: h.UserID,
+			Type:   "handoff_reminder",
+			Title:  "Handoff Reminder",
+			Body:   fmt.Sprintf("Follow up with %s about %s", h.CustomerName, h.ProductName),
+			Link:   "/leads",
+			IsRead: false,
+		}
+		_ = s.repos.Notification.Create(ctx, notif)
+	}
+	return nil
 }

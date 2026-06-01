@@ -20,6 +20,7 @@ type User struct {
 	MustChangePassword bool `json:"must_change_password" db:"must_change_password"`
 	TrialExpiresAt *time.Time `json:"trial_expires_at" db:"trial_expires_at"`
 	LastLoginAt  *time.Time `json:"last_login_at" db:"last_login_at"`
+	OwnerWhatsapp *string  `json:"owner_whatsapp,omitempty" db:"owner_whatsapp"`
 	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
 }
@@ -223,4 +224,43 @@ type WidgetConfig struct {
 	IsActive     bool      `json:"is_active" db:"is_active"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// InventoryItem represents a product, service, or package
+type InventoryItem struct {
+	ID            string    `json:"id" db:"id"`
+	UserID        string    `json:"user_id" db:"user_id"`
+	Type          string    `json:"type" db:"type"` // product, service, package
+	Name          string    `json:"name" db:"name"`
+	Description   string    `json:"description" db:"description"`
+	Price         float64   `json:"price" db:"price"`
+	MinPrice      *float64  `json:"min_price" db:"min_price"`
+	StockQuantity *int      `json:"stock_quantity" db:"stock_quantity"`
+	ImageURL      *string   `json:"image_url" db:"image_url"`
+	IsActive      bool      `json:"is_active" db:"is_active"`
+	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// Handoff represents a sales handoff from AI to owner
+type Handoff struct {
+	ID               string     `json:"id" db:"id"`
+	UserID           string     `json:"user_id" db:"user_id"`
+	ConversationID   string     `json:"conversation_id" db:"conversation_id"`
+	CustomerName     string     `json:"customer_name" db:"customer_name"`
+	CustomerPhone    string     `json:"customer_phone" db:"customer_phone"`
+	CustomerWhatsapp string     `json:"customer_whatsapp" db:"customer_whatsapp"`
+	CustomerLocation string     `json:"customer_location" db:"customer_location"`
+	ProductName      string     `json:"product_name" db:"product_name"`
+	OriginalPrice    float64    `json:"original_price" db:"original_price"`
+	AgreedPrice      float64    `json:"agreed_price" db:"agreed_price"`
+	Quantity         int        `json:"quantity" db:"quantity"`
+	Status           string     `json:"status" db:"status"` // pending, sold, lost, expired
+	FinalPrice       *float64   `json:"final_price" db:"final_price"`
+	OwnerNotes       string     `json:"owner_notes" db:"owner_notes"`
+	OwnerNotifiedAt  *time.Time `json:"owner_notified_at" db:"owner_notified_at"`
+	ReminderCount    int        `json:"reminder_count" db:"reminder_count"`
+	NextReminderAt   *time.Time `json:"next_reminder_at" db:"next_reminder_at"`
+	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
 }

@@ -1,39 +1,34 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { api } from '@/lib/api'
-import { CheckCircle2, XCircle, Loader2, Zap } from 'lucide-react'
+import { CheckCircle2, XCircle, Loader2, Zap, Smartphone, RefreshCw } from 'lucide-react'
 
 interface WhatsAppModalProps {
   open: boolean
   onClose: () => void
-  onConnect: (config: any) => Promise<void>
   loading?: boolean
 }
 
 type TestState = 'idle' | 'testing' | 'success' | 'error'
 
-export function WhatsAppModal({ open, onClose, onConnect, loading }: WhatsAppModalProps) {
-  const [phoneNumberId, setPhoneNumberId] = useState('')
-  const [businessAccountId, setBusinessAccountId] = useState('')
-  const [accessToken, setAccessToken] = useState('')
+export function WhatsAppModal({ open, onClose, loading }: WhatsAppModalProps) {
+  const [phone, setPhone] = useState('')
   const [testState, setTestState] = useState<TestState>('idle')
   const [testMessage, setTestMessage] = useState('')
+  const [qrCode, setQrCode] = useState('')
+  const [sessionId, setSessionId] = useState('')
+  const [qrReady, setQrReady] = useState(false)
 
   const handleTest = async () => {
-    if (!phoneNumberId.trim() || !accessToken.trim()) return
+    if (!phone.trim()) return
     setTestState('testing')
     setTestMessage('')
     try {
-      const res = await api.post<{ status: string; message: string }>(
-        '/integrations/test/whatsapp',
-        {
-          config: {
-            phone_number_id: phoneNumberId.trim(),
-            access_token: accessToken.trim(),
-          },
-        }
+      const res = await api.post<{ success: boolean; message: string }>(
+        '/channels/whatsapp/ping',
+        { phone: phone.trim() }
       )
       setTestState('success')
       setTestMessage(res.message || 'Connection successful!')
@@ -44,82 +39,87 @@ export function WhatsAppModal({ open, onClose, onConnect, loading }: WhatsAppMod
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!phoneNumberId.trim() || !accessToken.trim()) return
-    onConnect({
-      phone_number_id: phoneNumberId.trim(),
-      business_account_id: businessAccountId.trim(),
-      access_token: accessToken.trim(),
-    })
+    if (!phone.trim()) return
+    setTestState('idle')
+    setTestMessage('')
+    setQrCode('')
+    setQrReady(false)
+    try {
+      const res = await api.post<{
+        session_id: string
+        qr_code?: string
+        qrCode?: string
+        status: string
+      }>('/channels/whatsapp/connect', { phone: phone.trim() })
+      setSessionId(res.session_id)
+      const qr = res.qr_code || res.qrCode || ''
+      if (qr) {
+        setQrCode(qr)
+        setQrReady(true)
+      }
+    } catch (err: any) {
+      setTestState('error')
+      setTestMessage((err as any)?.data?.message || err?.message || 'Failed to connect')
+    }
   }
 
   const handleClose = () => {
-    setPhoneNumberId('')
-    setBusinessAccountId('')
-    setAccessToken('')
+    setPhone('')
     setTestState('idle')
     setTestMessage('')
+    setQrCode('')
+    setSessionId('')
+    setQrReady(false)
     onClose()
   }
 
-  const canTest = phoneNumberId.trim() && accessToken.trim()
-
   return (
-    <Modal open={open} onClose={handleClose} title="Connect WhatsApp Business API">
+    <Modal open={open} onClose={handleClose} title="Connect WhatsApp">
       <div className="space-y-4">
         <div className="bg-inset rounded-xl p-3.5 text-xs text-secondary space-y-2">
-          <p className="font-semibold text-primary">Setup Instructions:</p>
-          <ol className="list-decimal list-inside space-y-1">
-            <li>Go to <b>developers.facebook.com</b> and create an App.</li>
-            <li>Add the <b>WhatsApp</b> product and configure a test number.</li>
-            <li>Copy your <b>Phone Number ID</b> and generate a <b>Permanent System Token</b>.</li>
-            <li>Enter the details below and click <b>Test Connection</b> to verify.</li>
-          </ol>
-          <p className="font-mono text-[10px] text-tertiary bg-surface/60 px-2 py-1 rounded border border-default mt-1">
-            API: https://graph.facebook.com/v21.0/&#123;PHONE_NUMBER_ID&#125;
+          <p className="font-semibold text-primary flex items-center gap-1.5">
+            <Smartphone className="w-3.5 h-3.5" />
+            OpenWA self-hosted WhatsApp API
           </p>
+          <ol className="list-decimal list-inside space-y-1">
+            <li>Enter your business WhatsApp number below</li>
+            <li>Click <b>Test Connection</b> to verify your session</li>
+            <li>Click <b>Connect WhatsApp</b> to generate a QR code</li>
+            <li>Scan the QR with your phone to link the device</li>
+          </ol>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-secondary mb-1">
-              Phone Number ID <span className="text-red-500">*</span>
+              WhatsApp Number <span className="text-red-500">*</span>
             </label>
             <Input
-              value={phoneNumberId}
-              onChange={(e) => { setPhoneNumberId(e.target.value); setTestState('idle'); setTestMessage('') }}
-              placeholder="e.g. 1098239082398"
+              value={phone}
+              onChange={(e) => { setPhone(e.target.value); setTestState('idle'); setTestMessage(''); setQrReady(false) }}
+              placeholder="080 1234 5678"
               required
-              disabled={loading}
+              disabled={loading || qrReady}
             />
+            <p className="text-[10px] text-tertiary mt-1">
+              Include country code. This is your business WhatsApp number.
+            </p>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-secondary mb-1">
-              WhatsApp Business Account ID
-            </label>
-            <Input
-              value={businessAccountId}
-              onChange={(e) => setBusinessAccountId(e.target.value)}
-              placeholder="e.g. 2938492834928"
-              disabled={loading}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-secondary mb-1">
-              Permanent Access Token <span className="text-red-500">*</span>
-            </label>
-            <Input
-              type="password"
-              value={accessToken}
-              onChange={(e) => { setAccessToken(e.target.value); setTestState('idle'); setTestMessage('') }}
-              placeholder="EAAG..."
-              required
-              disabled={loading}
-            />
-          </div>
+          {/* QR Code after connect */}
+          {qrReady && qrCode && (
+            <div className="flex flex-col items-center gap-3 py-3">
+              <div className="w-44 h-44 bg-white rounded-xl p-2 flex items-center justify-center shadow-lg">
+                <img src={qrCode} alt="QR Code" className="w-full h-full" />
+              </div>
+              <p className="text-xs text-secondary text-center">
+                Open WhatsApp → Linked Devices → Link a Device → Scan this QR
+              </p>
+              <p className="text-xs text-tertiary">Session: {sessionId?.slice(0, 8)}...</p>
+            </div>
+          )}
 
           {/* Test feedback */}
           {testState !== 'idle' && (
@@ -131,7 +131,7 @@ export function WhatsAppModal({ open, onClose, onConnect, loading }: WhatsAppMod
               {testState === 'testing' && <Loader2 className="w-3.5 h-3.5 shrink-0 mt-0.5 animate-spin" />}
               {testState === 'success' && <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
               {testState === 'error' && <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
-              <span>{testState === 'testing' ? 'Testing connection...' : testMessage}</span>
+              <span>{testState === 'testing' ? 'Testing WhatsApp connection...' : testMessage}</span>
             </div>
           )}
 
@@ -139,19 +139,33 @@ export function WhatsAppModal({ open, onClose, onConnect, loading }: WhatsAppMod
             <Button type="button" variant="ghost" onClick={handleClose} disabled={loading}>
               Cancel
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleTest}
-              disabled={!canTest || loading || testState === 'testing'}
-              className="gap-1.5"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              Test Connection
-            </Button>
-            <Button type="submit" loading={loading} disabled={!canTest || loading}>
-              Connect Channel
-            </Button>
+            {qrReady ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleClose}
+                className="gap-1.5"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Done
+              </Button>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleTest}
+                  disabled={!phone.trim() || loading || testState === 'testing'}
+                  className="gap-1.5"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  Test Connection
+                </Button>
+                <Button type="submit" loading={loading} disabled={!phone.trim() || loading}>
+                  Connect WhatsApp
+                </Button>
+              </>
+            )}
           </div>
         </form>
       </div>

@@ -91,12 +91,12 @@ export function SidebarAlertsProvider({ children }: { children: React.ReactNode 
           ? (notifRes.value?.count ?? 0)
           : 0
 
-      // Channel issues: integrations with non-"connected" status
+      // Channel issues: integrations with error status
       let channelIssues = 0
       if (intRes.status === 'fulfilled') {
         const items = intRes.value?.integrations || intRes.value?.channels || []
         channelIssues = items.filter(
-          (ch: any) => ch.status && ch.status !== 'connected' && ch.status !== 'active'
+          (ch: any) => ch.status === 'error'
         ).length
       }
 

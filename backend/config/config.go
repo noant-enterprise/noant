@@ -47,6 +47,15 @@ type Config struct {
 
 	// Resend
 	ResendAPIKey string
+	ResendFrom   string
+
+	// SMTP / Gmail
+	SMTPHost       string
+	SMTPPort       int
+	SMTPUsername   string
+	SMTPPassword   string
+	SMTPFrom       string
+	SMTPSkipVerify bool
 
 	// Polar
 	PolarAccessToken    string
@@ -65,6 +74,13 @@ type Config struct {
 	MetaPageID         string
 	InstagramAccountID string
 	MetaVerifyToken    string
+
+	// OpenWA (self-hosted WhatsApp API)
+	OpenWAEnabled       bool
+	OpenWABaseURL       string
+	OpenWAApiKey        string
+	OpenWASessionID     string
+	OpenWAWebhookSecret string
 }
 
 func Load() *Config {
@@ -79,6 +95,7 @@ func Load() *Config {
 
 	cacheTTL, _ := strconv.Atoi(getEnv("CACHE_TTL", "300"))
 	cacheMaxKeys, _ := strconv.Atoi(getEnv("CACHE_MAX_KEYS", "10000"))
+	smtpPort, _ := strconv.Atoi(getEnv("SMTP_PORT", "587"))
 
 	tidbPort, _ := strconv.Atoi(getEnv("TIDB_PORT", "4000"))
 	dbPoolSize, _ := strconv.Atoi(getEnv("DB_POOL_SIZE", "20"))
@@ -88,6 +105,13 @@ func Load() *Config {
 	redisShortTTL, _ := strconv.Atoi(getEnv("REDIS_SHORT_TTL", "259200"))
 
 	var groqKeys []string
+	if raw := strings.TrimSpace(os.Getenv("GROQ_API_KEY")); raw != "" {
+		for _, key := range strings.Split(raw, ",") {
+			if trimmed := strings.TrimSpace(key); trimmed != "" {
+				groqKeys = append(groqKeys, trimmed)
+			}
+		}
+	}
 	for i := 1; i <= 10; i++ {
 		key := os.Getenv(fmt.Sprintf("GROQ_API_KEY_%d", i))
 		if key != "" {
@@ -126,6 +150,14 @@ func Load() *Config {
 		TwilioWhatsAppNumber: getEnv("TWILIO_WHATSAPP_NUMBER", ""),
 
 		ResendAPIKey: getEnv("RESEND_API_KEY", ""),
+		ResendFrom:   getEnv("RESEND_FROM", "onboarding@resend.dev"),
+
+		SMTPHost:       getEnv("SMTP_HOST", "smtp.gmail.com"),
+		SMTPPort:       smtpPort,
+		SMTPUsername:   getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:   getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:       getEnv("SMTP_FROM", ""),
+		SMTPSkipVerify: getEnv("SMTP_SKIP_VERIFY", "false") == "true",
 
 		PolarAccessToken:    getEnv("POLAR_ACCESS_TOKEN", ""),
 		PolarOrganizationID: getEnv("POLAR_ORGANIZATION_ID", ""),
@@ -140,6 +172,12 @@ func Load() *Config {
 		MetaPageID:         getEnv("META_PAGE_ID", ""),
 		InstagramAccountID: getEnv("INSTAGRAM_ACCOUNT_ID", ""),
 		MetaVerifyToken:    getEnv("META_VERIFY_TOKEN", ""),
+
+		OpenWAEnabled:       getEnv("OPENWA_ENABLED", "true") == "true",
+		OpenWABaseURL:       getEnv("OPENWA_BASE_URL", "http://localhost:2785"),
+		OpenWAApiKey:        getEnv("OPENWA_API_KEY", ""),
+		OpenWASessionID:     getEnv("OPENWA_SESSION_ID", "noant-business"),
+		OpenWAWebhookSecret: getEnv("OPENWA_WEBHOOK_SECRET", ""),
 	}
 
 	cfg.CORSOrigins = parseCSVEnv("CORS_ORIGINS", cfg.APIURL)

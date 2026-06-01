@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutGrid, MessageSquare, GraduationCap, BarChart3, Link2,
-  Settings, LogOut, X, CreditCard, Users, Code2
+  Settings, LogOut, X, CreditCard, Users, Code2, UserCheck, Package
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
@@ -34,6 +34,7 @@ const navSections = [
       { to: '/', icon: LayoutGrid, label: 'Overview', alertKey: null as null | string },
       { to: '/chats', icon: MessageSquare, label: 'Conversations', alertKey: 'unreadChats' },
       { to: '/insights', icon: BarChart3, label: 'Insights', alertKey: null },
+      { to: '/leads', icon: UserCheck, label: 'Leads', alertKey: null },
     ],
   },
   {
@@ -42,6 +43,7 @@ const navSections = [
       { to: '/teach', icon: GraduationCap, label: 'Teach your Noant', alertKey: 'unknownQuestions' },
       { to: '/channels', icon: Link2, label: 'Your channels', alertKey: 'channelIssues' },
       { to: '/widget', icon: Code2, label: 'Web Widget', alertKey: null },
+      { to: '/inventory', icon: Package, label: 'Inventory', alertKey: null },
     ],
   },
   {

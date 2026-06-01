@@ -38,6 +38,57 @@ func main() {
 	}
 	logger.Info("Database migrations applied successfully")
 
+	// Repair inventory-related schema directly for older databases or skipped migrations.
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS inventory_items (
+		id VARCHAR(36) PRIMARY KEY,
+		user_id VARCHAR(36) NOT NULL,
+		type ENUM('product','service','package') DEFAULT 'product',
+		name VARCHAR(255) NOT NULL,
+		description TEXT,
+		price DECIMAL(15,2) NOT NULL,
+		min_price DECIMAL(15,2),
+		stock_quantity INT,
+		image_url VARCHAR(500),
+		is_active BOOLEAN DEFAULT TRUE,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		INDEX idx_user_active (user_id, is_active)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`)
+	if err != nil {
+		logger.Fatal("Failed to ensure inventory_items table", "error", err)
+	}
+
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS handoffs (
+		id VARCHAR(36) PRIMARY KEY,
+		user_id VARCHAR(36) NOT NULL,
+		conversation_id VARCHAR(36) NOT NULL,
+		customer_name VARCHAR(100),
+		customer_phone VARCHAR(50),
+		customer_whatsapp VARCHAR(50),
+		customer_location TEXT,
+		product_name VARCHAR(255),
+		original_price DECIMAL(15,2),
+		agreed_price DECIMAL(15,2),
+		quantity INT DEFAULT 1,
+		status ENUM('pending','sold','lost','expired') DEFAULT 'pending',
+		final_price DECIMAL(15,2),
+		owner_notes TEXT,
+		owner_notified_at TIMESTAMP,
+		reminder_count INT DEFAULT 0,
+		next_reminder_at TIMESTAMP,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		INDEX idx_user_status (user_id, status)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`)
+	if err != nil {
+		logger.Fatal("Failed to ensure handoffs table", "error", err)
+	}
+
+	_, err = db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS owner_whatsapp VARCHAR(50)`)
+	if err != nil {
+		logger.Warn("Failed to ensure owner_whatsapp column", "error", err)
+	}
+
 	// Ensure audit_logs table exists (direct creation as fallback)
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS audit_logs (
 		id VARCHAR(36) PRIMARY KEY,
@@ -95,10 +146,13 @@ func main() {
 	}
 
 	polarSvc := service.NewPolarService(cfg)
-	emailSvc := service.NewResendService(cfg.ResendAPIKey)
+	emailSvc := service.NewEmailService(cfg, logger)
 
 	// Wire Polar payment service, email service, and broadcaster into the service layer
 	services := service.NewServices(cfg, repos, redisClient, logger, emailSvc, polarSvc, broadcastFn)
+	if err := services.Integration.SyncTelegramWebhooks(context.Background()); err != nil {
+		logger.Warn("Failed to sync Telegram webhooks", "error", err)
+	}
 
 	// Initialize layers: Cache, Bottleneck, JobQueue
 	cacheStore := infrastructure.NewCache(cfg, redisClient)
@@ -111,13 +165,15 @@ func main() {
 	// Register background job handlers
 	jobQueue.RegisterHandler("health_check", infrastructure.HealthCheckHandler(services.Integration))
 	jobQueue.RegisterHandler("cache_cleanup", infrastructure.CacheCleanupHandler(cacheStore))
+	jobQueue.RegisterHandler("handoff_reminder", infrastructure.HandoffReminderHandler(services.Handoff))
 
 	// Start recurring background jobs
 	jobQueue.ScheduleRecurring("health_check", map[string]interface{}{}, 5*time.Minute)
 	jobQueue.ScheduleRecurring("cache_cleanup", map[string]interface{}{}, 15*time.Minute)
+	jobQueue.ScheduleRecurring("handoff_reminder", map[string]interface{}{}, 15*time.Minute)
 
 	// Pass wsHub to handlers
-	handlers := handler.NewHandlers(services, logger, wsHub)
+	handlers := handler.NewHandlers(cfg, services, logger, wsHub)
 	healthHandler := handler.NewHealthHandler(db, redisClient, cfg.GroqAPIKeys, logger)
 	_ = cacheStore
 	_ = bottleneck
@@ -279,6 +335,55 @@ func main() {
 			payments.POST("/subscribe", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), middleware.AuditMiddleware(auditRepo, logger), handlers.Payment.Subscribe)
 			payments.POST("/webhook", handlers.Payment.Webhook)
 			payments.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Payment.Status)
+		}
+
+		inventory := api.Group("/inventory")
+		inventory.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+		inventory.Use(middleware.RateLimitByUserMiddleware(redisClient, 60, time.Minute))
+		inventory.Use(middleware.AuditMiddleware(auditRepo, logger))
+		{
+			inventory.GET("", handlers.Inventory.List)
+			inventory.POST("", handlers.Inventory.Create)
+			inventory.GET("/search", handlers.Inventory.Search)
+			inventory.GET("/:id", handlers.Inventory.GetByID)
+			inventory.PUT("/:id", handlers.Inventory.Update)
+			inventory.DELETE("/:id", handlers.Inventory.Delete)
+		}
+
+		handoffs := api.Group("/handoffs")
+		handoffs.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+		handoffs.Use(middleware.RateLimitByUserMiddleware(redisClient, 60, time.Minute))
+		handoffs.Use(middleware.AuditMiddleware(auditRepo, logger))
+		{
+			handoffs.GET("", handlers.Handoff.List)
+			handoffs.GET("/:id", handlers.Handoff.GetByID)
+			handoffs.PUT("/status", handlers.Handoff.UpdateStatus)
+		}
+
+		openwa := api.Group("/openwa")
+		{
+			// Webhook endpoint — no auth (verified by HMAC signature)
+			openwa.POST("/webhook", handlers.OpenWA.WhatsAppWebhook)
+			// Session management — auth required
+			openwa.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.OpenWA.GetSessionStatus)
+			openwa.POST("/restart", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.OpenWA.RestartSession)
+		}
+
+		// Simplified WhatsApp channel endpoints
+		telegram := api.Group("/telegram")
+		{
+			telegram.POST("/webhook", handlers.Telegram.Webhook)
+		}
+
+		channels := api.Group("/channels")
+		channels.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+		{
+			channels.POST("/whatsapp/connect", handlers.OpenWA.ConnectWhatsApp)
+			channels.GET("/whatsapp/status/:sessionId", handlers.OpenWA.GetWhatsAppStatus)
+			channels.POST("/whatsapp/refresh/:sessionId", handlers.OpenWA.RefreshWhatsAppQR)
+			channels.POST("/whatsapp/disconnect", handlers.OpenWA.DisconnectWhatsApp)
+			channels.POST("/whatsapp/ping", handlers.OpenWA.PhonePing)
+			channels.GET("/whatsapp/health", handlers.OpenWA.HealthCheck)
 		}
 	}
 

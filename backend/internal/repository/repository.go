@@ -28,6 +28,8 @@ type Repositories struct {
 	Audit        *AuditRepository
 	Notification *NotificationRepository
 	WidgetConfig *WidgetConfigRepository
+	Inventory    *InventoryRepository
+	Handoff      *HandoffRepository
 }
 
 func NewRepositories(db *sql.DB, redis *infrastructure.RedisClient) *Repositories {
@@ -46,6 +48,8 @@ func NewRepositories(db *sql.DB, redis *infrastructure.RedisClient) *Repositorie
 		Audit:        NewAuditRepository(db, redis),
 		Notification: NewNotificationRepository(db, redis),
 		WidgetConfig: NewWidgetConfigRepository(db, redis),
+		Inventory:    NewInventoryRepository(db, redis),
+		Handoff:      NewHandoffRepository(db, redis),
 	}
 }
 
@@ -228,8 +232,8 @@ func (r *ConversationRepository) UpdateStatus(ctx context.Context, id string, us
 }
 
 func (r *ConversationRepository) FindActiveByCustomer(ctx context.Context, userID, customerName, channel string) (*domain.Conversation, error) {
-	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, created_at, updated_at FROM conversations WHERE user_id = ? AND customer_name = ? AND channel = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1`
-	row := r.db.QueryRowContext(ctx, query, userID, customerName, channel)
+	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, created_at, updated_at FROM conversations WHERE user_id = ? AND (customer_phone = ? OR customer_name = ?) AND channel = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1`
+	row := r.db.QueryRowContext(ctx, query, userID, customerName, customerName, channel)
 	conv := &domain.Conversation{}
 	err := row.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CreatedAt, &conv.UpdatedAt)
 	if err != nil {
@@ -565,6 +569,55 @@ func (r *QAPairRepository) Search(ctx context.Context, userID string, query stri
 	return qas, nil
 }
 
+func (r *QAPairRepository) ListByUser(ctx context.Context, userID string, categoryID string) ([]domain.QAPair, error) {
+	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE user_id = ? AND is_active = true`
+	args := []interface{}{userID}
+	if categoryID != "" {
+		query += " AND category_id = ?"
+		args = append(args, categoryID)
+	}
+	query += " ORDER BY created_at DESC"
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var qas []domain.QAPair
+	for rows.Next() {
+		var qa domain.QAPair
+		var variationsJSON sql.NullString
+		if err := rows.Scan(&qa.ID, &qa.CategoryID, &qa.Question, &qa.Answer, &variationsJSON, &qa.IsActive, &qa.UsageCount, &qa.CreatedAt, &qa.UpdatedAt); err != nil {
+			continue
+		}
+		if variationsJSON.Valid && variationsJSON.String != "" && variationsJSON.String != "[]" {
+			_ = json.Unmarshal([]byte(variationsJSON.String), &qa.Variations)
+		} else {
+			qa.Variations = []string{}
+		}
+		qas = append(qas, qa)
+	}
+	return qas, nil
+}
+
+func (r *QAPairRepository) GetByID(ctx context.Context, id string) (*domain.QAPair, error) {
+	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE id = ? LIMIT 1`
+	var qa domain.QAPair
+	var variationsJSON sql.NullString
+	err := r.db.QueryRowContext(ctx, query, id).Scan(&qa.ID, &qa.CategoryID, &qa.Question, &qa.Answer, &variationsJSON, &qa.IsActive, &qa.UsageCount, &qa.CreatedAt, &qa.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if variationsJSON.Valid && variationsJSON.String != "" && variationsJSON.String != "[]" {
+		_ = json.Unmarshal([]byte(variationsJSON.String), &qa.Variations)
+	} else {
+		qa.Variations = []string{}
+	}
+	return &qa, nil
+}
+
 func (r *QAPairRepository) GetByQuestion(ctx context.Context, userID, question string) (*domain.QAPair, error) {
 	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at 
 	FROM qa_pairs WHERE user_id = ? AND question = ? LIMIT 1`
@@ -862,6 +915,62 @@ func (r *IntegrationRepository) GetByUserAndChannel(ctx context.Context, userID,
 		i.Config = map[string]interface{}{}
 	}
 	return &i, nil
+}
+
+func (r *IntegrationRepository) GetByChannelAndSessionID(ctx context.Context, channel, sessionID string) (*domain.Integration, error) {
+	query := `SELECT id, user_id, channel, status, config, webhook_url, last_error, created_at, updated_at
+	FROM integrations WHERE channel = ? AND status IN ('active', 'connected')`
+	rows, err := r.db.QueryContext(ctx, query, channel)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var i domain.Integration
+		var configStr string
+		if err := rows.Scan(&i.ID, &i.UserID, &i.Channel, &i.Status, &configStr, &i.WebhookURL, &i.LastError, &i.CreatedAt, &i.UpdatedAt); err != nil {
+			continue
+		}
+		if configStr != "" && configStr != "{}" {
+			_ = json.Unmarshal([]byte(configStr), &i.Config)
+		} else {
+			i.Config = map[string]interface{}{}
+		}
+		if cfgSessionID, ok := i.Config["session_id"].(string); ok && cfgSessionID == sessionID {
+			return &i, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (r *IntegrationRepository) GetByChannelAndWebhookSecret(ctx context.Context, channel, secret string) (*domain.Integration, error) {
+	query := `SELECT id, user_id, channel, status, config, webhook_url, last_error, created_at, updated_at
+	FROM integrations WHERE channel = ? AND status IN ('active', 'connected')`
+	rows, err := r.db.QueryContext(ctx, query, channel)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var i domain.Integration
+		var configStr string
+		if err := rows.Scan(&i.ID, &i.UserID, &i.Channel, &i.Status, &configStr, &i.WebhookURL, &i.LastError, &i.CreatedAt, &i.UpdatedAt); err != nil {
+			continue
+		}
+		if configStr != "" && configStr != "{}" {
+			_ = json.Unmarshal([]byte(configStr), &i.Config)
+		} else {
+			i.Config = map[string]interface{}{}
+		}
+		if cfgSecret, ok := i.Config["webhook_secret"].(string); ok && cfgSecret == secret {
+			return &i, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func (r *IntegrationRepository) Update(ctx context.Context, integration *domain.Integration) error {
@@ -1167,4 +1276,211 @@ func (r *ConversationRepository) CountByDate(ctx context.Context, userID string,
 		}
 	}
 	return result, nil
+}
+
+// ========== USER OWNER WHATSAPP ==========
+
+func (r *UserRepository) GetOwnerWhatsApp(ctx context.Context, userID string) (string, error) {
+	var phone string
+	err := r.db.QueryRowContext(ctx, "SELECT COALESCE(owner_whatsapp, '') FROM users WHERE id = ?", userID).Scan(&phone)
+	if err != nil {
+		return "", err
+	}
+	return phone, nil
+}
+
+// ========== INVENTORY REPOSITORY ==========
+
+type InventoryRepository struct {
+	db    *sql.DB
+	redis *infrastructure.RedisClient
+}
+
+func NewInventoryRepository(db *sql.DB, redis *infrastructure.RedisClient) *InventoryRepository {
+	return &InventoryRepository{db: db, redis: redis}
+}
+
+func (r *InventoryRepository) Create(ctx context.Context, item *domain.InventoryItem) error {
+	if item.ID == "" {
+		item.ID = generateUUID()
+	}
+	query := `INSERT INTO inventory_items (id, user_id, type, name, description, price, min_price, stock_quantity, image_url, is_active, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	_, err := r.db.ExecContext(ctx, query, item.ID, item.UserID, item.Type, item.Name, item.Description, item.Price, item.MinPrice, item.StockQuantity, item.ImageURL, item.IsActive)
+	return err
+}
+
+func (r *InventoryRepository) GetByID(ctx context.Context, id string, userID string) (*domain.InventoryItem, error) {
+	item := &domain.InventoryItem{}
+	row := r.db.QueryRowContext(ctx, `SELECT id, user_id, type, name, description, price, min_price, stock_quantity, image_url, is_active, created_at, updated_at FROM inventory_items WHERE id = ? AND user_id = ?`, id, userID)
+	err := row.Scan(&item.ID, &item.UserID, &item.Type, &item.Name, &item.Description, &item.Price, &item.MinPrice, &item.StockQuantity, &item.ImageURL, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return item, nil
+}
+
+func (r *InventoryRepository) List(ctx context.Context, userID string, itemType string, activeOnly bool) ([]domain.InventoryItem, error) {
+	query := `SELECT id, user_id, type, name, description, price, min_price, stock_quantity, image_url, is_active, created_at, updated_at FROM inventory_items WHERE user_id = ?`
+	args := []interface{}{userID}
+	if itemType != "" {
+		query += " AND type = ?"
+		args = append(args, itemType)
+	}
+	if activeOnly {
+		query += " AND is_active = TRUE"
+	}
+	query += " ORDER BY created_at DESC"
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.InventoryItem
+	for rows.Next() {
+		var item domain.InventoryItem
+		if err := rows.Scan(&item.ID, &item.UserID, &item.Type, &item.Name, &item.Description, &item.Price, &item.MinPrice, &item.StockQuantity, &item.ImageURL, &item.IsActive, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			continue
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (r *InventoryRepository) Search(ctx context.Context, userID string, q string) ([]domain.InventoryItem, error) {
+	query := `SELECT id, user_id, type, name, description, price, min_price, stock_quantity, image_url, is_active, created_at, updated_at FROM inventory_items WHERE user_id = ? AND is_active = TRUE AND (name LIKE ? OR description LIKE ?) ORDER BY name LIMIT 10`
+	like := "%" + q + "%"
+	rows, err := r.db.QueryContext(ctx, query, userID, like, like)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []domain.InventoryItem
+	for rows.Next() {
+		var item domain.InventoryItem
+		if err := rows.Scan(&item.ID, &item.UserID, &item.Type, &item.Name, &item.Description, &item.Price, &item.MinPrice, &item.StockQuantity, &item.ImageURL, &item.IsActive, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			continue
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (r *InventoryRepository) Update(ctx context.Context, item *domain.InventoryItem) error {
+	query := `UPDATE inventory_items SET type=?, name=?, description=?, price=?, min_price=?, stock_quantity=?, image_url=?, is_active=?, updated_at=NOW() WHERE id=? AND user_id=?`
+	_, err := r.db.ExecContext(ctx, query, item.Type, item.Name, item.Description, item.Price, item.MinPrice, item.StockQuantity, item.ImageURL, item.IsActive, item.ID, item.UserID)
+	return err
+}
+
+func (r *InventoryRepository) Delete(ctx context.Context, id string, userID string) error {
+	_, err := r.db.ExecContext(ctx, "DELETE FROM inventory_items WHERE id=? AND user_id=?", id, userID)
+	return err
+}
+
+func (r *InventoryRepository) DecreaseStock(ctx context.Context, itemID string, quantity int) error {
+	_, err := r.db.ExecContext(ctx, "UPDATE inventory_items SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?", quantity, itemID, quantity)
+	return err
+}
+
+// ========== HANDOFF REPOSITORY ==========
+
+type HandoffRepository struct {
+	db    *sql.DB
+	redis *infrastructure.RedisClient
+}
+
+func NewHandoffRepository(db *sql.DB, redis *infrastructure.RedisClient) *HandoffRepository {
+	return &HandoffRepository{db: db, redis: redis}
+}
+
+func (r *HandoffRepository) Create(ctx context.Context, h *domain.Handoff) error {
+	if h.ID == "" {
+		h.ID = generateUUID()
+	}
+	if h.Quantity == 0 {
+		h.Quantity = 1
+	}
+	query := `INSERT INTO handoffs (id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	_, err := r.db.ExecContext(ctx, query, h.ID, h.UserID, h.ConversationID, h.CustomerName, h.CustomerPhone, h.CustomerWhatsapp, h.CustomerLocation, h.ProductName, h.OriginalPrice, h.AgreedPrice, h.Quantity, h.Status)
+	return err
+}
+
+func (r *HandoffRepository) GetByID(ctx context.Context, id string, userID string) (*domain.Handoff, error) {
+	h := &domain.Handoff{}
+	row := r.db.QueryRowContext(ctx, `SELECT id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, final_price, owner_notes, owner_notified_at, reminder_count, next_reminder_at, created_at, updated_at FROM handoffs WHERE id = ? AND user_id = ?`, id, userID)
+	err := row.Scan(&h.ID, &h.UserID, &h.ConversationID, &h.CustomerName, &h.CustomerPhone, &h.CustomerWhatsapp, &h.CustomerLocation, &h.ProductName, &h.OriginalPrice, &h.AgreedPrice, &h.Quantity, &h.Status, &h.FinalPrice, &h.OwnerNotes, &h.OwnerNotifiedAt, &h.ReminderCount, &h.NextReminderAt, &h.CreatedAt, &h.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return h, nil
+}
+
+func (r *HandoffRepository) List(ctx context.Context, userID string, status string) ([]domain.Handoff, error) {
+	query := `SELECT id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, final_price, owner_notes, owner_notified_at, reminder_count, next_reminder_at, created_at, updated_at FROM handoffs WHERE user_id = ?`
+	args := []interface{}{userID}
+	if status != "" {
+		query += " AND status = ?"
+		args = append(args, status)
+	}
+	query += " ORDER BY created_at DESC"
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var handoffs []domain.Handoff
+	for rows.Next() {
+		var h domain.Handoff
+		if err := rows.Scan(&h.ID, &h.UserID, &h.ConversationID, &h.CustomerName, &h.CustomerPhone, &h.CustomerWhatsapp, &h.CustomerLocation, &h.ProductName, &h.OriginalPrice, &h.AgreedPrice, &h.Quantity, &h.Status, &h.FinalPrice, &h.OwnerNotes, &h.OwnerNotifiedAt, &h.ReminderCount, &h.NextReminderAt, &h.CreatedAt, &h.UpdatedAt); err != nil {
+			continue
+		}
+		handoffs = append(handoffs, h)
+	}
+	return handoffs, nil
+}
+
+func (r *HandoffRepository) UpdateStatus(ctx context.Context, id string, userID string, status string, notes string) error {
+	query := `UPDATE handoffs SET status=?, owner_notes=?, updated_at=NOW() WHERE id=? AND user_id=?`
+	_, err := r.db.ExecContext(ctx, query, status, notes, id, userID)
+	return err
+}
+
+func (r *HandoffRepository) GetPending(ctx context.Context, userID string) ([]domain.Handoff, error) {
+	return r.List(ctx, userID, "pending")
+}
+
+func (r *HandoffRepository) GetReadyForReminder(ctx context.Context) ([]domain.Handoff, error) {
+	query := `SELECT id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, final_price, owner_notes, owner_notified_at, reminder_count, next_reminder_at, created_at, updated_at FROM handoffs WHERE status = 'pending' AND next_reminder_at IS NOT NULL AND next_reminder_at <= NOW() AND reminder_count < 3`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var handoffs []domain.Handoff
+	for rows.Next() {
+		var h domain.Handoff
+		if err := rows.Scan(&h.ID, &h.UserID, &h.ConversationID, &h.CustomerName, &h.CustomerPhone, &h.CustomerWhatsapp, &h.CustomerLocation, &h.ProductName, &h.OriginalPrice, &h.AgreedPrice, &h.Quantity, &h.Status, &h.FinalPrice, &h.OwnerNotes, &h.OwnerNotifiedAt, &h.ReminderCount, &h.NextReminderAt, &h.CreatedAt, &h.UpdatedAt); err != nil {
+			continue
+		}
+		handoffs = append(handoffs, h)
+	}
+	return handoffs, nil
+}
+
+func (r *HandoffRepository) IncrementReminder(ctx context.Context, id string) error {
+	next := time.Now().Add(15 * time.Minute)
+	_, err := r.db.ExecContext(ctx, "UPDATE handoffs SET reminder_count = reminder_count + 1, next_reminder_at = ?, owner_notified_at = NOW(), updated_at = NOW() WHERE id = ?", next, id)
+	return err
+}
+
+func (r *HandoffRepository) Expire(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, "UPDATE handoffs SET status = 'expired', updated_at = NOW() WHERE id = ?", id)
+	return err
 }

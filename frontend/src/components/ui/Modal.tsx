@@ -46,15 +46,20 @@ export function Modal({ open, onClose, title, description, children, size = 'md'
     document.addEventListener('keydown', handleEscape)
     document.body.style.overflow = 'hidden'
 
-    // Auto-focus the close button (or first focusable element) on open
+    // Auto-focus the first input on open
     const t = setTimeout(() => {
-      if (!hideClose && closeButtonRef.current) {
-        closeButtonRef.current.focus()
-      } else if (overlayRef.current) {
-        const firstFocusable = overlayRef.current.querySelector<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      if (overlayRef.current) {
+        const firstInput = overlayRef.current.querySelector<HTMLElement>(
+          'input:not([disabled]), textarea:not([disabled])'
         )
-        firstFocusable?.focus()
+        if (firstInput) {
+          firstInput.focus()
+        } else {
+          const firstFocusable = overlayRef.current.querySelector<HTMLElement>(
+            'button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+          firstFocusable?.focus()
+        }
       }
     }, 50)
 

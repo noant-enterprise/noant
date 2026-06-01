@@ -291,6 +291,8 @@ During this upgrade phase, we implemented outstanding visual and structural adju
    mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/005_user_isolation.sql
    mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/006_notifications_widget.sql
    mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/007_message_source.sql
+   mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/008_inventory_leads.sql
+   mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/009_inventory_leads_fix.sql
    ```
 5. Install Go dependencies and launch:
    ```bash

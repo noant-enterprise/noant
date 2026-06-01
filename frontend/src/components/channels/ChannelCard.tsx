@@ -1,15 +1,15 @@
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { TokenDisplay } from './TokenDisplay'
 import { ChannelIcon } from './ChannelIcon'
 import { cn } from '@/lib/utils'
+import { Link2, Clock3 } from 'lucide-react'
 
 interface ChannelCardProps {
   channel: string
   name: string
   desc: string
-  status: 'connected' | 'disconnected' | 'error'
-  token?: string
+  status: 'connected' | 'active' | 'disconnected' | 'error'
+  details?: Array<{ label: string; value: string }>
   webhookUrl?: string
   connectedAt?: string
   onConnect: () => void
@@ -21,70 +21,81 @@ export function ChannelCard({
   name,
   desc,
   status,
-  token,
+  details,
   webhookUrl,
   connectedAt,
   onConnect,
   onDisconnect,
 }: ChannelCardProps) {
-  const isConnected = status === 'connected'
+  const isConnected = status === 'connected' || status === 'active'
+  const statusLabel = isConnected ? 'connected' : status
 
   return (
     <div className={cn(
-      'bg-surface border border-default rounded-2xl p-4 lg:p-5 transition-all duration-200',
-      isConnected ? 'border-noant-sky/30 shadow-sm' : 'hover:border-noant-sky/20'
+      'bg-surface border rounded-2xl p-4 lg:p-5 transition-all duration-200',
+      isConnected
+        ? 'border-noant-sky/30 shadow-sm'
+        : 'border-default'
     )}>
-      {/* Header */}
       <div className="flex items-start gap-3 mb-4">
         <ChannelIcon channel={channel} size="md" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-sm text-primary truncate">{name}</h3>
-            <Badge 
-              variant={isConnected ? 'success' : status === 'error' ? 'error' : 'neutral'} 
-              className={cn("text-[9px] px-1.5 py-0 transition-all", isConnected && "animate-pulse")}
-            >
-              {status}
-            </Badge>
+            {isConnected && (
+              <Badge variant="success" className="text-[9px] px-1.5 py-0">
+                {statusLabel}
+              </Badge>
+            )}
           </div>
           <p className="text-[11px] text-secondary mt-0.5">{desc}</p>
         </div>
       </div>
 
-      {/* Token + Webhook */}
-      {isConnected && (
-        <div className="space-y-3 mb-4">
-          <TokenDisplay token={token} label="API Token" />
+      {isConnected && details && details.length > 0 && (
+        <div className="space-y-2 mb-4">
+          {details.slice(0, 3).map((detail) => (
+            <div
+              key={detail.label}
+              className="flex items-center gap-2 rounded-lg border border-default bg-inset px-3 py-2 text-xs"
+            >
+              <span className="font-medium text-tertiary shrink-0">{detail.label}:</span>
+              <span className="text-secondary truncate font-mono">{detail.value}</span>
+            </div>
+          ))}
           {webhookUrl && (
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-tertiary">Webhook URL</label>
-              <div className="bg-inset rounded-lg px-3 py-2 font-mono text-[10px] text-secondary truncate">
-                {webhookUrl}
-              </div>
+            <div className="flex items-center gap-2 rounded-lg border border-default bg-inset px-3 py-2 text-xs text-tertiary truncate">
+              <Link2 className="w-3 h-3 shrink-0" />
+              <span className="truncate">{webhookUrl}</span>
+            </div>
+          )}
+          {connectedAt && (
+            <div className="flex items-center gap-2 text-[10px] text-tertiary">
+              <Clock3 className="w-3 h-3" />
+              Connected {new Date(connectedAt).toLocaleDateString()}
             </div>
           )}
         </div>
       )}
 
-      {/* Meta */}
-      {connectedAt && (
-        <p className="text-[10px] text-tertiary mb-3">
-          Connected {new Date(connectedAt).toLocaleDateString()}
-        </p>
-      )}
-
-      {/* Action */}
       <div className="flex justify-start">
-        <Button
-          variant={isConnected ? 'ghost' : 'accent'}
-          className={cn(
-            'inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-colors w-full sm:w-fit sm:max-w-[200px]',
-            isConnected && 'border border-default'
-          )}
-          onClick={isConnected ? onDisconnect : onConnect}
-        >
-          {isConnected ? 'Disconnect' : 'Connect'}
-        </Button>
+        {isConnected ? (
+          <Button
+            variant="ghost"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold border border-default w-full sm:w-fit sm:max-w-[200px] text-red-600 hover:border-red-200 hover:text-red-700"
+            onClick={onDisconnect}
+          >
+            Disconnect
+          </Button>
+        ) : (
+          <Button
+            variant="accent"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold w-full sm:w-fit sm:max-w-[200px]"
+            onClick={onConnect}
+          >
+            Connect
+          </Button>
+        )}
       </div>
     </div>
   )
