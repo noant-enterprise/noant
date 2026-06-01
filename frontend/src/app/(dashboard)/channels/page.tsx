@@ -413,7 +413,6 @@ export default function ChannelsPage() {
         loading={connectLoading}
         onConnect={() => {
           getIntegrations('/integrations/list')
-          setActiveModal(null)
         }}
       />
 

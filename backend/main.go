@@ -267,7 +267,7 @@ func main() {
 
 		integrations := api.Group("/integrations")
 		integrations.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
-		integrations.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
+		integrations.Use(middleware.RateLimitByUserMiddleware(redisClient, 300, time.Minute))
 		integrations.Use(middleware.AuditMiddleware(auditRepo, logger))
 		{
 			integrations.GET("/list", handlers.Integration.List)

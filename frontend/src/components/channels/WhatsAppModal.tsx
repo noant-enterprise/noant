@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { api } from '@/lib/api'
 import { CheckCircle2, XCircle, Loader2, Zap, Smartphone, RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react'
+import { ConversationLoading } from '../chat'
+import { useWebSocket } from '@/hooks/useWebSocket'
 
 interface WhatsAppModalProps {
   open: boolean
@@ -12,7 +14,7 @@ interface WhatsAppModalProps {
   onConnect?: () => void
 }
 
-type Step = 'form' | 'qr' | 'verifying' | 'success' | 'error'
+type Step = 'form' | 'qr' | 'verifying' | 'success' | 'error' | 'connecting'
 
 export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppModalProps) {
   const [phone, setPhone] = useState('')
@@ -26,6 +28,44 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [qrExpired, setQrExpired] = useState(false)
   const [sessionStatus, setSessionStatus] = useState<string>('')
+  const [validationError, setValidationError] = useState('')
+
+  const { subscribe } = useWebSocket()
+
+  // Subscribe to real-time WebSocket connection state updates
+  useEffect(() => {
+    const unsub = subscribe((msg) => {
+      if (
+        msg.type === 'integration_update' &&
+        msg.data?.channel === 'whatsapp' &&
+        msg.data?.status === 'connected'
+      ) {
+        setStep('success')
+        onConnect?.()
+        setTimeout(() => handleClose(), 2500)
+      }
+    })
+    return unsub
+  }, [subscribe, onConnect])
+
+  const validatePhone = (num: string): string => {
+    const cleaned = num.replace(/\s+/g, '').replace(/[-()]/g, '')
+    if (!cleaned) return ''
+    if (cleaned.startsWith('0')) {
+      return 'Please replace the leading 0 with your country code (e.g. +44 or +234)'
+    }
+    if (!cleaned.startsWith('+')) {
+      return 'Phone number must start with + and include country code (e.g. +44...)'
+    }
+    const digitsOnly = cleaned.slice(1)
+    if (!/^\d+$/.test(digitsOnly)) {
+      return 'Phone number must contain only numbers after the +'
+    }
+    if (digitsOnly.length < 8 || digitsOnly.length > 15) {
+      return 'Please enter a valid phone number (8-15 digits after country code)'
+    }
+    return ''
+  }
 
   // Auto-poll while QR is displayed using long polling
   useEffect(() => {
@@ -82,8 +122,13 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!phone.trim()) return
-    setStep('form')
+    const cleaned = phone.trim().replace(/\s+/g, '').replace(/[-()]/g, '')
+    const validation = validatePhone(phone)
+    if (validation) {
+      setValidationError(validation)
+      return
+    }
+    setStep('connecting')
     setErrorMsg('')
     setQrCode('')
     try {
@@ -92,7 +137,7 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
         qr_code?: string
         qrCode?: string
         status: string
-      }>('/channels/whatsapp/connect', { phone: phone.trim() })
+      }>('/channels/whatsapp/connect', { phone: cleaned })
 
       setSessionId(res.session_id)
       setSessionStatus(res.status)
@@ -122,9 +167,9 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
     if (!sessionId) return
     setStep('verifying')
     try {
-      // First try a normal status check
+      // First try a fast normal status check (no long-polling)
       const res = await api.get<{ status: string; connected: boolean }>(
-        `/channels/whatsapp/status/${sessionId}`
+        `/channels/whatsapp/status/${sessionId}?poll=false`
       )
       if (res.connected) {
         setStep('success')
@@ -160,9 +205,7 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
       if (res.session_id) {
         setSessionId(res.session_id)
       }
-      if (res.qr_code) {
-        setQrCode(res.qr_code)
-      }
+      setQrCode(res.qr_code || '')
       setQrExpired(false)
       setSessionStatus('initializing')
     } catch (err: any) {
@@ -173,13 +216,18 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
   }
 
   const handleTest = async () => {
-    if (!phone.trim()) return
+    const cleaned = phone.trim().replace(/\s+/g, '').replace(/[-()]/g, '')
+    const validation = validatePhone(phone)
+    if (validation) {
+      setValidationError(validation)
+      return
+    }
     setTestState('testing')
     setTestMessage('')
     try {
       const res = await api.post<{ success: boolean; message: string }>(
         '/channels/whatsapp/ping',
-        { phone: phone.trim() }
+        { phone: cleaned }
       )
       setTestState('success')
       setTestMessage(res.message || 'Connection successful!')
@@ -201,6 +249,7 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
     setQrExpired(false)
     setIsRefreshing(false)
     setSessionStatus('')
+    setValidationError('')
     onClose()
   }
 
@@ -231,12 +280,25 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
                 </label>
                 <Input
                   value={phone}
-                  onChange={(e) => { setPhone(e.target.value); setTestState('idle'); setTestMessage('') }}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setPhone(val)
+                    setTestState('idle')
+                    setTestMessage('')
+                    setValidationError(validatePhone(val))
+                  }}
                   placeholder="+44 7700 900123"
                   required
                   disabled={loading}
                 />
-                <p className="text-[10px] text-tertiary mt-1">Include country code (e.g. +44, +234)</p>
+                {validationError ? (
+                  <p className="text-[10px] text-red-500 font-medium mt-1 animate-fade-in flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    {validationError}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-tertiary mt-1">Include country code (e.g. +44, +234)</p>
+                )}
               </div>
 
               <div>
@@ -278,18 +340,31 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
                   type="button"
                   variant="ghost"
                   onClick={handleTest}
-                  disabled={!phone.trim() || loading || testState === 'testing'}
+                  disabled={!phone.trim() || !!validationError || loading || testState === 'testing'}
                   className="gap-1.5"
                 >
                   <Zap className="w-3.5 h-3.5" />
                   Test Server
                 </Button>
-                <Button type="submit" loading={loading} disabled={!phone.trim() || loading}>
+                <Button type="submit" loading={loading} disabled={!phone.trim() || !!validationError || loading}>
                   Connect WhatsApp
                 </Button>
               </div>
             </form>
           </>
+        )}
+
+        {/* ── CONNECTING STEP ── */}
+        {step === 'connecting' && (
+          <div className="flex flex-col items-center justify-center gap-5 py-12 animate-fade-in">
+            <ConversationLoading size="lg" />
+            <div className="text-center space-y-2 max-w-xs">
+              <p className="text-sm font-semibold text-primary">Spawning WhatsApp Session...</p>
+              <p className="text-xs text-secondary leading-relaxed">
+                Initializing your self-hosted WhatsApp container. This may take up to 15 seconds.
+              </p>
+            </div>
+          </div>
         )}
 
         {/* ── QR STEP ── */}
@@ -301,12 +376,6 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
                 <div className="w-52 h-52 bg-red-500/5 rounded-2xl flex flex-col items-center justify-center gap-2 border border-red-500/20 text-red-600 dark:text-red-400 p-4 text-center animate-fade-in">
                   <AlertTriangle className="w-8 h-8 text-red-500 animate-bounce" />
                   <span className="text-xs font-semibold">QR Code Expired</span>
-                </div>
-              ) : sessionStatus === 'initializing' ? (
-                <div className="w-52 h-52 bg-inset rounded-2xl flex flex-col items-center justify-center gap-2 border border-default p-4 text-center">
-                  <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-                  <span className="text-xs font-semibold text-secondary">Starting session...</span>
-                  <span className="text-[10px] text-tertiary animate-pulse">Checking with self-hosted server</span>
                 </div>
               ) : sessionStatus === 'failed' ? (
                 <div className="w-52 h-52 bg-red-500/5 rounded-2xl flex flex-col items-center justify-center gap-2 border border-red-500/20 text-red-600 dark:text-red-400 p-4 text-center animate-fade-in">
@@ -327,9 +396,15 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
                     <img src={qrCode} alt="WhatsApp QR Code" className="w-full h-full object-contain" />
                   </div>
                 </div>
+              ) : sessionStatus === 'initializing' ? (
+                <div className="w-52 h-52 bg-inset rounded-2xl flex flex-col items-center justify-center gap-2 border border-default p-4 text-center">
+                  <ConversationLoading size="md" />
+                  <span className="text-xs font-semibold text-secondary">Starting session...</span>
+                  <span className="text-[10px] text-tertiary animate-pulse">Checking with self-hosted server</span>
+                </div>
               ) : (
                 <div className="w-52 h-52 bg-inset rounded-2xl flex items-center justify-center border border-default">
-                  <Loader2 className="w-8 h-8 animate-spin text-tertiary" />
+                  <ConversationLoading size="md" />
                 </div>
               )}
 
@@ -423,9 +498,7 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
         {step === 'verifying' && (
           <div className="flex flex-col items-center gap-5 py-10">
             <div className="relative">
-              <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-              </div>
+              <ConversationLoading size="lg" />
             </div>
             <div className="text-center space-y-1">
               <p className="text-sm font-semibold text-primary">Verifying your connection...</p>

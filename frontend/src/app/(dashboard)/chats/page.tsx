@@ -369,7 +369,7 @@ export default function ChatsPage() {
     <div className="h-full w-full flex animate-page-in overflow-hidden relative">
       {/* Conversation List */}
       <div className={cn(
-        'w-full lg:w-72 lg:shrink-0 lg:border-r lg:border-default bg-surface h-full overflow-y-auto absolute lg:relative inset-0 lg:inset-auto z-10 transition-transform duration-300 lg:transition-none',
+        'w-full lg:w-72 lg:shrink-0 lg:border-r lg:border-default bg-surface h-full flex flex-col overflow-hidden absolute lg:relative inset-0 lg:inset-auto z-10 transition-transform duration-300 lg:transition-none',
         isMobileChatView ? '-translate-x-full lg:translate-x-0' : 'translate-x-0'
       )}>
         {/* AI Assistant Button */}

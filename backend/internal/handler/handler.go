@@ -1825,107 +1825,45 @@ func (h *OpenWAHandler) ConnectWhatsApp(c *gin.Context) {
 	}
 	h.logger.Info("Session created", "sessionID", sessionID)
 
-	// Step 4: Wait for OpenWA to initialize
-	time.Sleep(5 * time.Second)
-
-	// Step 5: Start session with retry
-	var startErr error
-	for i := 0; i < 3; i++ {
-		startErr = h.openwa.StartSession(sessionID)
-		if startErr == nil {
-			break
-		}
-		h.logger.Warn("Session start attempt failed", "attempt", i+1, "error", startErr)
-		time.Sleep(3 * time.Second)
-	}
-	if startErr != nil {
-		h.logger.Warn("Start session failed, will try to get QR anyway", "error", startErr)
-	}
-
-	// Step 6: Wait for session to leave "initializing" or be ready
-	pollSessionStatus := func(id string, maxAttempts int) (string, bool) {
-		var lastStatus string
-		for i := 0; i < maxAttempts; i++ {
-			time.Sleep(3 * time.Second)
-			st, _ := h.openwa.GetSessionStatusByID(id)
-			lastStatus = st
-			h.logger.Info("Session status", "status", st, "attempt", i+1, "sessionID", id)
-			if st == "qr_read" || st == "connecting" || st == "connected" {
-				return st, false
-			}
-			if st == "failed" {
-				return st, true
-			}
-		}
-		return lastStatus, false
-	}
-
-	finalStatus, sessionFailed := pollSessionStatus(sessionID, 20)
-	if sessionFailed {
-		h.logger.Warn("OpenWA session reported failed, recreating session", "sessionID", sessionID)
-		_ = h.openwa.DeleteSession(sessionID)
-		time.Sleep(2 * time.Second)
-
-		sessionID, createErr = h.openwa.CreateSession(sessionName)
-		if createErr != nil {
-			h.logger.Error("Failed to recreate session after failure", "error", createErr)
-			utils.RespondInternalError(c, "OpenWA session failed. Run: docker compose restart")
-			return
-		}
-
-		time.Sleep(5 * time.Second)
-		startErr = h.openwa.StartSession(sessionID)
-		if startErr != nil {
-			h.logger.Warn("Restart after recreate failed, continuing to QR check", "error", startErr)
-		}
-		finalStatus, sessionFailed = pollSessionStatus(sessionID, 20)
-		if sessionFailed {
-			h.logger.Error("OpenWA session failed to initialize after recreate")
-			utils.RespondInternalError(c, "OpenWA session failed. Run: docker compose restart")
-			return
-		}
-	}
-
-	// Step 7: Get QR code with retry
-	var qrCode string
-	if finalStatus != "connected" {
-		for i := 0; i < 15; i++ {
-			time.Sleep(3 * time.Second)
-			qr, err := h.openwa.GetQRCode(sessionID)
-			if err == nil && qr != "" {
-				qrCode = qr
-				h.logger.Info("QR code obtained", "attempt", i+1)
-				break
-			}
-			h.logger.Info("Waiting for QR...", "attempt", i+1)
-		}
-	}
-
-	// Step 8: Store integration initially as "connecting" until scanned
+	// Step 4: Store integration initially as "connecting" until scanned
 	h.chat.StoreWhatsAppIntegrationWithStatus(c.Request.Context(), userID.(string), sessionID, req.Phone, "connecting")
 
-	// Step 9: Configure webhook (after session is ready)
-	// Use host.docker.internal for Docker compatibility
-	webhookURL := "http://host.docker.internal:8080/api/v1/openwa/webhook"
-	h.logger.Info("Configuring webhook", "url", webhookURL)
-	if err := h.openwa.ConfigureWebhook(sessionID, webhookURL, h.cfg.OpenWAWebhookSecret); err != nil {
-		h.logger.Warn("Webhook configuration failed (non-critical)", "error", err)
-		// Try localhost as fallback
-		altURL := "http://localhost:8080/api/v1/openwa/webhook"
-		h.logger.Info("Trying alternative webhook URL", "url", altURL)
-		_ = h.openwa.ConfigureWebhook(sessionID, altURL, h.cfg.OpenWAWebhookSecret)
-	}
+	// Step 5: Start session and configure webhook asynchronously in background
+	go func(sid string, uid string, phone string) {
+		h.logger.Info("Background: Starting session and configuring webhook", "sessionID", sid)
 
-	status := finalStatus
-	if qrCode != "" {
-		status = "qr_ready"
-	}
+		// Start session with retry
+		var startErr error
+		for i := 0; i < 3; i++ {
+			startErr = h.openwa.StartSession(sid)
+			if startErr == nil {
+				break
+			}
+			h.logger.Warn("Background: Session start attempt failed", "attempt", i+1, "error", startErr, "sessionID", sid)
+			time.Sleep(2 * time.Second)
+		}
+		if startErr != nil {
+			h.logger.Error("Background: Start session failed", "error", startErr, "sessionID", sid)
+			return
+		}
+		h.logger.Info("Background: Session started successfully", "sessionID", sid)
+
+		// Configure webhook
+		webhookURL := "http://host.docker.internal:8080/api/v1/openwa/webhook"
+		h.logger.Info("Background: Configuring webhook", "url", webhookURL, "sessionID", sid)
+		if err := h.openwa.ConfigureWebhook(sid, webhookURL, h.cfg.OpenWAWebhookSecret); err != nil {
+			h.logger.Warn("Background: Webhook configuration failed (non-critical)", "error", err, "sessionID", sid)
+			// Try localhost fallback
+			altURL := "http://localhost:8080/api/v1/openwa/webhook"
+			_ = h.openwa.ConfigureWebhook(sid, altURL, h.cfg.OpenWAWebhookSecret)
+		}
+	}(sessionID, userID.(string), req.Phone)
 
 	c.JSON(http.StatusOK, gin.H{
 		"session_id": sessionID,
-		"qr_code":    qrCode,
+		"qr_code":    "",
 		"phone":      req.Phone,
-		"status":     status,
+		"status":     "initializing",
 	})
 }
 
@@ -1940,6 +1878,7 @@ func (h *OpenWAHandler) GetWhatsAppStatus(c *gin.Context) {
 	// ?force=true allows the frontend "Done" button to force-confirm connection
 	// when the phone shows it's logged in but the status API still shows qr_ready
 	forceConnect := c.Query("force") == "true"
+	poll := c.Query("poll") != "false"
 
 	status, err := h.openwa.GetSessionStatusByID(sessionID)
 	if err != nil {
@@ -1958,8 +1897,8 @@ func (h *OpenWAHandler) GetWhatsAppStatus(c *gin.Context) {
 		qrCode = qr
 	}
 
-	// Long poll: if not connected, not expired, not failed, not disconnected, and not force-connecting, wait up to 25 seconds for updates
-	if !isConnected && status != "expired" && status != "failed" && status != "disconnected" && !forceConnect {
+	// Long poll: if not connected, not expired, not failed, not disconnected, not force-connecting, and poll is true, wait up to 25 seconds for updates
+	if !isConnected && status != "expired" && status != "failed" && status != "disconnected" && !forceConnect && poll {
 		h.logger.Info("Long-polling WhatsApp status starting", "sessionID", sessionID, "initialStatus", status)
 		
 		timeout := time.After(25 * time.Second)
@@ -2083,35 +2022,34 @@ func (h *OpenWAHandler) RefreshWhatsAppQR(c *gin.Context) {
 	}
 	h.logger.Info("QR refresh: new session", "id", newID)
 
-	// Start the new session
-	time.Sleep(3 * time.Second)
-	_ = h.openwa.StartSession(newID)
-
-	// Wait for QR to be ready
-	var qrCode string
-	for i := 0; i < 10; i++ {
-		time.Sleep(3 * time.Second)
-		qr, qrErr := h.openwa.GetQRCode(newID)
-		if qrErr == nil && qr != "" {
-			qrCode = qr
-			h.logger.Info("QR refresh: code obtained", "attempt", i+1)
-			break
-		}
-		h.logger.Info("QR refresh: waiting for QR...", "attempt", i+1)
-	}
-
 	// Update DB integration to use the new session ID
 	h.chat.StoreWhatsAppIntegrationWithStatus(c.Request.Context(), userID.(string), newID, phone, "connecting")
 
-	// Reconfigure webhook on new session
-	webhookURL := "http://host.docker.internal:8080/api/v1/openwa/webhook"
-	if wErr := h.openwa.ConfigureWebhook(newID, webhookURL, h.cfg.OpenWAWebhookSecret); wErr != nil {
-		h.logger.Warn("QR refresh: webhook config failed, trying localhost fallback", "error", wErr)
-		_ = h.openwa.ConfigureWebhook(newID, "http://localhost:8080/api/v1/openwa/webhook", h.cfg.OpenWAWebhookSecret)
-	}
+	// Start the new session and configure webhook asynchronously in background
+	go func(nid string, uid string, phoneNum string) {
+		h.logger.Info("Background QR Refresh: Starting session and configuring webhook", "sessionID", nid)
+
+		// Start the new session with retry
+		var startErr error
+		for i := 0; i < 3; i++ {
+			startErr = h.openwa.StartSession(nid)
+			if startErr == nil {
+				break
+			}
+			h.logger.Warn("Background QR Refresh: Session start attempt failed", "attempt", i+1, "error", startErr, "sessionID", nid)
+			time.Sleep(2 * time.Second)
+		}
+
+		// Configure webhook on new session
+		webhookURL := "http://host.docker.internal:8080/api/v1/openwa/webhook"
+		if wErr := h.openwa.ConfigureWebhook(nid, webhookURL, h.cfg.OpenWAWebhookSecret); wErr != nil {
+			h.logger.Warn("Background QR Refresh: Webhook config failed, trying localhost fallback", "error", wErr, "sessionID", nid)
+			_ = h.openwa.ConfigureWebhook(nid, "http://localhost:8080/api/v1/openwa/webhook", h.cfg.OpenWAWebhookSecret)
+		}
+	}(newID, userID.(string), phone)
 
 	c.JSON(http.StatusOK, gin.H{
-		"qr_code":    qrCode,
+		"qr_code":    "",
 		"session_id": newID,
 	})
 }

@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, timeAgo } from '@/lib/utils'
 import { Search, MessageCircle, Instagram, Facebook, Send, Globe, Loader2 } from 'lucide-react'
@@ -47,7 +47,7 @@ export function ChatList({
   })
 
   return (
-    <div className="flex flex-col h-full bg-surface">
+    <div className="flex flex-col flex-1 min-h-0 bg-surface">
       {/* Mobile header for chat list */}
       <div className="lg:hidden sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-default px-4 py-3">
         <h2 className="text-lg font-bold text-primary">Messages</h2>
