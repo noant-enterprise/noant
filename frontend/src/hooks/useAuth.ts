@@ -13,9 +13,11 @@ export function useAuth() {
     
     getCurrentUser()
       .then(setUser)
-      .catch(() => {
+      .catch((err: any) => {
         setUser(null)
-        clearAuth()
+        if (err?.status === 401) {
+          clearAuth()
+        }
       })
       .finally(() => setLoading(false))
   }, [])

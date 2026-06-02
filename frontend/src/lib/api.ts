@@ -20,22 +20,22 @@ let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
 const inflightRequests = new Map<string, Promise<any>>();
 
-async function request<T>(method: string, endpoint: string, body?: unknown, isFormData?: boolean, isRetry = false): Promise<T> {
+async function request<T>(method: string, endpoint: string, body?: unknown, isFormData?: boolean, retryCount = 0): Promise<T> {
   if (method === 'GET') {
     const key = endpoint;
     if (inflightRequests.has(key)) {
       return inflightRequests.get(key) as Promise<T>;
     }
-    const promise = doRequest<T>(method, endpoint, body, isFormData, isRetry).finally(() => {
+    const promise = doRequest<T>(method, endpoint, body, isFormData, retryCount).finally(() => {
       inflightRequests.delete(key);
     });
     inflightRequests.set(key, promise);
     return promise;
   }
-  return doRequest<T>(method, endpoint, body, isFormData, isRetry);
+  return doRequest<T>(method, endpoint, body, isFormData, retryCount);
 }
 
-async function doRequest<T>(method: string, endpoint: string, body?: unknown, isFormData?: boolean, isRetry = false): Promise<T> {
+async function doRequest<T>(method: string, endpoint: string, body?: unknown, isFormData?: boolean, retryCount = 0): Promise<T> {
   const headers: Record<string, string> = {};
   if (!isFormData && body) headers['Content-Type'] = 'application/json';
 
@@ -47,8 +47,18 @@ async function doRequest<T>(method: string, endpoint: string, body?: unknown, is
   });
 
   if (!res.ok) {
+    // Retry on 429 rate limit with exponential backoff (up to 3 attempts)
+    if (res.status === 429 && retryCount < 3) {
+      const retryAfterHeader = res.headers.get('Retry-After');
+      const delay = retryAfterHeader
+        ? parseInt(retryAfterHeader, 10) * 1000
+        : Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return doRequest<T>(method, endpoint, body, isFormData, retryCount + 1);
+    }
+
     // Silent session refresh on 401 (skip if this IS the refresh call)
-    if (res.status === 401 && !isRetry && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+    if (res.status === 401 && retryCount === 0 && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
       if (!isRefreshing) {
         isRefreshing = true;
         const { refreshToken } = await import('./auth');
@@ -59,13 +69,18 @@ async function doRequest<T>(method: string, endpoint: string, body?: unknown, is
       refreshPromise = null;
 
       if (refreshed) {
-        return doRequest<T>(method, endpoint, body, isFormData, true);
+        return doRequest<T>(method, endpoint, body, isFormData, retryCount + 1);
       }
 
       // Refresh failed - force re-login
       const { clearAuth } = await import('./auth');
       clearAuth();
-      window.location.href = '/login';
+
+      const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
+      const publicPaths = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
+      if (!publicPaths.includes(cleanPath)) {
+        window.location.href = '/login';
+      }
       throw new APIError('Session expired. Please log in again.', 401);
     }
 

@@ -212,18 +212,25 @@ func main() {
 
 	api := router.Group("/api/v1")
 	{
-		// Auth endpoints: strict rate limiting (10 req/min per IP)
+		// Auth mutation endpoints: strict rate limiting (10 req/min per IP)
 		auth := api.Group("/auth")
 		auth.Use(middleware.RateLimitMiddleware(redisClient, 10, time.Minute))
 		{
 			auth.POST("/register", handlers.Auth.Register)
 			auth.POST("/login", handlers.Auth.Login)
-			auth.POST("/refresh", handlers.Auth.RefreshToken)
 			auth.POST("/logout", handlers.Auth.Logout)
 			auth.POST("/change-password", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.ChangePassword)
 			auth.POST("/forgot-password", handlers.Auth.ForgotPassword)
 			auth.POST("/reset-password", handlers.Auth.ResetPassword)
-			auth.GET("/me", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.Me)
+		}
+
+		// Session check endpoints: relaxed rate limiting (120 req/min per IP)
+		// These are called automatically on every page load / token expiry.
+		authSession := api.Group("/auth")
+		authSession.Use(middleware.RateLimitMiddleware(redisClient, 120, time.Minute))
+		{
+			authSession.POST("/refresh", handlers.Auth.RefreshToken)
+			authSession.GET("/me", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.Me)
 		}
 
 		chats := api.Group("/chats")
