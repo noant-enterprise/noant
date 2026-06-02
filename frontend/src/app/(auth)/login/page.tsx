@@ -24,7 +24,7 @@ export default function LoginPage() {
     try {
       await login({ email, password })
       toast('Welcome back!', 'success')
-      navigate('/')
+      navigate('/dashboard')
     } catch (err: any) {
       toast(err?.message || 'Invalid credentials', 'error')
     } finally {

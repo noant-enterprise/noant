@@ -31,7 +31,7 @@ const navSections = [
   {
     title: 'Your workspace',
     items: [
-      { to: '/', icon: LayoutGrid, label: 'Overview', alertKey: null as null | string },
+      { to: '/dashboard', icon: LayoutGrid, label: 'Overview', alertKey: null as null | string },
       { to: '/chats', icon: MessageSquare, label: 'Conversations', alertKey: 'unreadChats' },
       { to: '/insights', icon: BarChart3, label: 'Insights', alertKey: null },
       { to: '/leads', icon: UserCheck, label: 'Leads', alertKey: null },

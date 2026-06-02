@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { useSidebarAlerts } from '@/contexts/SidebarAlertsContext'
 
 const items = [
-  { to: '/', icon: LayoutGrid, label: 'Home', alertKey: null as string | null },
+  { to: '/dashboard', icon: LayoutGrid, label: 'Home', alertKey: null as string | null },
   { to: '/chats', icon: MessageSquare, label: 'Inbox', alertKey: 'unreadChats' },
   { to: '/teach', icon: GraduationCap, label: 'Teach', alertKey: 'unknownQuestions' },
   { to: '/insights', icon: BarChart3, label: 'Insights', alertKey: null },

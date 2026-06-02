@@ -42,7 +42,7 @@ export function CommandPalette() {
   }, [open])
 
   const items: CommandItem[] = [
-    { id: 'overview', label: 'Go to Overview', icon: <LayoutGrid className="w-4 h-4" />, shortcut: 'G O', action: () => { navigate('/'); setOpen(false) } },
+    { id: 'overview', label: 'Go to Overview', icon: <LayoutGrid className="w-4 h-4" />, shortcut: 'G O', action: () => { navigate('/dashboard'); setOpen(false) } },
     { id: 'chats', label: 'Go to Conversations', icon: <MessageSquare className="w-4 h-4" />, shortcut: 'G C', action: () => { navigate('/chats'); setOpen(false) } },
     { id: 'teach', label: 'Go to Teach your Noant', icon: <GraduationCap className="w-4 h-4" />, shortcut: 'G T', action: () => { navigate('/teach'); setOpen(false) } },
     { id: 'insights', label: 'Go to Insights', icon: <BarChart3 className="w-4 h-4" />, shortcut: 'G I', action: () => { navigate('/insights'); setOpen(false) } },

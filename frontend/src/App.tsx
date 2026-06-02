@@ -21,7 +21,7 @@ import TeamPage from '@/app/(dashboard)/team/page'
 import WidgetPage from '@/app/(dashboard)/widget/page'
 import LeadsPage from '@/app/(dashboard)/leads/page'
 import InventoryPage from '@/app/(dashboard)/inventory/page'
-
+import LandingPage from '@/app/landing/page'
 import { useEffect } from 'react'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import { NetworkProvider } from '@/contexts/NetworkContext'
@@ -63,6 +63,11 @@ const router = createBrowserRouter([
   {
     element: <AppShell />,
     children: [
+      // Public landing page
+      {
+        path: '/',
+        element: <LandingPage />,
+      },
       // Auth routes - guest protection
       {
         path: '/login',
@@ -113,7 +118,7 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
         children: [
-          { index: true, element: <OverviewPage /> },
+          { path: 'dashboard', element: <OverviewPage /> },
           { path: 'chats', element: <ChatsPage /> },
           { path: 'teach', element: <TeachPage /> },
           { path: 'insights', element: <InsightsPage /> },

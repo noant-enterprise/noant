@@ -33,7 +33,7 @@ export default function SignupPage() {
         company_name: company,
       })
       toast('Account created!', 'success')
-      navigate('/')
+      navigate('/dashboard')
     } catch (err: any) {
       toast(err?.message || 'Failed to create account', 'error')
     } finally {
