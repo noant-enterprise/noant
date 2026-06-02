@@ -403,19 +403,21 @@ Customer sends message
 - `VerifyWebhook` — HMAC-SHA256 signature verification
 - `ProcessWebhook` — handles subscription.created/active/cancelled/updated events
 
-**EmailService** (`internal/service/email.go`, 184 lines):
+**EmailService** (`internal/service/email.go`, 224 lines):
 - Wraps Resend (primary) and SMTP (fallback)
 - If `RESEND_API_KEY` is set → tries Resend first, falls back to SMTP on failure
 - If no Resend key → uses SMTP directly
 - `SendPasswordReset` — styled HTML email with reset link
 - `SendNotificationEmail` — plain notification email
+- `SendHTMLEmail` — forwards unescaped HTML templates using `Resend` or `SMTP` fallback (e.g. for team invitations)
 
-**ResendService** (`internal/service/resend.go`, 178 lines):
+**ResendService** (`internal/service/resend.go`, 225 lines):
 - Configurable `from` address via `RESEND_FROM` env var (default: `onboarding@resend.dev` — no domain needed)
-- Configurable `apiURL` for reset links (uses `APIURL` from config)
+- Configurable `appURL` for links (uses `AppURL` from config, defaulting to port `3000` for frontend React app)
 - `SendPasswordReset` — styled HTML email with reset link
-- `SendNotificationEmail` — plain notification email
-- Both POST to `https://api.resend.com/emails` with Bearer auth
+- `SendNotificationEmail` — plain notification email (HTML-escaped and wrapped in `<p>` tags)
+- `SendHTMLEmail` — sends raw, unescaped rich HTML templates directly to the Resend API
+- All endpoints POST to `https://api.resend.com/emails` with Bearer auth
 
 **VectorSearch** (`internal/service/vector.go`, 55 lines):
 - Delegates to QAPair.Search (SQL LIKE)
@@ -553,12 +555,18 @@ All core domain structs with `json` and `db` tags:
 
 ```
 WebSocketHub
-  ├── clients      map[string]*websocket.Conn  (keyed by remote addr)
-  ├── broadcast    chan WebSocketMessage        (capacity 256)
-  ├── register     chan *Conn
-  ├── unregister   chan *Conn
+  ├── clients      map[string]*wsClient  (keyed by remote addr)
+  ├── broadcast    chan WebSocketMessage (capacity 256)
+  ├── register     chan *wsClient
+  ├── unregister   chan *wsClient
   └── allowedOrigins []string
+
+wsClient
+  ├── conn         *websocket.Conn
+  └── mutex        sync.Mutex (thread-safe write wrapper)
 ```
+
+*Note: WebSocket connection concurrency write safety is enforced using the `wsClient` wrapper which wraps each active connection with a mutex lock to guarantee serialized, panic-free writes under high concurrent load.*
 
 **Message types broadcasted:**
 - `new_message` — AI response or customer message delivered
@@ -579,6 +587,8 @@ WebSocketHub
 | `006_notifications_widget.sql` | notifications, widget_configs, user notification preference columns |
 | `007_message_source.sql` | Adds `source` column to messages |
 | `008_inventory_leads.sql` | inventory_items (products/services/packages), handoffs (sales leads), adds owner_whatsapp to users |
+
+*Note: Startup automatic alteration schema checks add `customer_avatar` (VARCHAR(500)) dynamically to the `conversations` table at startup inside `main.go` to support WhatsApp profile photo thumbnail caching and displays.*
 
 **Schema diagram (simplified):**
 
@@ -773,24 +783,26 @@ const router = createBrowserRouter([
 ### 3.2 Routing Tree
 
 ```
-/login          → AuthLayout > LoginPage
-/signup         → AuthLayout > SignupPage
-/forgot-password → AuthLayout > ForgotPasswordPage
-/reset-password  → AuthLayout > ResetPasswordPage
-/               → DashboardLayout > OverviewPage
-/chats          → DashboardLayout > ChatsPage
-/teach          → DashboardLayout > TeachPage
-/insights       → DashboardLayout > InsightsPage
-/channels       → DashboardLayout > ChannelsPage
-/setup          → DashboardLayout > SetupPage
-/settings       → DashboardLayout > SettingsPage
-/notifications  → DashboardLayout > NotificationsPage
-/billing        → DashboardLayout > BillingPage
-/team           → DashboardLayout > TeamPage
-/widget         → DashboardLayout > WidgetPage
-/leads          → DashboardLayout > LeadsPage
-/inventory      → DashboardLayout > InventoryPage
+/login          → GuestRoute > AuthLayout > LoginPage
+/signup         → GuestRoute > AuthLayout > SignupPage
+/forgot-password → GuestRoute > AuthLayout > ForgotPasswordPage
+/reset-password  → GuestRoute > AuthLayout > ResetPasswordPage
+/               → ProtectedRoute > DashboardLayout > OverviewPage
+/chats          → ProtectedRoute > DashboardLayout > ChatsPage
+/teach          → ProtectedRoute > DashboardLayout > TeachPage
+/insights       → ProtectedRoute > DashboardLayout > InsightsPage
+/channels       → ProtectedRoute > DashboardLayout > ChannelsPage
+/setup          → ProtectedRoute > DashboardLayout > SetupPage
+/settings       → ProtectedRoute > DashboardLayout > SettingsPage
+/notifications  → ProtectedRoute > DashboardLayout > NotificationsPage
+/billing        → ProtectedRoute > DashboardLayout > BillingPage
+/team           → ProtectedRoute > DashboardLayout > TeamPage
+/widget         → ProtectedRoute > DashboardLayout > WidgetPage
+/leads          → ProtectedRoute > DashboardLayout > LeadsPage
+/inventory      → ProtectedRoute > DashboardLayout > InventoryPage
 ```
+
+*Note: Auth routes are explicitly wrapped inside `<GuestRoute>` to detect active sessions and prevent logged-in users from returning to login/signup screens or accessing guest forms (e.g. on clicking the browser's Back button).*
 
 ### 3.3 Context Layer (4 contexts)
 
@@ -801,7 +813,7 @@ const router = createBrowserRouter([
 | `SidebarAlertsContext` | `contexts/SidebarAlertsContext.tsx` | Polls + WebSocket for unread counts, unknown Qs, notifications, channel errors, billing. `channelIssues` counts only `status === 'error'` (not inactive/disconnected) |
 | `ModalContext` | `contexts/ModalContext.tsx` | Imperative `showModal()` with confirm/cancel, loading, ESC/overlay-close |
 
-### 3.4 Custom Hooks (8 hooks)
+### 3.4 Custom Hooks (9 hooks)
 
 | Hook | File | Purpose |
 |---|---|---|
@@ -813,6 +825,7 @@ const router = createBrowserRouter([
 | `useModal` | `hooks/useModal.ts` | Simple boolean toggle for local modal open/close |
 | `useConfirm` | `hooks/useConfirm.ts` | Wrapper around ModalContext for imperative confirmations |
 | `useNetwork` | `hooks/useNetwork.ts` | Re-exports from NetworkContext |
+| `useOffline` | `hooks/useOffline.ts` | Tracks browser connection status via `online`/`offline` listeners, exposes `isOffline` boolean (locks inputs, freezes dashboard actions, and triggers connection alert banners) |
 
 ### 3.5 API Client & WebSocket Client
 
