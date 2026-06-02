@@ -179,3 +179,46 @@ func (s *ResendService) SendNotificationEmail(ctx context.Context, toEmail, subj
 
 	return result.ID, nil
 }
+
+func (s *ResendService) SendHTMLEmail(ctx context.Context, toEmail, subject, htmlBody string) (string, error) {
+	if s.apiKey == "" {
+		return "", fmt.Errorf("resend API key not configured")
+	}
+
+	payload := map[string]interface{}{
+		"from":    s.from,
+		"to":      []string{toEmail},
+		"subject": subject,
+		"html":    htmlBody,
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal email payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.resend.com/emails", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("resend API error: %s", resp.Status)
+	}
+
+	var result resendResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode resend response: %w", err)
+	}
+
+	return result.ID, nil
+}

@@ -211,7 +211,7 @@ func (s *EmailService) SendNotificationEmail(ctx context.Context, toEmail, subje
 func (s *EmailService) SendHTMLEmail(ctx context.Context, toEmail, subject, htmlBody string) (string, error) {
 	// Try Resend first if configured
 	if s.resend != nil {
-		id, err := s.resend.SendNotificationEmail(ctx, toEmail, subject, htmlBody)
+		id, err := s.resend.SendHTMLEmail(ctx, toEmail, subject, htmlBody)
 		if err == nil {
 			return id, nil
 		}
