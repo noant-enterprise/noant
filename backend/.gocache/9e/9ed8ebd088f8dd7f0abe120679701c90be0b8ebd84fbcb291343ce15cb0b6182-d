@@ -1,5 +1,0 @@
-./handler.go
-./health.go
-./notifications.go
-./telegram.go
-./websocket.go
