@@ -17,6 +17,7 @@ type Config struct {
 	NodeEnv       string
 	LogLevel      string
 	APIURL        string
+	AppURL        string
 
 	// Cache
 	CacheTTL     time.Duration
@@ -126,6 +127,7 @@ func Load() *Config {
 		NodeEnv:       getEnv("NODE_ENV", "development"),
 		LogLevel:      getEnv("LOG_LEVEL", "info"),
 		APIURL:        getEnv("API_URL", "http://localhost:"+port),
+		AppURL:        getEnv("APP_URL", "http://localhost:3000"),
 
 		CacheTTL:     time.Duration(cacheTTL) * time.Second,
 		CacheMaxKeys: cacheMaxKeys,

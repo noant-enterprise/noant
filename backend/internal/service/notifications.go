@@ -201,7 +201,7 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 							context.Background(),
 							user.Email,
 							"NOANT Escalation Alert: Support agent needed",
-							fmt.Sprintf("Hello %s,\n\nA customer chat on your web widget has been escalated to a human agent because the AI confidence was low. Please log in to your NOANT dashboard to take over the conversation.\n\nLink: %s/chats?id=%s", user.FirstName, s.cfg.APIURL, conv.ID),
+							fmt.Sprintf("Hello %s,\n\nA customer chat on your web widget has been escalated to a human agent because the AI confidence was low. Please log in to your NOANT dashboard to take over the conversation.\n\nLink: %s/chats?id=%s", user.FirstName, s.cfg.AppURL, conv.ID),
 						)
 						if emailErr != nil {
 							s.logger.Error("Failed to send escalation email", "error", emailErr)

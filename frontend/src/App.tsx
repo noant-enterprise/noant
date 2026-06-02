@@ -2,6 +2,7 @@ import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } fr
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
+import { GuestRoute } from '@/components/auth/GuestRoute'
 import { CommandPalette } from '@/components/ui/CommandPalette'
 import LoginPage from '@/app/(auth)/login/page'
 import SignupPage from '@/app/(auth)/signup/page'
@@ -62,25 +63,41 @@ const router = createBrowserRouter([
   {
     element: <AppShell />,
     children: [
-      // Auth routes - no protection needed
+      // Auth routes - guest protection
       {
         path: '/login',
-        element: <AuthLayout />,
+        element: (
+          <GuestRoute>
+            <AuthLayout />
+          </GuestRoute>
+        ),
         children: [{ index: true, element: <LoginPage /> }],
       },
       {
         path: '/signup',
-        element: <AuthLayout />,
+        element: (
+          <GuestRoute>
+            <AuthLayout />
+          </GuestRoute>
+        ),
         children: [{ index: true, element: <SignupPage /> }],
       },
       {
         path: '/forgot-password',
-        element: <AuthLayout />,
+        element: (
+          <GuestRoute>
+            <AuthLayout />
+          </GuestRoute>
+        ),
         children: [{ index: true, element: <ForgotPasswordPage /> }],
       },
       {
         path: '/reset-password',
-        element: <AuthLayout />,
+        element: (
+          <GuestRoute>
+            <AuthLayout />
+          </GuestRoute>
+        ),
         children: [{ index: true, element: <ResetPasswordPage /> }],
       },
       // Dashboard routes - protected

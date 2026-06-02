@@ -35,7 +35,7 @@ type EmailService struct {
 func NewEmailService(cfg *config.Config, logger *infrastructure.Logger) *EmailService {
 	svc := &EmailService{cfg: cfg, logger: logger}
 	if cfg.ResendAPIKey != "" {
-		svc.resend = NewResendService(cfg.ResendAPIKey, cfg.ResendFrom, cfg.APIURL)
+		svc.resend = NewResendService(cfg.ResendAPIKey, cfg.ResendFrom, cfg.AppURL)
 	}
 	return svc
 }
@@ -173,7 +173,7 @@ func (s *EmailService) SendPasswordReset(ctx context.Context, toEmail, resetToke
 	}
 
 	// Fall back to SMTP
-	baseURL := s.cfg.APIURL
+	baseURL := s.cfg.AppURL
 	resetURL := fmt.Sprintf("%s/reset-password?token=%s", baseURL, url.QueryEscape(resetToken))
 	safeURL := html.EscapeString(resetURL)
 	safeEmail := html.EscapeString(toEmail)
@@ -206,4 +206,18 @@ func (s *EmailService) SendNotificationEmail(ctx context.Context, toEmail, subje
 	// Fall back to SMTP
 	body := fmt.Sprintf("<html><body style=\"font-family:Arial,sans-serif;white-space:pre-wrap;color:#111827;\">%s</body></html>", html.EscapeString(bodyText))
 	return sendSMTPMessage(ctx, smtpSettingsFromConfig(s.cfg, nil), toEmail, subject, body)
+}
+
+func (s *EmailService) SendHTMLEmail(ctx context.Context, toEmail, subject, htmlBody string) (string, error) {
+	// Try Resend first if configured
+	if s.resend != nil {
+		id, err := s.resend.SendNotificationEmail(ctx, toEmail, subject, htmlBody)
+		if err == nil {
+			return id, nil
+		}
+		s.logger.Warn("Resend failed, falling back to SMTP", "error", err)
+	}
+
+	// Fall back to SMTP (do not escape HTML tags)
+	return sendSMTPMessage(ctx, smtpSettingsFromConfig(s.cfg, nil), toEmail, subject, htmlBody)
 }
