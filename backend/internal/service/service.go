@@ -1172,7 +1172,7 @@ func NewChatService(cfg *config.Config, repos *repository.Repositories, redis *i
 	}
 }
 
-func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, customerKey, message, channel string) (*domain.Conversation, *domain.Message, error) {
+func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, customerKey, message, channel, customerAvatar string) (*domain.Conversation, *domain.Message, error) {
 	if s.redis != nil {
 		limit := 500
 		user, err := s.repos.User.GetByID(ctx, userID)
@@ -1195,19 +1195,55 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, cust
 	if strings.TrimSpace(customerKey) == "" {
 		customerKey = customerName
 	}
+
+	// If channel is whatsapp and we don't have a valid pushname/avatar yet,
+	// query OpenWA dynamically to resolve the real contact profile details.
+	if channel == "whatsapp" && s.openwa != nil && (customerName == "" || customerName == customerKey || customerAvatar == "") {
+		integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+		if err == nil && integration != nil {
+			if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
+				contactID := FormatContactID(customerKey) // use @c.us for contacts API
+				contact, err := s.openwa.GetContactInfo(sessionID, contactID)
+				if err == nil && contact != nil {
+					if contact.Pushname != "" {
+						customerName = contact.Pushname
+					} else if contact.Name != "" {
+						customerName = contact.Name
+					}
+					if contact.ProfilePicUrl != "" {
+						customerAvatar = contact.ProfilePicUrl
+					}
+				}
+			}
+		}
+	}
+
 	existing, _ := s.repos.Conversation.FindActiveByCustomer(ctx, userID, customerKey, channel)
 	var conv *domain.Conversation
 	if existing != nil {
 		conv = existing
+		needsUpdate := false
+		if customerName != "" && customerName != customerKey && conv.CustomerName != customerName {
+			conv.CustomerName = customerName
+			needsUpdate = true
+		}
+		if customerAvatar != "" && conv.CustomerAvatar != customerAvatar {
+			conv.CustomerAvatar = customerAvatar
+			needsUpdate = true
+		}
+		if needsUpdate {
+			_ = s.repos.Conversation.UpdateCustomerInfo(ctx, conv.ID, conv.CustomerName, conv.CustomerAvatar)
+		}
 	} else {
 		conv = &domain.Conversation{
-			UserID:        userID,
-			CustomerName:  customerName,
-			CustomerPhone: customerKey,
-			Channel:       channel,
-			Status:        "active",
-			Intent:        "inquiry",
-			Priority:      "medium",
+			UserID:         userID,
+			CustomerName:   customerName,
+			CustomerPhone:  customerKey,
+			CustomerAvatar: customerAvatar,
+			Channel:        channel,
+			Status:         "active",
+			Intent:         "inquiry",
+			Priority:       "medium",
 		}
 		if err := s.repos.Conversation.Create(ctx, conv); err != nil {
 			return nil, nil, err
@@ -1267,7 +1303,72 @@ func (s *ChatService) ListConversations(ctx context.Context, userID string, stat
 		}
 	}
 
+	// Synchronously resolve WhatsApp contact names/avatars for conversations
+	// where the customer_name still looks like a raw phone number.
+	// Done in parallel goroutines, we wait for all to finish before returning
+	// so the UI always receives real names on every page load.
+	if s.openwa != nil {
+		integration, intErr := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+		if intErr == nil && integration != nil {
+			if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
+				var wg sync.WaitGroup
+				var mu sync.Mutex
+				for i := range conversations {
+					conv := &conversations[i]
+					needsResolve := conv.Channel == "whatsapp" &&
+						(conv.CustomerName == "" || conv.CustomerName == conv.CustomerPhone || isAllDigits(conv.CustomerName))
+					if !needsResolve {
+						continue
+					}
+					wg.Add(1)
+					go func(idx int, convID, phone string) {
+						defer wg.Done()
+						contactID := FormatContactID(phone)
+						contact, err := s.openwa.GetContactInfo(sessionID, contactID)
+						if err != nil || contact == nil {
+							return
+						}
+						name := phone
+						if contact.Pushname != "" {
+							name = contact.Pushname
+						} else if contact.Name != "" {
+							name = contact.Name
+						}
+						avatar := contact.ProfilePicUrl
+						if name == phone && avatar == "" {
+							return // nothing changed
+						}
+						mu.Lock()
+						conversations[idx].CustomerName = name
+						if avatar != "" {
+							conversations[idx].CustomerAvatar = avatar
+						}
+						mu.Unlock()
+						// Persist update to DB in background (non-blocking)
+						go func() {
+							_ = s.repos.Conversation.UpdateCustomerInfo(context.Background(), convID, name, avatar)
+						}()
+					}(i, conv.ID, conv.CustomerPhone)
+				}
+				wg.Wait()
+			}
+		}
+	}
+
 	return conversations, total, nil
+}
+
+// isAllDigits returns true if s contains only digit characters (i.e. looks like a phone number)
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *ChatService) GetConversation(ctx context.Context, userID, conversationID string) (*domain.Conversation, []domain.Message, error) {
@@ -1504,9 +1605,28 @@ func (s *ChatService) GetTelegramIntegrationByWebhookSecret(ctx context.Context,
 	return s.repos.Integration.GetByChannelAndWebhookSecret(ctx, "telegram", secret)
 }
 
+// DisconnectWhatsAppSession completely logs out and deletes the WhatsApp session
+func (s *ChatService) DisconnectWhatsAppSession(ctx context.Context, userID string) {
+	if s.openwa == nil {
+		return
+	}
+	integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+	if err == nil && integration != nil {
+		if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
+			s.logger.Info("Logging out and deleting WhatsApp session", "sessionID", sessionID)
+			_ = s.openwa.LogoutSession(sessionID)
+			_ = s.openwa.DeleteSession(sessionID)
+		}
+	}
+}
+
 // RemoveWhatsAppIntegration removes the WhatsApp integration
 func (s *ChatService) RemoveWhatsAppIntegration(ctx context.Context, userID string) {
 	_ = s.repos.Integration.Disconnect(ctx, userID, "whatsapp")
+}
+
+func (s *ChatService) ClearChats(ctx context.Context, userID string) error {
+	return s.repos.Conversation.ClearChats(ctx, userID)
 }
 
 // ========== TRAINING SERVICE ==========
@@ -1521,6 +1641,10 @@ type TrainingService struct {
 
 func NewTrainingService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, embeddings *EmbeddingService) *TrainingService {
 	return &TrainingService{cfg: cfg, repos: repos, redis: redis, logger: logger, embeddings: embeddings}
+}
+
+func (s *TrainingService) ClearUnknownQuestions(ctx context.Context, userID string) error {
+	return s.repos.UnknownQ.Clear(ctx, userID)
 }
 
 func (s *TrainingService) CreateCategory(ctx context.Context, userID, name, description, color string) (*domain.Category, error) {
@@ -1917,6 +2041,9 @@ func (s *IntegrationService) Connect(ctx context.Context, userID, channel string
 }
 
 func (s *IntegrationService) Disconnect(ctx context.Context, userID, channel string) error {
+	if channel == "whatsapp" && s.chat != nil {
+		s.chat.DisconnectWhatsAppSession(ctx, userID)
+	}
 	if channel == "telegram" && s.telegram != nil {
 		if integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, channel); err == nil && integration != nil {
 			s.stopTelegramPolling(integration.ID)
@@ -2131,7 +2258,7 @@ func (s *IntegrationService) HandleTelegramIncoming(ctx context.Context, integra
 	}
 
 	customerKey := strconv.FormatInt(incoming.ChatID, 10)
-	conv, aiMsg, err := s.chat.DirectChat(ctx, integration.UserID, incoming.DisplayName, customerKey, incoming.Text, "telegram")
+	conv, aiMsg, err := s.chat.DirectChat(ctx, integration.UserID, incoming.DisplayName, customerKey, incoming.Text, "telegram", "")
 	if err != nil {
 		return nil, nil, err
 	}

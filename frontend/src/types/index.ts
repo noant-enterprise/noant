@@ -58,6 +58,7 @@ export interface AuthResponse {
 export interface Conversation {
   id: string;
   customer_name: string;
+  customer_avatar?: string;
   channel: 'whatsapp' | 'instagram' | 'telegram' | 'discord' | 'web';
   status: 'active' | 'resolved' | 'escalated';
   is_ai_transferred: boolean;

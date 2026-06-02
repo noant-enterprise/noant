@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Send, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useOffline } from '@/hooks/useOffline'
 
 interface ChatInputProps {
   onSend: (message: string) => void
@@ -12,10 +13,12 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, onTakeover, disabled, typing, typingText }: ChatInputProps) {
   const [text, setText] = useState('')
+  const isOffline = useOffline()
+  const isInputDisabled = disabled || isOffline
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (!text.trim()) return
+    if (!text.trim() || isOffline) return
     onSend(text.trim())
     setText('')
   }
@@ -38,19 +41,20 @@ export function ChatInput({ onSend, onTakeover, disabled, typing, typingText }: 
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Message..."
-          disabled={disabled}
+          placeholder={isOffline ? "You are currently offline..." : "Message..."}
+          disabled={isInputDisabled}
           className={cn(
             'flex-1 px-4 py-3 lg:py-2.5 bg-inset border border-default rounded-full text-sm lg:text-xs text-primary placeholder:text-tertiary',
             'focus:outline-none focus:border-noant-sky/50 focus:ring-1 focus:ring-noant-sky/20',
             'transition-all duration-200',
+            isOffline ? 'border-red-500/20 bg-red-500/5 focus:border-red-500/30 placeholder:text-red-500/40' : '',
             'disabled:opacity-50'
           )}
         />
         
         <button
           type="submit"
-          disabled={disabled || !text.trim()}
+          disabled={isInputDisabled || !text.trim()}
           className={cn(
             'w-11 h-11 lg:w-9 lg:h-9 rounded-full bg-noant-sky text-white shrink-0',
             'hover:bg-noant-sky-deep disabled:opacity-40 disabled:cursor-not-allowed',
@@ -63,7 +67,7 @@ export function ChatInput({ onSend, onTakeover, disabled, typing, typingText }: 
         <button
           type="button"
           onClick={onTakeover}
-          disabled={disabled}
+          disabled={isInputDisabled}
           className={cn(
             'hidden lg:flex px-4 py-2.5 border border-default text-secondary rounded-full font-medium text-xs',
             'hover:border-noant-sky hover:text-noant-sky-deep disabled:opacity-50',

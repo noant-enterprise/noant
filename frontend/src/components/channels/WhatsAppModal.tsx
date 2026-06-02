@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import { CheckCircle2, XCircle, Loader2, Zap, Smartphone, RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react'
 import { ConversationLoading } from '../chat'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { useOffline } from '@/hooks/useOffline'
 
 interface WhatsAppModalProps {
   open: boolean
@@ -17,6 +18,7 @@ interface WhatsAppModalProps {
 type Step = 'form' | 'qr' | 'verifying' | 'success' | 'error' | 'connecting'
 
 export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppModalProps) {
+  const isOffline = useOffline()
   const [phone, setPhone] = useState('')
   const [connectionName, setConnectionName] = useState('')
   const [step, setStep] = useState<Step>('form')
@@ -287,9 +289,9 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
                     setTestMessage('')
                     setValidationError(validatePhone(val))
                   }}
-                  placeholder="+44 7700 900123"
+                  placeholder={isOffline ? "Connection is disabled while offline" : "+44 7700 900123"}
                   required
-                  disabled={loading}
+                  disabled={loading || isOffline}
                 />
                 {validationError ? (
                   <p className="text-[10px] text-red-500 font-medium mt-1 animate-fade-in flex items-center gap-1">
@@ -335,18 +337,18 @@ export function WhatsAppModal({ open, onClose, loading, onConnect }: WhatsAppMod
               )}
 
               <div className="flex justify-end gap-3 pt-2">
-                <Button type="button" variant="ghost" onClick={handleClose} disabled={loading}>Cancel</Button>
+                <Button type="button" variant="ghost" onClick={handleClose} disabled={loading || isOffline}>Cancel</Button>
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={handleTest}
-                  disabled={!phone.trim() || !!validationError || loading || testState === 'testing'}
+                  disabled={!phone.trim() || !!validationError || loading || testState === 'testing' || isOffline}
                   className="gap-1.5"
                 >
                   <Zap className="w-3.5 h-3.5" />
                   Test Server
                 </Button>
-                <Button type="submit" loading={loading} disabled={!phone.trim() || !!validationError || loading}>
+                <Button type="submit" loading={loading} disabled={!phone.trim() || !!validationError || loading || isOffline}>
                   Connect WhatsApp
                 </Button>
               </div>

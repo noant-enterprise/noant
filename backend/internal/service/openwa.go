@@ -51,15 +51,29 @@ type OpenWAWebhookPayload struct {
 }
 
 type OpenWAMessageData struct {
-	ID       string `json:"id"`
-	From     string `json:"from"` // phone@s.whatsapp.net
-	To       string `json:"to"`
-	Body     string `json:"body"`
-	Type     string `json:"type"` // text, image, etc.
-	// Timestamp flexible: OpenWA sends string or number
-	Timestamp interface{} `json:"timestamp"`
-	FromMe   bool   `json:"fromMe"`
-	HasMedia bool   `json:"hasMedia"`
+	ID        string       `json:"id"`
+	From      string       `json:"from"` // phone@s.whatsapp.net
+	To        string       `json:"to"`
+	Body      string       `json:"body"`
+	Type      string       `json:"type"` // text, image, etc.
+	Timestamp interface{}  `json:"timestamp"`
+	FromMe    bool         `json:"fromMe"`
+	HasMedia  bool         `json:"hasMedia"`
+	Sender    OpenWASender `json:"sender"`
+}
+
+type OpenWASender struct {
+	ID                 string           `json:"id"`
+	Name               string           `json:"name"`
+	ShortName          string           `json:"shortName"`
+	Pushname           string           `json:"pushname"`
+	FormattedName      string           `json:"formattedName"`
+	ProfilePicThumbObj OpenWAProfilePic `json:"profilePicThumbObj"`
+}
+
+type OpenWAProfilePic struct {
+	Eurl string `json:"eurl"`
+	Tag  string `json:"tag"`
 }
 
 type OpenWAStatusData struct {
@@ -268,11 +282,18 @@ func (s *OpenWAService) ParseStatusData(data json.RawMessage) (*OpenWAStatusData
 	return &status, nil
 }
 
-// FormatChatID converts a phone number to OpenWA chat ID format
+// FormatChatID converts a phone number to OpenWA chat ID format for MESSAGING
 func FormatChatID(phone string) string {
-	// OpenWA uses format: phone@s.whatsapp.net
+	// For sending messages, OpenWA uses: phone@s.whatsapp.net
 	phone = CleanPhoneNumber(phone)
 	return phone + "@s.whatsapp.net"
+}
+
+// FormatContactID converts a phone number to the contact ID format for the CONTACTS API
+func FormatContactID(phone string) string {
+	// For the contacts API, the format is: phone@c.us
+	phone = CleanPhoneNumber(phone)
+	return phone + "@c.us"
 }
 
 // CleanPhoneNumber removes all non-digit characters from a phone number
@@ -665,6 +686,73 @@ func (s *OpenWAService) CheckNumberExists(sessionID string, phone string) (bool,
 	return result.Exists, nil
 }
 
+type OpenWAContact struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Pushname        string `json:"pushName"` // API returns camelCase pushName
+	Number         string `json:"number"`
+	ProfilePicUrl  string `json:"profilePicUrl"`
+}
+
+// GetContactInfo retrieves the contact information (pushname and avatar) from OpenWA.
+// contactID must be in the format: number@c.us (use FormatContactID to convert a phone number).
+func (s *OpenWAService) GetContactInfo(sessionID string, contactID string) (*OpenWAContact, error) {
+	if !s.cfg.OpenWAEnabled {
+		return nil, fmt.Errorf("OpenWA is disabled")
+	}
+
+	url := fmt.Sprintf("%s/api/sessions/%s/contacts/%s", s.cfg.OpenWABaseURL, sessionID, contactID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if s.cfg.OpenWAApiKey != "" {
+		req.Header.Set("X-API-Key", s.cfg.OpenWAApiKey)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get contact info: %d %s", resp.StatusCode, string(body))
+	}
+
+	var contact OpenWAContact
+	if err := json.NewDecoder(resp.Body).Decode(&contact); err != nil {
+		return nil, err
+	}
+
+	// If no profilePicUrl in contact response, try the dedicated profile-picture endpoint
+	if contact.ProfilePicUrl == "" {
+		picURL := fmt.Sprintf("%s/api/sessions/%s/contacts/%s/profile-picture", s.cfg.OpenWABaseURL, sessionID, contactID)
+		picReq, err2 := http.NewRequest("GET", picURL, nil)
+		if err2 == nil {
+			if s.cfg.OpenWAApiKey != "" {
+				picReq.Header.Set("X-API-Key", s.cfg.OpenWAApiKey)
+			}
+			picResp, err2 := s.httpClient.Do(picReq)
+			if err2 == nil {
+				defer picResp.Body.Close()
+				if picResp.StatusCode == http.StatusOK {
+					var picResult struct {
+						URL string `json:"url"`
+					}
+					if json.NewDecoder(picResp.Body).Decode(&picResult) == nil && picResult.URL != "" {
+						contact.ProfilePicUrl = picResult.URL
+					}
+				}
+			}
+		}
+	}
+
+	return &contact, nil
+}
+
 
 // normalizeSessionStatus maps all variants of a connected session status to "connected"
 func normalizeSessionStatus(status string) string {
@@ -741,6 +829,32 @@ func (s *OpenWAService) DeleteSession(sessionID string) error {
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("delete session failed: %d %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// LogoutSession logs out the active WhatsApp session to clear credentials
+func (s *OpenWAService) LogoutSession(sessionID string) error {
+	url := fmt.Sprintf("%s/api/sessions/%s/logout", s.cfg.OpenWABaseURL, sessionID)
+
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return err
+	}
+	if s.cfg.OpenWAApiKey != "" {
+		req.Header.Set("X-API-Key", s.cfg.OpenWAApiKey)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("logout session failed: %d %s", resp.StatusCode, string(body))
 	}
 
 	return nil

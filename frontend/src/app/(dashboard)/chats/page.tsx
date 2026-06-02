@@ -6,6 +6,7 @@ import { ChatList, ChatMessages, ChatInput, CustomerInfo } from '@/components/ch
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { Avatar } from '@/components/ui/Avatar'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ArrowLeft, Info, Sparkles } from 'lucide-react'
@@ -19,6 +20,9 @@ export default function ChatsPage() {
 
   const convAPI = useAPI() as any
   const { data: convData, get: getConversations, loadMore, loading: convLoading, loadingMore } = convAPI
+
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [clearLoading, setClearLoading] = useState(false)
 
   const postAPI = useAPI() as any
   const { post } = postAPI
@@ -324,6 +328,26 @@ export default function ChatsPage() {
     navigate('/chats')
   }
 
+  const handleClearAllClick = () => {
+    setShowClearConfirm(true)
+  }
+
+  const handleClearAllConfirm = async () => {
+    setClearLoading(true)
+    try {
+      await api.delete('/chats/clear')
+      toast('All conversations cleared successfully', 'success')
+      setAllConversations([])
+      setSearchParams({})
+      setShowClearConfirm(false)
+    } catch (err: any) {
+      console.error('Failed to clear conversations:', err)
+      toast(err?.message || 'Failed to clear conversations', 'error')
+    } finally {
+      setClearLoading(false)
+    }
+  }
+
   const openAIChat = async () => {
     const aiConv = allConversations.find((c: Conversation) =>
       c.channel === 'web' && c.customer_name === 'Noant AI'
@@ -417,6 +441,7 @@ export default function ChatsPage() {
             hasMore={hasMore}
             loadingMore={loadingMore}
             onLoadMore={handleLoadMore}
+            onClearAll={handleClearAllClick}
           />
         )}
       </div>
@@ -437,7 +462,7 @@ export default function ChatsPage() {
                 <ArrowLeft className="w-[18px] h-[18px]" strokeWidth={2} />
               </button>
 
-              <Avatar name={activeConv.customer_name} size="sm" />
+              <Avatar src={activeConv.customer_avatar || undefined} name={activeConv.customer_name} size="sm" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-primary truncate">{activeConv.customer_name}</p>
                 <p className="text-[10px] text-tertiary capitalize flex items-center gap-1">
@@ -499,6 +524,20 @@ export default function ChatsPage() {
         conversation={activeConv}
         open={showInfo}
         onClose={() => setShowInfo(false)}
+      />
+
+      <ConfirmModal
+        open={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={handleClearAllConfirm}
+        title="Clear All Conversations?"
+        description="Are you absolutely sure you want to delete all conversations and messages? This action is permanent and cannot be undone."
+        confirmText="Clear All"
+        cancelText="Cancel"
+        variant="danger"
+        loading={clearLoading}
+        requireTypeConfirm={true}
+        confirmPhrase="DELETE CHATS"
       />
     </div>
   )

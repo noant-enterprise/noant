@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, timeAgo } from '@/lib/utils'
-import { Search, MessageCircle, Instagram, Facebook, Send, Globe, Loader2 } from 'lucide-react'
+import { Search, MessageCircle, Instagram, Facebook, Send, Globe, Loader2, Trash2 } from 'lucide-react'
 import { Avatar } from '@/components/ui/Avatar'
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
 import type { Conversation } from '@/types'
@@ -12,6 +12,7 @@ interface ChatListProps {
   hasMore?: boolean
   loadingMore?: boolean
   onLoadMore?: () => void
+  onClearAll?: () => void
 }
 
 const channelIcons: Record<string, { icon: React.ElementType; color: string }> = {
@@ -29,6 +30,7 @@ export function ChatList({
   hasMore = false,
   loadingMore = false,
   onLoadMore,
+  onClearAll,
 }: ChatListProps) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'active' | 'escalated' | 'resolved'>('all')
@@ -54,15 +56,26 @@ export function ChatList({
       </div>
 
       <div className="p-3 border-b border-default">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-tertiary" />
-          <input
-            type="text"
-            placeholder="Search conversations..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-2.5 bg-inset border border-default rounded-xl text-sm focus:outline-none focus:border-noant-sky transition-colors"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-tertiary" />
+            <input
+              type="text"
+              placeholder="Search conversations..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-2.5 bg-inset border border-default rounded-xl text-sm focus:outline-none focus:border-noant-sky transition-colors"
+            />
+          </div>
+          {onClearAll && conversations.length > 0 && (
+            <button
+              onClick={onClearAll}
+              title="Clear all chats"
+              className="p-2.5 rounded-xl border border-default bg-surface hover:bg-red-500/10 text-tertiary hover:text-red-500 hover:border-red-500/20 transition-all shrink-0 active:scale-95 cursor-pointer shadow-sm"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
         <div className="flex gap-1.5 mt-2 overflow-x-auto scrollbar-hide">
           {(['all', 'active', 'escalated', 'resolved'] as const).map((f) => (
@@ -106,6 +119,7 @@ export function ChatList({
                   )}
                 >
                   <Avatar
+                    src={c.customer_avatar || undefined}
                     name={c.customer_name}
                     size="md"
                     showChannel

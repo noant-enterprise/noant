@@ -89,6 +89,11 @@ func main() {
 		logger.Warn("Failed to ensure owner_whatsapp column", "error", err)
 	}
 
+	_, err = db.Exec(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_avatar VARCHAR(500)`)
+	if err != nil {
+		logger.Warn("Failed to ensure customer_avatar column", "error", err)
+	}
+
 	// Ensure audit_logs table exists (direct creation as fallback)
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS audit_logs (
 		id VARCHAR(36) PRIMARY KEY,
@@ -232,11 +237,12 @@ func main() {
 			chats.POST("/conversations/:id/messages", handlers.Chat.SendMessage)
 			chats.PUT("/conversations/:id/takeover", handlers.Chat.HumanTakeover)
 			chats.POST("/conversations/:id/escalate", handlers.Chat.Escalate)
+			chats.DELETE("/clear", handlers.Chat.ClearChats)
 		}
 
 		training := api.Group("/training")
 		training.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
-		training.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
+		training.Use(middleware.RateLimitByUserMiddleware(redisClient, 300, time.Minute))
 		training.Use(middleware.AuditMiddleware(auditRepo, logger))
 		{
 			training.GET("/search", handlers.Training.SearchQAPairs)
@@ -251,6 +257,7 @@ func main() {
 			training.GET("/unknown-questions", handlers.Training.ListUnknownQuestions)
 			training.POST("/unknown-questions/:id/train", handlers.Training.TrainUnknown)
 			training.POST("/unknown-questions/:id/ignore", handlers.Training.IgnoreUnknown)
+			training.DELETE("/unknown-questions/clear", handlers.Training.ClearUnknown)
 			training.POST("/csv-upload", handlers.Training.UploadCSV)
 		}
 

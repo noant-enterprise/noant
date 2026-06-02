@@ -294,7 +294,7 @@ func (h *ChatHandler) DirectChat(c *gin.Context) {
 	}
 
 	userID, _ := c.Get("userID")
-	conv, msg, err := h.service.DirectChat(c.Request.Context(), userID.(string), req.CustomerName, req.CustomerName, req.Message, req.Channel)
+	conv, msg, err := h.service.DirectChat(c.Request.Context(), userID.(string), req.CustomerName, req.CustomerName, req.Message, req.Channel, "")
 	if err != nil {
 		h.logger.Error("Direct chat failed", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -305,6 +305,18 @@ func (h *ChatHandler) DirectChat(c *gin.Context) {
 		"conversation": conv,
 		"message":      msg,
 	})
+}
+
+func (h *ChatHandler) ClearChats(c *gin.Context) {
+	userID, _ := c.Get("userID")
+
+	if err := h.service.ClearChats(c.Request.Context(), userID.(string)); err != nil {
+		h.logger.Error("Clear chats failed", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Chats cleared successfully"})
 }
 
 func (h *ChatHandler) ListConversations(c *gin.Context) {
@@ -659,6 +671,18 @@ func (h *TrainingHandler) IgnoreUnknown(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Question ignored successfully"})
+}
+
+func (h *TrainingHandler) ClearUnknown(c *gin.Context) {
+	userID, _ := c.Get("userID")
+
+	if err := h.service.ClearUnknownQuestions(c.Request.Context(), userID.(string)); err != nil {
+		h.logger.Error("Clear unknown questions failed", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Unknown questions cleared successfully"})
 }
 
 func (h *TrainingHandler) ListQAPairs(c *gin.Context) {
@@ -1549,8 +1573,18 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 		return
 	}
 
+	// Extract customer name and avatar from message sender details
+	customerName := msg.Sender.Pushname
+	if customerName == "" {
+		customerName = msg.Sender.Name
+	}
+	if customerName == "" {
+		customerName = customerPhone
+	}
+	customerAvatar := msg.Sender.ProfilePicThumbObj.Eurl
+
 	// Process through chat service (same flow as web widget)
-	conv, aiResp, err := h.chat.DirectChat(c.Request.Context(), userID, customerPhone, customerPhone, content, "whatsapp")
+	conv, aiResp, err := h.chat.DirectChat(c.Request.Context(), userID, customerName, customerPhone, content, "whatsapp", customerAvatar)
 	if err != nil {
 		h.logger.Error("Failed to process OpenWA message", "error", err)
 		return
@@ -1571,7 +1605,7 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 			Data: map[string]interface{}{
 				"content":     aiResp.Content,
 				"sender_type": "ai",
-				"customer":    customerPhone,
+				"customer":    customerName,
 				"channel":     "whatsapp",
 			},
 		})
@@ -1802,7 +1836,8 @@ func (h *OpenWAHandler) ConnectWhatsApp(c *gin.Context) {
 	// Step 2: Clean up only this user's previous WhatsApp session
 	if existing, err := h.chat.GetWhatsAppIntegration(c.Request.Context(), userID.(string)); err == nil && existing != nil {
 		if oldSessionID, _ := existing.Config["session_id"].(string); oldSessionID != "" {
-			h.logger.Info("Deleting previous session for user", "sessionID", oldSessionID)
+			h.logger.Info("Logging out and deleting previous session for user", "sessionID", oldSessionID)
+			_ = h.openwa.LogoutSession(oldSessionID)
 			_ = h.openwa.DeleteSession(oldSessionID)
 		}
 	}
@@ -2064,16 +2099,15 @@ func (h *OpenWAHandler) DisconnectWhatsApp(c *gin.Context) {
 		return
 	}
 
-	if err := h.openwa.DeleteSession(req.SessionID); err != nil {
-		h.logger.Error("Failed to delete OpenWA session", "error", err)
-		utils.RespondInternalError(c, err.Error())
-		return
-	}
-
-	// Remove integration
+	// Remove integration and disconnect session completely (logging out credentials)
 	userID, _ := c.Get("userID")
 	if userID != nil {
+		h.chat.DisconnectWhatsAppSession(c.Request.Context(), userID.(string))
 		h.chat.RemoveWhatsAppIntegration(c.Request.Context(), userID.(string))
+	} else {
+		// Fallback: delete session only if userID is somehow missing
+		_ = h.openwa.LogoutSession(req.SessionID)
+		_ = h.openwa.DeleteSession(req.SessionID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true})

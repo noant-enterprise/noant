@@ -11,13 +11,36 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type wsClient struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (c *wsClient) writeMessage(messageType int, data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.WriteMessage(messageType, data)
+}
+
+func (c *wsClient) writeJSON(v interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.WriteJSON(v)
+}
+
+func (c *wsClient) close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.Close()
+}
+
 type WebSocketHub struct {
-	clients       map[string]*websocket.Conn
-	broadcast     chan WebSocketMessage
-	register      chan *websocket.Conn
-	unregister    chan *websocket.Conn
-	mutex         sync.RWMutex
-	logger        *infrastructure.Logger
+	clients        map[string]*wsClient
+	broadcast      chan WebSocketMessage
+	register       chan *wsClient
+	unregister     chan *wsClient
+	mutex          sync.RWMutex
+	logger         *infrastructure.Logger
 	allowedOrigins []string
 }
 
@@ -29,10 +52,10 @@ type WebSocketMessage struct {
 
 func NewWebSocketHub(logger *infrastructure.Logger, allowedOrigins []string) *WebSocketHub {
 	return &WebSocketHub{
-		clients:        make(map[string]*websocket.Conn),
+		clients:        make(map[string]*wsClient),
 		broadcast:      make(chan WebSocketMessage, 256),
-		register:       make(chan *websocket.Conn, 10),
-		unregister:     make(chan *websocket.Conn, 10),
+		register:       make(chan *wsClient, 10),
+		unregister:     make(chan *wsClient, 10),
 		logger:         logger,
 		allowedOrigins: allowedOrigins,
 	}
@@ -55,21 +78,21 @@ func (h *WebSocketHub) Run() {
 		select {
 		case client := <-h.register:
 			h.mutex.Lock()
-			h.clients[client.RemoteAddr().String()] = client
+			h.clients[client.conn.RemoteAddr().String()] = client
 			h.mutex.Unlock()
-			h.logger.Info("WebSocket client connected", "addr", client.RemoteAddr().String())
+			h.logger.Info("WebSocket client connected", "addr", client.conn.RemoteAddr().String())
 
 		case client := <-h.unregister:
 			h.mutex.Lock()
-			delete(h.clients, client.RemoteAddr().String())
+			delete(h.clients, client.conn.RemoteAddr().String())
 			h.mutex.Unlock()
-			client.Close()
-			h.logger.Info("WebSocket client disconnected", "addr", client.RemoteAddr().String())
+			client.close()
+			h.logger.Info("WebSocket client disconnected", "addr", client.conn.RemoteAddr().String())
 
 		case msg := <-h.broadcast:
 			h.mutex.RLock()
 			for addr, client := range h.clients {
-				if err := client.WriteJSON(msg); err != nil {
+				if err := client.writeJSON(msg); err != nil {
 					h.logger.Warn("Failed to send WebSocket message", "addr", addr, "error", err)
 				}
 			}
@@ -96,14 +119,15 @@ func (h *WebSocketHub) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	h.register <- conn
+	client := &wsClient{conn: conn}
+	h.register <- client
 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				h.logger.Error("WebSocket read panic recovered", "panic", r)
 			}
-			h.unregister <- conn
+			h.unregister <- client
 		}()
 
 		ticker := time.NewTicker(30 * time.Second)
@@ -116,7 +140,7 @@ func (h *WebSocketHub) HandleWebSocket(c *gin.Context) {
 				}
 			}()
 			for range ticker.C {
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				if err := client.writeMessage(websocket.PingMessage, nil); err != nil {
 					return
 				}
 			}
@@ -135,7 +159,6 @@ func (h *WebSocketHub) HandleWebSocket(c *gin.Context) {
 }
 
 func (h *WebSocketHub) BroadcastMessage(msg WebSocketMessage) {
-    h.logger.Info("BroadcastMessage called", "type", msg.Type, "conversation", msg.ConversationID, "clients", len(h.clients))
 	h.logger.Info("BroadcastMessage called", "type", msg.Type, "conversation", msg.ConversationID, "clients", len(h.clients))
 	select {
 	case h.broadcast <- msg:

@@ -56,8 +56,8 @@ func NewRepositories(db *sql.DB, redis *infrastructure.RedisClient) *Repositorie
 // ConversationRepository additional methods
 func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*domain.Conversation, error) {
 	conv := &domain.Conversation{}
-	row := r.db.QueryRowContext(ctx, `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, created_at, updated_at FROM conversations WHERE id = ?`, id)
-	err := row.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CreatedAt, &conv.UpdatedAt)
+	row := r.db.QueryRowContext(ctx, `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, customer_avatar, created_at, updated_at FROM conversations WHERE id = ?`, id)
+	err := row.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CustomerAvatar, &conv.CreatedAt, &conv.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -164,9 +164,9 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *domain.Conver
 	if conv.ID == "" {
 		conv.ID = generateUUID()
 	}
-	query := `INSERT INTO conversations (id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
-	_, err := r.db.ExecContext(ctx, query, conv.ID, conv.UserID, conv.CustomerName, conv.CustomerPhone, conv.CustomerEmail, conv.Channel, conv.Status, conv.Intent, conv.Priority, conv.IsAITransferred)
+	query := `INSERT INTO conversations (id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, customer_avatar, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	_, err := r.db.ExecContext(ctx, query, conv.ID, conv.UserID, conv.CustomerName, conv.CustomerPhone, conv.CustomerEmail, conv.Channel, conv.Status, conv.Intent, conv.Priority, conv.IsAITransferred, conv.CustomerAvatar)
 	if err != nil {
 		return fmt.Errorf("failed to create conversation: %w", err)
 	}
@@ -185,7 +185,7 @@ func (r *ConversationRepository) List(ctx context.Context, userID string, status
 	if err != nil {
 		return nil, 0, err
 	}
-	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, created_at, updated_at
+	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, customer_avatar, created_at, updated_at
 	FROM conversations WHERE user_id = ?`
 	args := []interface{}{userID}
 	if status != "" {
@@ -202,7 +202,7 @@ func (r *ConversationRepository) List(ctx context.Context, userID string, status
 	var conversations []domain.Conversation
 	for rows.Next() {
 		var conv domain.Conversation
-		err := rows.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CreatedAt, &conv.UpdatedAt)
+		err := rows.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CustomerAvatar, &conv.CreatedAt, &conv.UpdatedAt)
 		if err != nil {
 			continue
 		}
@@ -212,10 +212,10 @@ func (r *ConversationRepository) List(ctx context.Context, userID string, status
 }
 
 func (r *ConversationRepository) GetByIDAndUser(ctx context.Context, id string, userID string) (*domain.Conversation, error) {
-	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, created_at, updated_at FROM conversations WHERE id = ? AND user_id = ?`
+	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, customer_avatar, created_at, updated_at FROM conversations WHERE id = ? AND user_id = ?`
 	row := r.db.QueryRowContext(ctx, query, id, userID)
 	conv := &domain.Conversation{}
-	err := row.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CreatedAt, &conv.UpdatedAt)
+	err := row.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CustomerAvatar, &conv.CreatedAt, &conv.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -231,11 +231,17 @@ func (r *ConversationRepository) UpdateStatus(ctx context.Context, id string, us
 	return err
 }
 
+func (r *ConversationRepository) UpdateCustomerInfo(ctx context.Context, id string, name string, avatar string) error {
+	query := `UPDATE conversations SET customer_name = ?, customer_avatar = ? WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, name, avatar, id)
+	return err
+}
+
 func (r *ConversationRepository) FindActiveByCustomer(ctx context.Context, userID, customerName, channel string) (*domain.Conversation, error) {
-	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, created_at, updated_at FROM conversations WHERE user_id = ? AND (customer_phone = ? OR customer_name = ?) AND channel = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1`
+	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, customer_avatar, created_at, updated_at FROM conversations WHERE user_id = ? AND (customer_phone = ? OR customer_name = ?) AND channel = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1`
 	row := r.db.QueryRowContext(ctx, query, userID, customerName, customerName, channel)
 	conv := &domain.Conversation{}
-	err := row.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CreatedAt, &conv.UpdatedAt)
+	err := row.Scan(&conv.ID, &conv.UserID, &conv.CustomerName, &conv.CustomerPhone, &conv.CustomerEmail, &conv.Channel, &conv.Status, &conv.Intent, &conv.Priority, &conv.IsAITransferred, &conv.TakenOverBy, &conv.TakenOverAt, &conv.ResolvedAt, &conv.FolderID, &conv.CustomerAvatar, &conv.CreatedAt, &conv.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -249,6 +255,28 @@ func (r *ConversationRepository) Takeover(ctx context.Context, id string, userID
 	query := `UPDATE conversations SET status = 'escalated', taken_over_by = ?, taken_over_at = NOW() WHERE id = ? AND user_id = ?`
 	_, err := r.db.ExecContext(ctx, query, agentID, id, userID)
 	return err
+}
+
+func (r *ConversationRepository) ClearChats(ctx context.Context, userID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Delete messages
+	_, err = tx.ExecContext(ctx, `DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)`, userID)
+	if err != nil {
+		return err
+	}
+
+	// 2. Delete conversations
+	_, err = tx.ExecContext(ctx, `DELETE FROM conversations WHERE user_id = ?`, userID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 type MessageRepository struct {
@@ -811,6 +839,12 @@ func (r *UnknownQuestionRepository) List(ctx context.Context, userID string, sta
 func (r *UnknownQuestionRepository) UpdateStatus(ctx context.Context, id string, userID string, status string, answer *string, categoryID *string) error {
 	query := `UPDATE unknown_questions SET status = ?, suggested_answer = ?, category_id = ? WHERE id = ? AND user_id = ?`
 	_, err := r.db.ExecContext(ctx, query, status, answer, categoryID, id, userID)
+	return err
+}
+
+func (r *UnknownQuestionRepository) Clear(ctx context.Context, userID string) error {
+	query := `DELETE FROM unknown_questions WHERE user_id = ?`
+	_, err := r.db.ExecContext(ctx, query, userID)
 	return err
 }
 

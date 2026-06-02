@@ -8,6 +8,7 @@ import { useModal } from '@/hooks/useModal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { useToast } from '@/components/ui/Toast'
 import { api } from '../../../lib/api'
+import { useOffline } from '@/hooks/useOffline'
 import {
   Bot, Send, X, Loader2, Sparkles, Search, Plus, Trash2, Edit3,
   FolderPlus, FileText, ChevronRight, BookOpen, GraduationCap, Upload
@@ -728,11 +729,15 @@ function QATableSheet({
 // ─── Teach Page ───────────────────────────────────────────────────────────────
 
 export default function TeachPage() {
+  const isOffline = useOffline()
   const { open: showIgnore, openModal: openIgnore, closeModal: closeIgnore } = useModal()
   const [ignoreId, setIgnoreId] = useState('')
   const [ignoreLoading, setIgnoreLoading] = useState(false)
   const [testAIOpen, setTestAIOpen] = useState(false)
   const { toast } = useToast()
+
+  const [clearGapsConfirmOpen, setClearGapsConfirmOpen] = useState(false)
+  const [clearGapsLoading, setClearGapsLoading] = useState(false)
 
   // API hooks
   const catAPI = useAPI() as any
@@ -850,6 +855,25 @@ export default function TeachPage() {
     finally { setIgnoreLoading(false); closeIgnore(); setIgnoreId('') }
   }
 
+  const handleClearGapsClick = () => {
+    setClearGapsConfirmOpen(true)
+  }
+
+  const handleClearGapsConfirm = async () => {
+    setClearGapsLoading(true)
+    try {
+      await api.delete('/training/unknown-questions/clear')
+      toast('All AI gaps cleared successfully', 'success')
+      getUnknown('/training/unknown-questions?status=pending')
+      setClearGapsConfirmOpen(false)
+    } catch (err: any) {
+      console.error('Failed to clear unknown questions:', err)
+      toast(err?.message || 'Failed to clear AI gaps', 'error')
+    } finally {
+      setClearGapsLoading(false)
+    }
+  }
+
   // Category select
   const handleCategoryClick = (cat: any) => {
     setSelectedCategory(cat)
@@ -948,7 +972,8 @@ export default function TeachPage() {
         <div className="flex items-center gap-2 flex-wrap shrink-0">
           <button
             onClick={() => setCSVModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-default text-sm font-semibold transition-all hover:bg-inset hover:border-strong active:scale-95 shadow-sm cursor-pointer"
+            disabled={isOffline}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-default text-sm font-semibold transition-all hover:bg-inset hover:border-strong active:scale-95 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ color: 'var(--text-secondary)' }}
           >
             <Upload className="w-4 h-4 text-noant-sky" />
@@ -956,7 +981,8 @@ export default function TeachPage() {
           </button>
           <button
             onClick={() => setTestAIOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-semibold transition-all hover:bg-noant-sky hover:text-white hover:border-noant-sky active:scale-95 shadow-sm shadow-sky/5 cursor-pointer"
+            disabled={isOffline}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-semibold transition-all hover:bg-noant-sky hover:text-white hover:border-noant-sky active:scale-95 shadow-sm shadow-sky/5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
           >
             <Sparkles className="w-4 h-4 text-noant-sky" />
@@ -973,8 +999,9 @@ export default function TeachPage() {
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search trained questions, keywords, or answers…"
-            className="w-full pl-3 pr-4 py-3.5 text-sm bg-transparent outline-none text-primary placeholder-tertiary rounded-2xl"
+            placeholder={isOffline ? "Search is disabled while offline..." : "Search trained questions, keywords, or answers…"}
+            disabled={isOffline}
+            className="w-full pl-3 pr-4 py-3.5 text-sm bg-transparent outline-none text-primary placeholder-tertiary rounded-2xl disabled:opacity-50"
           />
           {searchQuery && (
             <button
@@ -1047,9 +1074,21 @@ export default function TeachPage() {
             <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500 rounded-tl-2xl rounded-bl-2xl" />
             <div className="flex items-center justify-between mb-1">
               <h2 className="text-base font-bold text-primary tracking-tight">AI Gaps</h2>
-              <span className="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 text-xs font-bold px-2.5 py-0.5 rounded-full">
-                {questions.length} pending
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                  {questions.length} pending
+                </span>
+                {questions.length > 0 && (
+                  <button
+                    onClick={handleClearGapsClick}
+                    disabled={isOffline}
+                    title="Clear all pending gaps"
+                    className="p-1 rounded-lg hover:bg-red-500/10 text-tertiary hover:text-red-500 transition-colors active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
             <p className="text-xs text-secondary leading-relaxed mb-4">
               Questions your AI didn't know how to answer. Train it below.
@@ -1107,7 +1146,8 @@ export default function TeachPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => setAddCatOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 border border-default rounded-xl text-xs font-semibold hover:bg-inset hover:border-strong transition-all active:scale-95 cursor-pointer text-secondary"
+                disabled={isOffline}
+                className="flex items-center gap-1.5 px-3.5 py-2 border border-default rounded-xl text-xs font-semibold hover:bg-inset hover:border-strong transition-all active:scale-95 cursor-pointer text-secondary disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FolderPlus className="w-3.5 h-3.5" />
                 New Category
@@ -1117,7 +1157,8 @@ export default function TeachPage() {
                   setAddQAInitialCatId(selectedCategory?.id || 'default')
                   setAddQAOpen(true)
                 }}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-noant-sky text-white rounded-xl text-xs font-semibold hover:bg-noant-sky-deep transition-all active:scale-95 shadow-sm shadow-sky/10 cursor-pointer"
+                disabled={isOffline}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-noant-sky text-white rounded-xl text-xs font-semibold hover:bg-noant-sky-deep transition-all active:scale-95 shadow-sm shadow-sky/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Plus className="w-3.5 h-3.5 text-white" />
                 Add Q&amp;A Pair
@@ -1273,6 +1314,21 @@ export default function TeachPage() {
         variant="neutral"
         confirmText="Ignore"
         loading={ignoreLoading}
+      />
+
+      {/* Confirm Clear Gaps */}
+      <ConfirmModal
+        open={clearGapsConfirmOpen}
+        onClose={() => setClearGapsConfirmOpen(false)}
+        onConfirm={handleClearGapsConfirm}
+        title="Clear All Pending AI Gaps?"
+        description="Are you absolutely sure you want to dismiss and clear all pending questions? This action is permanent."
+        confirmText="Clear All"
+        cancelText="Cancel"
+        variant="danger"
+        loading={clearGapsLoading}
+        requireTypeConfirm={true}
+        confirmPhrase="DELETE GAPS"
       />
 
       {/* Q&A Table Sheet */}

@@ -32,6 +32,7 @@ type Conversation struct {
 	CustomerName    string    `json:"customer_name" db:"customer_name"`
 	CustomerPhone   string    `json:"customer_phone" db:"customer_phone"`
 	CustomerEmail   string    `json:"customer_email" db:"customer_email"`
+	CustomerAvatar  string    `json:"customer_avatar" db:"customer_avatar"`
 	Channel         string    `json:"channel" db:"channel"` // telegram, whatsapp, web, instagram
 	Status          string    `json:"status" db:"status"`   // active, resolved, escalated, archived
 	Intent          string    `json:"intent" db:"intent"`   // buying, complaining, inquiry, support
