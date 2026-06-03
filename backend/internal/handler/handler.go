@@ -4,7 +4,9 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"noant/config"
@@ -592,12 +594,44 @@ func (h *TrainingHandler) BulkImport(c *gin.Context) {
 }
 
 func (h *TrainingHandler) UploadCSV(c *gin.Context) {
-	file, _, err := c.Request.FormFile("file")
+	file, header, err := c.Request.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
 		return
 	}
 	defer file.Close()
+
+	// 1. File Size Guard: limit to 2 MB to prevent OOM / Denial of Service
+	const maxFileSize = 2 * 1024 * 1024 // 2 MB
+	if header.Size > maxFileSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File size exceeds the 2 MB limit"})
+		return
+	}
+
+	// 2. Extension Guard: only allow .csv
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if ext != ".csv" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type. Only CSV files are allowed"})
+		return
+	}
+
+	// 3. Content Type Verification: read first 512 bytes to verify it's not a binary/executable
+	buffer := make([]byte, 512)
+	n, _ := file.Read(buffer)
+	// Seek back to the beginning of the file so that ReadAll reads from start
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		h.logger.Warn("Failed to seek file, skipping content type detection")
+	} else {
+		contentType := http.DetectContentType(buffer[:n])
+		// Check for common malicious/binary formats
+		blacklistedTypes := []string{"executable", "dosexec", "elf", "zip", "pdf", "image", "msdownload", "octet-stream"}
+		for _, bt := range blacklistedTypes {
+			if strings.Contains(strings.ToLower(contentType), bt) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file content. Binary and compressed formats are not allowed"})
+				return
+			}
+		}
+	}
 
 	categoryID := c.PostForm("category_id")
 	if categoryID == "" {

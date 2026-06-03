@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -451,6 +452,10 @@ func main() {
 			
 			// Clean the path to prevent traversal attacks
 			cleanPath := filepath.Clean(path)
+			if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, "/../") || strings.Contains(cleanPath, "\\..\\") {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden path traversal attempt"})
+				return
+			}
 			localPath := filepath.Join("static", cleanPath)
 			
 			// Check if file exists and is not a directory
