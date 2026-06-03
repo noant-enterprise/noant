@@ -190,10 +190,20 @@ Security is structured for multi-agent support:
 * **Tenant Isolation**: Every chat message, analytics query, and Q&A pair is bound directly to a filtered `user_id` context.
 * **Role Heirarchy**: Owners and Admins manage integrations, configurations, and team invites, while Agents focus entirely on reading, resolving, and training conversations.
 
-### 4. Direct Naira Payment Integrations
-A built-in checkout gateway powered by **Polar** allows local Nigerian and international businesses to manage their subscriptions in Naira (NGN):
-* Webhook endpoints process subscription upgrades, cancellations, and renewals.
-* Features like max active team members, response limits, and connected channel metrics scale dynamically depending on the tier.
+### 4. Polar Payment Integration & Plan Gating
+A built-in checkout gateway powered by **Polar** allows users to purchase credit packs and subscribe to plans (`pulse`, `pro`, `enterprise`):
+* **Webhook Signature Verification**: Standard Webhook signatures are validated using a computed HMAC-SHA256 hash matching the `webhook-signature` header (`v1,sig_hash`).
+* **Subscription Lifecycle**: Processes `subscription.created`, `subscription.updated`, and `subscription.cancelled` / `subscription.revoked` to dynamically adjust the user's plan.
+* **Credit Purchases**: Processes `order.created` containing `pack_type` metadata to provision credit allotments.
+* **Limits Gating**:
+  - `free` plan: Restricted to a maximum of 10 items in inventory, team invitations are disabled, and premium channels (Telegram/Gmail) are gated.
+  - Limits are enforced at the API layer and visually prompt a premium upgrade modal on the frontend.
+
+### 5. Unified Render Cloud Deployment
+To facilitate zero-configuration cloud hosting:
+* **Single-Service Architecture**: The Go backend is equipped to serve the production-compiled React static assets directly from the `./static` directory.
+* **Relative API & WebSocket Binding**: This eliminates the need to configure `VITE_API_URL` or `VITE_WS_URL` env variables at build time, since frontend assets are served on the same host and port.
+* **SPA Routing Fallback**: Non-API/WebSocket routes automatically fallback to serving `index.html`, allowing client-side React Router navigation to work out of the box.
 
 ---
 
@@ -335,6 +345,20 @@ During this upgrade phase, we implemented outstanding visual and structural adju
 
 ---
 
+### Step 3: Production Build (Unified Static + API Server)
+To compile the React frontend and bundle it directly into the Go backend for production deployment:
+1. Run the following command from the project root:
+   ```bash
+   cd frontend && npm install && npm run build && cd ../backend && mkdir -p static && cp -r ../frontend/dist/* ./static/ && go build -o bin/main main.go
+   ```
+2. Start the unified server:
+   ```bash
+   cd backend && ./bin/main
+   ```
+   The backend will detect the `./static` directory and serve the React app on the configured `PORT` (e.g. `http://localhost:8080`).
+
+---
+
 ## 📑 Comprehensive API Directory
 
 All backend endpoints are standardized with versioning prefix `/api/v1` and return JSON payloads.
@@ -363,6 +387,26 @@ All backend endpoints are standardized with versioning prefix `/api/v1` and retu
 | | `POST` | `/widget/config` | Update custom web widget settings | Yes |
 | **Analytics** | `GET` | `/analytics/overview` | Fetch primary stats and trends | Yes |
 | | `GET` | `/analytics/insights` | Fetch custom AI business insights | Yes |
+| **Billing & Payments**| `GET` | `/payments/plans` | List available subscription plans | No |
+| | `POST` | `/payments/subscribe` | Initiate subscription upgrade checkout | Yes |
+| | `POST` | `/payments/webhook` | Process incoming Polar webhook events | No |
+| | `GET` | `/payments/status` | Fetch current organization subscription status | Yes |
+| **Inventory** | `GET` | `/inventory` | List user inventory items | Yes |
+| | `POST` | `/inventory` | Create a new inventory item | Yes |
+| | `GET` | `/inventory/search` | Search inventory items | Yes |
+| | `GET` | `/inventory/:id` | Fetch specific inventory item details | Yes |
+| | `PUT` | `/inventory/:id` | Update specific inventory item | Yes |
+| | `DELETE`| `/inventory/:id` | Delete specific inventory item | Yes |
+| **Handoffs & Leads**  | `GET` | `/handoffs` | List sales handoffs and customer leads | Yes |
+| | `GET` | `/handoffs/:id` | Fetch detailed sales handoff report | Yes |
+| | `PUT` | `/handoffs/status` | Update a sales handoff lead status | Yes |
+| **Credits & Limits**  | `GET` | `/credits/balance` | Fetch current user credit balance | Yes |
+| | `GET` | `/credits/limits` | Fetch current user workspace plan limits | Yes |
+| | `POST` | `/credits/purchase` | Initiate credit pack purchase checkout | Yes |
+| | `GET` | `/credits/history` | List purchase and utilization history | Yes |
+| **Campaigns** | `GET` | `/campaigns` | List active message broadcast campaigns | Yes |
+| | `POST` | `/campaigns` | Schedule a new broadcast campaign | Yes |
+| | `DELETE`| `/campaigns/:id` | Cancel/stop a scheduled campaign | Yes |
 
 ---
 
