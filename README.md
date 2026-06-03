@@ -205,6 +205,16 @@ To facilitate zero-configuration cloud hosting:
 * **Relative API & WebSocket Binding**: This eliminates the need to configure `VITE_API_URL` or `VITE_WS_URL` env variables at build time, since frontend assets are served on the same host and port.
 * **SPA Routing Fallback**: Non-API/WebSocket routes automatically fallback to serving `index.html`, allowing client-side React Router navigation to work out of the box.
 
+### 6. Robust Input Sanitization & Security Hardening
+To secure the application against Cross-Site Scripting (XSS), code injection, and malicious file uploads:
+* **Reflection-Based Struct Sanitizer**: Automatically traverses and sanitizes all bound JSON structures on every API request. Sensitive fields (e.g. passwords, secrets, API keys, tokens) are automatically skipped to preserve credential validity.
+* **URL/Form Parameter Scrubbing**: A global query-parameter middleware automatically strips HTML tags, event handlers (`onerror`, `onload`), script blocks, and `javascript:` URLs from URL queries and multipart forms.
+* **Hardened File Uploads**:
+  - Size limitation restricted to 2MB.
+  - Extension whitelist restricted strictly to `.csv`.
+  - Content sniffing (first 512 bytes) to detect and reject executables, archives, and compressed formats.
+  - Direct sanitization of all parsed CSV data (categories, questions, and answers) before database persistence.
+
 ---
 
 ## 🗄️ Database Schema & TiDB Storage Topology

@@ -112,6 +112,7 @@ func (h *WidgetHandler) Upsert(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	cfg, err := h.service.Get(c.Request.Context(), userID.(string))
 	if err != nil {
@@ -165,6 +166,7 @@ func (h *WidgetHandler) PublicChat(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	reply, convID, err := h.service.PublicChat(c.Request.Context(), req.APIKey, req.Message, req.ConversationID)
 	if err != nil {
@@ -198,6 +200,7 @@ func (h *SettingsHandler) UpdateNotifPrefs(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	err := h.service.UpdateNotifPrefs(c.Request.Context(), userID.(string), &req)
 	if err != nil {

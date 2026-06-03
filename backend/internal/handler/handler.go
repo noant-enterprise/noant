@@ -93,6 +93,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	user, err := h.service.Register(c.Request.Context(), req.Email, req.Password, req.FirstName, req.LastName, req.CompanyName)
 	if err != nil {
@@ -117,6 +118,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	user, token, refreshToken, err := h.service.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
@@ -190,6 +192,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	if err := h.service.ChangePassword(c.Request.Context(), userID.(string), req.CurrentPassword, req.NewPassword); err != nil {
@@ -209,6 +212,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	if err := h.service.ForgotPassword(c.Request.Context(), req.Email); err != nil {
 		h.logger.Error("Forgot password failed", "error", err)
@@ -227,6 +231,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	if err := h.service.ResetPassword(c.Request.Context(), req.Token, req.NewPassword); err != nil {
 		h.logger.Error("Reset password failed", "error", err)
@@ -298,6 +303,7 @@ func (h *ChatHandler) DirectChat(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	conv, msg, err := h.service.DirectChat(c.Request.Context(), userID.(string), req.CustomerName, req.CustomerName, req.Message, req.Channel, "")
@@ -402,6 +408,7 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	// Store customer message
 	userID, exists := c.Get("userID")
@@ -502,6 +509,7 @@ func (h *ChatHandler) Escalate(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	id := c.Param("id")
 	userID, exists := c.Get("userID")
@@ -550,6 +558,7 @@ func (h *TrainingHandler) CreateCategory(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	category, err := h.service.CreateCategory(c.Request.Context(), userID.(string), req.Name, req.Description, req.Color)
@@ -574,6 +583,7 @@ func (h *TrainingHandler) BulkImport(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	var pairs []domain.QAPair
 	for _, p := range req.QAPairs {
@@ -680,6 +690,7 @@ func (h *TrainingHandler) TrainUnknown(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	if err := h.service.TrainUnknown(c.Request.Context(), userID.(string), id, req.Answer, req.CategoryID); err != nil {
@@ -747,6 +758,7 @@ func (h *TrainingHandler) CreateQAPair(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	qa, err := h.service.CreateQAPair(c.Request.Context(), userID.(string), req.CategoryID, req.Question, req.Answer)
@@ -770,6 +782,7 @@ func (h *TrainingHandler) UpdateQAPair(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	err := h.service.UpdateQAPair(c.Request.Context(), userID.(string), id, req.CategoryID, req.Question, req.Answer)
@@ -909,6 +922,7 @@ func (h *IntegrationHandler) Connect(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	integration, err := h.service.Connect(c.Request.Context(), userID.(string), req.Channel, req.Config)
@@ -940,6 +954,7 @@ func (h *IntegrationHandler) Test(c *gin.Context) {
 	}
 	// Ignore bind errors – the body is optional
 	c.ShouldBindJSON(&req)
+	utils.SanitizeStruct(&req)
 
 	success, message := h.service.Test(c.Request.Context(), channel, req.Config)
 
@@ -978,6 +993,7 @@ func (h *SettingsHandler) UpdateProfile(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	if err := h.service.UpdateProfile(c.Request.Context(), userID.(string), req); err != nil {
@@ -1008,6 +1024,7 @@ func (h *SettingsHandler) CreateAPIKey(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	key, err := h.service.CreateAPIKey(c.Request.Context(), userID.(string), req.Name)
@@ -1051,6 +1068,7 @@ func (h *SettingsHandler) InviteTeamMember(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	member, err := h.service.InviteTeamMember(c.Request.Context(), userID.(string), req.Email, req.Role)
@@ -1107,6 +1125,7 @@ func (h *ArchiveHandler) CreateFolder(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	if req.Type == "" {
 		req.Type = "custom"
@@ -1142,6 +1161,7 @@ func (h *ArchiveHandler) MoveChat(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	if err := h.service.MoveChat(c.Request.Context(), userID.(string), req.ConversationID, req.FolderID); err != nil {
@@ -1161,6 +1181,7 @@ func (h *ArchiveHandler) RemoveFromArchive(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	if err := h.service.RemoveFromArchive(c.Request.Context(), userID.(string), req.ConversationID); err != nil {
@@ -1215,6 +1236,7 @@ func (h *PaymentHandler) Subscribe(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	// Prefer plan_id, fall back to plan
 	planID := req.PlanID
@@ -1319,6 +1341,7 @@ func (h *InventoryHandler) Create(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	item := &domain.InventoryItem{
@@ -1389,6 +1412,7 @@ func (h *InventoryHandler) Update(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	item, err := h.service.GetByID(c.Request.Context(), req.ID, userID.(string))
@@ -1513,6 +1537,7 @@ func (h *HandoffHandler) UpdateStatus(c *gin.Context) {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	userID, _ := c.Get("userID")
 	if err := h.service.UpdateStatus(c.Request.Context(), req.ID, userID.(string), req.Status, req.Notes, req.FinalPrice); err != nil {
@@ -1749,6 +1774,7 @@ func (h *OpenWAHandler) PhonePing(c *gin.Context) {
 		utils.RespondValidationError(c, "Phone number is required")
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	// Find active session
 	userID, ok := c.Get("userID")
@@ -1811,6 +1837,7 @@ func (h *OpenWAHandler) CheckNumber(c *gin.Context) {
 		utils.RespondValidationError(c, "Phone number is required")
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	// Find active session
 	userID, ok := c.Get("userID")
@@ -1861,6 +1888,7 @@ func (h *OpenWAHandler) ConnectWhatsApp(c *gin.Context) {
 		utils.RespondValidationError(c, "Phone number is required")
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	sessionName := "noant-" + cleanPhone(req.Phone)
 	h.logger.Info("Connecting WhatsApp", "phone", req.Phone, "session", sessionName)
@@ -2143,6 +2171,7 @@ func (h *OpenWAHandler) DisconnectWhatsApp(c *gin.Context) {
 		utils.RespondValidationError(c, "Session ID is required")
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	// Remove integration and disconnect session completely (logging out credentials)
 	userID, _ := c.Get("userID")
@@ -2240,6 +2269,7 @@ func (h *CreditHandler) PurchasePack(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	checkoutURL, err := h.creditSvc.PurchasePack(c.Request.Context(), userID.(string), req.PackType)
 	if err != nil {
@@ -2319,6 +2349,7 @@ func (h *CampaignHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
 		return
 	}
+	utils.SanitizeStruct(&req)
 
 	campaign, err := h.campaignSvc.Create(c.Request.Context(), userID.(string), req)
 	if err != nil {

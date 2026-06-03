@@ -204,6 +204,7 @@ func main() {
 	router.Use(middleware.RequestIDMiddleware())
 	router.Use(middleware.LoggerMiddleware(logger))
 	router.Use(middleware.SecurityHeaders())
+	router.Use(middleware.SanitizeMiddleware())
 
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     corsOrigins,

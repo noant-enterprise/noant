@@ -22,6 +22,7 @@ import (
 	"noant/internal/domain"
 	"noant/internal/infrastructure"
 	"noant/internal/repository"
+	"noant/internal/utils"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -1213,6 +1214,12 @@ func NewChatService(cfg *config.Config, repos *repository.Repositories, redis *i
 }
 
 func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, customerKey, message, channel, customerAvatar string) (*domain.Conversation, *domain.Message, error) {
+	customerName = utils.SanitizeName(customerName)
+	customerKey = utils.SanitizeName(customerKey)
+	message = utils.SanitizeXSS(message)
+	channel = utils.SanitizeName(channel)
+	customerAvatar = utils.SanitizeXSS(customerAvatar)
+
 	if s.redis != nil {
 		limit := 500
 		user, err := s.repos.User.GetByID(ctx, userID)
@@ -1733,9 +1740,9 @@ func (s *TrainingService) UploadCSV(ctx context.Context, userID, categoryID stri
 			s.logger.Warn("Skipping invalid CSV row", "row", i+2)
 			continue
 		}
-		categoryName := strings.TrimSpace(record[0])
-		question := strings.TrimSpace(record[1])
-		answer := strings.TrimSpace(strings.Join(record[2:], ","))
+		categoryName := utils.SanitizeName(record[0])
+		question := utils.SanitizeXSS(record[1])
+		answer := utils.SanitizeXSS(strings.Join(record[2:], ","))
 
 		if categoryName == "" || question == "" || answer == "" {
 			s.logger.Warn("Skipping empty CSV row", "row", i+2)
