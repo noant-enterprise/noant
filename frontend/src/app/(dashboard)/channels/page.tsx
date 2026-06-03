@@ -14,6 +14,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { UpgradeModal } from '@/components/ui'
+import { useAuth } from '@/hooks/useAuth'
 import { useModal } from '@/hooks/useModal'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useWidgetConfig } from '@/contexts/WidgetConfigContext'
@@ -70,6 +72,7 @@ function shorten(value: string, head = 10, tail = 8) {
 }
 
 export default function ChannelsPage() {
+  const { user } = useAuth()
   const intAPI = useAPI() as any
   const { data, get: getIntegrations, loading } = intAPI
 
@@ -85,6 +88,8 @@ export default function ChannelsPage() {
   const [copiedWebhookId, setCopiedWebhookId] = useState('')
   const [activeModal, setActiveModal] = useState<'telegram' | 'whatsapp' | 'gmail' | 'web' | null>(null)
   const [connectLoading, setConnectLoading] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [lockedChannel, setLockedChannel] = useState('')
 
   useEffect(() => {
     getIntegrations('/integrations/list')
@@ -116,6 +121,12 @@ export default function ChannelsPage() {
   }
 
   const handleConnectClick = (channel: string) => {
+    const currentPlan = user?.plan_id || user?.plan || 'free'
+    if (currentPlan === 'free' && (channel === 'telegram' || channel === 'gmail')) {
+      setLockedChannel(channel)
+      setShowUpgradeModal(true)
+      return
+    }
     setActiveModal(channel as any)
   }
 
@@ -447,6 +458,21 @@ export default function ChannelsPage() {
         onConnect={(config) => handleConnectSubmit('gmail', config)}
         loading={connectLoading}
       />
+
+      {showUpgradeModal && (
+        <UpgradeModal
+          open={showUpgradeModal}
+          onClose={() => { setShowUpgradeModal(false); setLockedChannel('') }}
+          title={`Unlock ${lockedChannel === 'telegram' ? 'Telegram' : 'Gmail'} Integration`}
+          description={`Your Free plan is limited to Web Widget and WhatsApp channels. Upgrade to Pro or Pulse to integrate ${lockedChannel === 'telegram' ? 'Telegram bots' : 'Gmail mailboxes'} with your AI customer assistant.`}
+          featureList={[
+            `Connect ${lockedChannel === 'telegram' ? 'Telegram' : 'Gmail'} to your agent`,
+            'Unlock all 4 channels (WhatsApp, Telegram, Gmail, Web)',
+            'Unlimited inventory items',
+            'Full handoff system & instant notifications',
+          ]}
+        />
+      )}
     </div>
   )
 }

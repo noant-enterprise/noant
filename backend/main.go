@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -430,8 +431,40 @@ func main() {
 		campaigns.DELETE("/:id", handlers.Campaign.Cancel)
 	}
 	}
+	// Serve frontend static files if the static directory exists
+	if _, err := os.Stat("./static"); err == nil {
+		logger.Info("Serving static frontend files from ./static")
+		
+		// Serve assets directory directly
+		router.Static("/assets", "./static/assets")
 
-	// API-only mode — frontend served by Vite dev server on :3000
+		// Serve other root-level static files or fallback to index.html for SPA routing
+		fileServer := http.FileServer(http.Dir("./static"))
+		router.NoRoute(func(c *gin.Context) {
+			path := c.Request.URL.Path
+			
+			// Don't intercept API or WebSocket paths
+			if len(path) >= 4 && (path[:4] == "/api" || path[:3] == "/ws") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Not Found"})
+				return
+			}
+			
+			// Clean the path to prevent traversal attacks
+			cleanPath := filepath.Clean(path)
+			localPath := filepath.Join("static", cleanPath)
+			
+			// Check if file exists and is not a directory
+			if fileInfo, err := os.Stat(localPath); err == nil && !fileInfo.IsDir() {
+				fileServer.ServeHTTP(c.Writer, c.Request)
+				return
+			}
+			
+			// Fallback to index.html for React SPA
+			c.File("./static/index.html")
+		})
+	} else {
+		logger.Info("Static directory not found, running in API-only mode")
+	}
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

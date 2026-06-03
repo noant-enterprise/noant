@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
-import { Check, CheckCheck, Bot, UserCheck, Zap } from 'lucide-react'
+import { Check, CheckCheck, Bot, UserCheck, Zap, Crown } from 'lucide-react'
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
 import { ConversationLoading } from './ConversationLoading'
 import { TypingIndicator } from './TypingIndicator'
@@ -164,6 +164,34 @@ export function ChatMessages({
           new Date(messages[index - 1].created_at).toDateString() !== new Date(m.created_at).toDateString()
 
         const dateHeader = showDateHeader ? formatDateHeader(m.created_at) : null
+
+        const isPlanLimit = m.source === 'plan_limit' || m.metadata?.source === 'plan_limit' || m.content.includes('limit of 100 AI responses') || m.content.includes('run out of response credits')
+
+        if (isPlanLimit) {
+          return (
+            <div key={m.id} className="flex flex-col gap-1 w-full shrink-0 items-center my-3">
+              {dateHeader && (
+                <div className="self-center my-3 bg-surface border border-default text-secondary text-[11px] lg:text-[10px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm select-none">
+                  {dateHeader}
+                </div>
+              )}
+              <div className="max-w-[90%] sm:max-w-[380px] bg-gradient-to-r from-orange-500/10 to-amber-500/10 border border-orange-500/20 rounded-2xl p-4 flex flex-col items-center text-center shadow-md relative overflow-hidden">
+                <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full bg-gradient-to-br from-orange-500/10 to-amber-500/10 blur-xl pointer-events-none" />
+                <div className="w-9 h-9 rounded-full bg-orange-500/10 flex items-center justify-center mb-2.5">
+                  <Crown className="w-4.5 h-4.5 text-orange-500" strokeWidth={2} />
+                </div>
+                <h4 className="text-xs font-bold text-primary mb-1">Limit Reached</h4>
+                <p className="text-[11px] text-secondary leading-relaxed mb-3">{m.content}</p>
+                <a
+                  href="/billing"
+                  className="px-3.5 py-1.5 rounded-lg text-[10px] font-semibold bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-all active:scale-[0.98]"
+                >
+                  Upgrade Plan
+                </a>
+              </div>
+            </div>
+          )
+        }
 
         return (
           <div key={m.id} className="flex flex-col gap-1 w-full shrink-0">

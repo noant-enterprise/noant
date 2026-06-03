@@ -1,0 +1,87 @@
+services:
+  # Unified Web Service (Go Backend + Vite Static Frontend)
+  - type: web
+    name: noant-enterprise
+    env: go
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build && cd ../backend && mkdir -p static && cp -r ../frontend/dist/* ./static/ && go build -o bin/main main.go
+    startCommand: cd backend && ./bin/main
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      
+      # Security Secrets (generated automatically on Render)
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+
+      # TiDB Cloud Database Configuration
+      - key: TIDB_HOST
+        sync: false
+      - key: TIDB_PORT
+        value: 4000
+      - key: TIDB_USER
+        sync: false
+      - key: TIDB_PASSWORD
+        sync: false
+      - key: TIDB_DATABASE
+        value: omagent
+      - key: DB_POOL_SIZE
+        value: 10
+
+      # Upstash Redis Cache Configuration
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        value: 6379
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: REDIS_SSL
+        value: true
+
+      # Polar Integration Configuration
+      - key: POLAR_ACCESS_TOKEN
+        sync: false
+      - key: POLAR_ORGANIZATION_ID
+        sync: false
+      - key: POLAR_WEBHOOK_SECRET
+        sync: false
+      - key: POLAR_PULSE_SMALL_URL
+        sync: false
+      - key: POLAR_PULSE_MEDIUM_URL
+        sync: false
+      - key: POLAR_PULSE_LARGE_URL
+        sync: false
+      - key: POLAR_PRO_MONTHLY_URL
+        sync: false
+      - key: POLAR_PRO_ANNUAL_URL
+        sync: false
+      - key: POLAR_ENTERPRISE_URL
+        sync: false
+
+      # Optional Integrations (Telegram, Gmail/SMTP, Twilio)
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_URL
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_NUMBER
+        sync: false

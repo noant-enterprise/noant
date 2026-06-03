@@ -3,6 +3,7 @@ import { UserPlus, Crown, Shield, User, MoreVertical, Trash2, Mail, X, ChevronDo
 import { api } from '../../../lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/components/ui/Toast'
+import { UpgradeModal } from '@/components/ui'
 
 interface Member {
   user_id: string
@@ -107,9 +108,19 @@ export default function TeamPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [showInvite, setShowInvite] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const { user } = useAuth()
   const { toast: showToast } = useToast()
+
+  const handleInviteClick = () => {
+    const currentPlan = user?.plan_id || user?.plan || 'free'
+    if (currentPlan === 'free' || currentPlan === 'pulse') {
+      setShowUpgradeModal(true)
+      return
+    }
+    setShowInvite(true)
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -162,12 +173,10 @@ export default function TeamPage() {
           </div>
           {isOwner && (
             <button
-              onClick={() => setShowInvite(true)}
+              onClick={handleInviteClick}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-noant-sky text-white text-sm font-semibold hover:bg-noant-sky-deep active:scale-[0.98] transition-all shadow-sky"
             >
-              <UserPlus className="w-4 h-4" />
-              <span className="hidden sm:inline">Invite member</span>
-              <span className="sm:hidden">Invite</span>
+              <UserPlus className="w-4 h-4 mr-1.5" /> Invite member
             </button>
           )}
         </div>
@@ -183,10 +192,10 @@ export default function TeamPage() {
               <p className="text-sm text-secondary mb-4">Invite colleagues to collaborate on NOANT.</p>
               {isOwner && (
                 <button
-                  onClick={() => setShowInvite(true)}
+                  onClick={handleInviteClick}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-noant-sky text-white text-sm font-semibold hover:bg-noant-sky-deep transition-all"
                 >
-                  <UserPlus className="w-4 h-4" />
+                  <UserPlus className="w-4 h-4 mr-1.5" />
                   Invite your first member
                 </button>
               )}
@@ -269,6 +278,21 @@ export default function TeamPage() {
 
       {showInvite && (
         <InviteModal onClose={() => setShowInvite(false)} onSuccess={load} />
+      )}
+
+      {showUpgradeModal && (
+        <UpgradeModal
+          open={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+          title="Unlock Team Collaboration"
+          description="Team member management is exclusive to Pro and Enterprise plans. Upgrade now to collaborate with your team."
+          featureList={[
+            'Add unlimited team members',
+            'Assign custom roles (Admin, Member)',
+            'Collaborative inbox & lead scoring',
+            'Priority developer support',
+          ]}
+        />
       )}
     </div>
   )

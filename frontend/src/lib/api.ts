@@ -1,6 +1,12 @@
 import { APIError } from '@/types';
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
+let API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
+if (API_BASE && !API_BASE.startsWith('/') && !API_BASE.startsWith('http://') && !API_BASE.startsWith('https://')) {
+  API_BASE = `https://${API_BASE}`;
+}
+if (API_BASE.startsWith('http') && !API_BASE.endsWith('/api/v1')) {
+  API_BASE = `${API_BASE.replace(/\/$/, '')}/api/v1`;
+}
 
 export const api = {
   async get<T>(endpoint: string): Promise<T> { return request<T>('GET', endpoint); },

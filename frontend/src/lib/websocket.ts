@@ -31,8 +31,18 @@ class WebSocketManager {
     if (configuredUrl) {
       this.url = configuredUrl
     } else {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      this.url = `${protocol}//${window.location.host}/ws`
+      const apiUrl = import.meta.env.VITE_API_URL as string | undefined
+      if (apiUrl && apiUrl.startsWith('http')) {
+        const wsBase = apiUrl.replace(/^http/, 'ws')
+        const urlWithoutV1 = wsBase.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
+        this.url = `${urlWithoutV1}/ws`
+      } else if (apiUrl && !apiUrl.startsWith('/')) {
+        const host = apiUrl.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
+        this.url = `wss://${host}/ws`
+      } else {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        this.url = `${protocol}//${window.location.host}/ws`
+      }
     }
 
     try {

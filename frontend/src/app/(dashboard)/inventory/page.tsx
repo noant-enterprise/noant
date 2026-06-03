@@ -8,6 +8,8 @@ import { StatCard, StatGrid } from '@/components/stats'
 import { StatSkeleton } from '@/components/ui/Skeleton'
 import { Package, Plus, Edit2, Trash2, Search, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useAuth } from '@/hooks/useAuth'
+import { UpgradeModal } from '@/components/ui'
 
 interface InventoryItem {
   id: string
@@ -30,9 +32,11 @@ const typeConfig: Record<string, { label: string; color: string }> = {
 
 export default function InventoryPage() {
   const { toast } = useToast()
+  const { user } = useAuth()
   const apiHook = useAPI() as any
   const { data, get: getItems, loading } = apiHook
   const [showModal, setShowModal] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -151,7 +155,15 @@ export default function InventoryPage() {
                 className="w-full pl-9 pr-3 py-2 bg-inset border border-default rounded-xl text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-noant-sky/30"
               />
             </div>
-            <Button onClick={() => { setEditingItem(null); setShowModal(true) }}>
+            <Button onClick={() => {
+              const currentPlan = user?.plan_id || user?.plan || 'free'
+              if (currentPlan === 'free' && items.length >= 10) {
+                setShowUpgradeModal(true)
+                return
+              }
+              setEditingItem(null)
+              setShowModal(true)
+            }}>
               <Plus className="w-4 h-4 mr-1.5" /> Add Item
             </Button>
           </div>
@@ -172,7 +184,15 @@ export default function InventoryPage() {
               <Package className="w-12 h-12 mx-auto text-tertiary mb-3" />
               <p className="text-secondary text-sm">No inventory items yet</p>
               <p className="text-tertiary text-xs mt-1">Add products, services, or packages for the AI to sell</p>
-              <Button className="mt-4" onClick={() => { setEditingItem(null); setShowModal(true) }}>
+              <Button className="mt-4" onClick={() => {
+                const currentPlan = user?.plan_id || user?.plan || 'free'
+                if (currentPlan === 'free' && items.length >= 10) {
+                  setShowUpgradeModal(true)
+                  return
+                }
+                setEditingItem(null)
+                setShowModal(true)
+              }}>
                 <Plus className="w-4 h-4 mr-1.5" /> Add First Item
               </Button>
             </CardBody>
@@ -242,6 +262,21 @@ export default function InventoryPage() {
           item={editingItem}
           onClose={() => { setShowModal(false); setEditingItem(null) }}
           onSave={editingItem ? handleUpdate : handleCreate}
+        />
+      )}
+
+      {showUpgradeModal && (
+        <UpgradeModal
+          open={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+          title="Unlock Unlimited Inventory Items"
+          description="Your Free plan is limited to 10 inventory items. Upgrade to Pro or Pulse to add unlimited products, services, and packages."
+          featureList={[
+            'Add unlimited inventory items',
+            'Full inventory negotiation support',
+            'All communication channels enabled',
+            'Unlimited team members',
+          ]}
         />
       )}
     </div>
