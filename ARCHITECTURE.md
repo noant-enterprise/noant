@@ -98,13 +98,13 @@ The `main()` function performs these steps in order:
 4. infrastructure.RunMigrations()   → Apply all .sql files in ./migrations/
 5. CREATE TABLE IF NOT EXISTS audit_logs (direct fallback)
 6. infrastructure.NewRedisClient()  → Optional; nil if unavailable
-7. repository.NewRepositories()     → Wire all 14 repos with db + redis
+7. repository.NewRepositories()     → Wire all 16 repos with db + redis
 8. repository.NewAuditRepository()
 9. handler.NewWebSocketHub()        → Central broadcast hub
 10. go wsHub.Run()                  → Start event loop goroutine
 11. service.NewPolarService()       → Payment gateway (Polar.sh)
 12. service.NewEmailService()       → Email: Resend (primary) + SMTP (fallback)
-13. service.NewServices()           → Wire all 13 services
+13. service.NewServices()           → Wire all 16 services
 14. infrastructure.NewCache()       → L1 memory + L2 Redis cache
 15. infrastructure.NewBottleneck()  → Concurrency limiter (200 max, 1000 queue)
 16. infrastructure.NewJobQueue()    → Background jobs (10 workers)
@@ -118,12 +118,16 @@ The `main()` function performs these steps in order:
 - `health_check` every 5 minutes — pings Telegram, WhatsApp, Facebook, Instagram APIs
 - `cache_cleanup` every 15 minutes — evicts stale cache entries
 - `handoff_reminder` every 15 minutes — processes pending handoffs, sends reminders (max 3), auto-expires
+- `check_credit_expiry` every 24 hours — emails users with credits expiring in 3 days
+- `process_campaigns_start` every 24 hours — activates campaigns starting today
+- `process_campaigns_end` every 24 hours — completes campaigns ending today
+- `free_weekly_reset` every 7 days — resets weekly free counter for Free users
 
 ### 2.2 Layer 1: Handlers (`internal/handler/`)
 
-**File**: `internal/handler/handler.go` (1804 lines)
+**File**: `internal/handler/handler.go` (1950 lines)
 
-The `Handlers` struct aggregates all 15 sub-handlers:
+The `Handlers` struct aggregates all 17 sub-handlers:
 
 ```go
 type Handlers struct {
@@ -142,6 +146,8 @@ type Handlers struct {
     Handoff      *HandoffHandler
     OpenWA       *OpenWAHandler
     Telegram     *TelegramHandler
+    Credit       *CreditHandler
+    Campaign     *CampaignHandler
 }
 ```
 
@@ -248,6 +254,17 @@ func (h *XxxHandler) SomeEndpoint(c *gin.Context) {
 - `SetWebhook` — configures Telegram bot webhook
 - `HandleUpdate` — processes incoming Telegram updates (messages, callbacks)
 
+**CreditHandler** (4 endpoints):
+- `GetBalance` — GET `/api/v1/credits/balance` — returns current Pulse credit balance + expiry
+- `GetLimits` — GET `/api/v1/credits/limits` — returns current plan limits
+- `PurchasePack` — POST `/api/v1/credits/purchase` — returns Polar checkout URL for selected pack
+- `GetHistory` — GET `/api/v1/credits/history` — returns purchase history
+
+**CampaignHandler** (3 endpoints):
+- `List` — GET `/api/v1/campaigns` — returns user's campaign schedules
+- `Create` — POST `/api/v1/campaigns` — creates new campaign schedule
+- `Cancel` — DELETE `/api/v1/campaigns/:id` — cancels campaign by ID
+
 **WebSocket handler** (`internal/handler/websocket.go`, 145 lines):
 - `WebSocketHub` — central hub pattern: register/unregister/broadcast channels, client map, origin validation, 30s ping ticker
 - `HandleWebSocket` — origin validation → upgrade → register → read loop (discards client messages — server→client only)
@@ -259,15 +276,16 @@ func (h *XxxHandler) SomeEndpoint(c *gin.Context) {
 
 ### 2.3 Layer 2: Services (`internal/service/`)
 
-**File**: `internal/service/service.go` (2988 lines)
+**File**: `internal/service/service.go` (3152 lines)
 
-The `Services` struct aggregates all 15 services:
+The `Services` struct aggregates all 18 services:
 
 ```go
 type Services struct {
     Auth, Chat, Training, Analytics, Integration,
     Settings, Archive, Payment, Audit, Notification, Widget,
-    Inventory, Handoff, OpenWA, Telegram
+    Inventory, Handoff, OpenWA, Telegram,
+    Credit, Plan, Campaign
 }
 ```
 
@@ -419,6 +437,36 @@ Customer sends message
 - `SendHTMLEmail` — sends raw, unescaped rich HTML templates directly to the Resend API
 - All endpoints POST to `https://api.resend.com/emails` with Bearer auth
 
+**CreditService** (`internal/service/credit.go`):
+- Manages Pulse response credits and purchases
+- `PurchasePack` — returns static Polar checkout URL for pack type (no internal product IDs needed)
+- `ActivatePurchase` — webhook handler; adds credits + sets 30-day expiry
+- `Deduct` — atomic decrement of balance, returns error if insufficient/expired
+- `GetBalance` — returns current balance and expiry
+- `CheckAndNotifyExpiry` — background job: emails users with credits expiring in 3 days
+- Uses Redis for weekly free counter (`free_weekly:{userID}`) with Monday midnight expiry
+
+**PlanService** (`internal/service/plan.go`):
+- Enforces plan limits and features
+- `CanGenerateResponse` — checks if user can send AI response based on plan:
+  - Free: Redis weekly counter < 100
+  - Pulse: CreditService.Deduct (returns error if 0 balance)
+  - Pro/Enterprise: Always allowed
+- `CanCreateHandoff` — returns (canHandoff, hasNotification):
+  - Free: (true, false) — handoff allowed but NO notification (conversion friction)
+  - Others: (true, true)
+- `CanAddInventory` — Free: max 10 items; Others: unlimited
+- `GetLimits` — returns PlanLimit struct for plan ID
+- GetFreeWeeklyUsage — reads Redis counter
+
+**CampaignService** (`internal/service/campaign.go`):
+- Manages Campaign Mode for Pulse users
+- `Create` — validates dates, saves campaign schedule
+- `List` — returns user's campaigns
+- `Cancel` — cancels campaign by ID
+- `ProcessStarting` — background job: finds campaigns starting today, purchases credits via CreditService, sets status to active
+- `ProcessEnding` — background job: finds campaigns ending today, sets status to completed
+
 **VectorSearch** (`internal/service/vector.go`, 55 lines):
 - Delegates to QAPair.Search (SQL LIKE)
 - Falls back to word-by-word search for words > 4 chars
@@ -466,6 +514,8 @@ type Repositories struct {
     WidgetConfig *WidgetConfigRepository
     Inventory    *InventoryRepository
     Handoff      *HandoffRepository
+    Credit       *CreditRepository
+    Campaign     *CampaignRepository
 }
 ```
 
@@ -517,6 +567,10 @@ All core domain structs with `json` and `db` tags:
 | `InventoryItem` | Product/service/package | ID, UserID, Type (product/service/package), Name, Description, Price, MinPrice, StockQuantity, ImageURL, IsActive |
 | `Handoff` | Sales handoff from AI to owner | ID, UserID, ConversationID, CustomerName/Phone/Whatsapp, ProductName, OriginalPrice, AgreedPrice, Quantity, Status (pending/sold/lost/expired), FinalPrice, OwnerNotes, ReminderCount, NextReminderAt |
 | `AnalyticsOverview` | Dashboard stats | TotalConversations, ConversationsToday, ActiveConversations, ResolvedToday, AIResolutionRate, AvgResponseTime, Satisfaction |
+| `UserCredit` | Tracks Pulse response balance + expiry | ID, UserID, Balance, ExpiresAt, LastUpdatedAt |
+| `CreditPurchase` | Purchase history per user | ID, UserID, CheckoutID, PackType, Amount, Status, PurchasedAt, ExpiresAt |
+| `CampaignSchedule` | Campaign mode schedules | ID, UserID, Name, StartDate, EndDate, Status (draft/active/completed/cancelled), CreatedAt, UpdatedAt |
+| `PlanLimit` | Defines limits per plan | PlanID, MaxResponses, MaxHandoffs, MaxInventoryItems, HasNotification, PriceNGN, Description |
 
 ### 2.6 Middleware Stack (`internal/middleware/`)
 
@@ -587,6 +641,7 @@ wsClient
 | `006_notifications_widget.sql` | notifications, widget_configs, user notification preference columns |
 | `007_message_source.sql` | Adds `source` column to messages |
 | `008_inventory_leads.sql` | inventory_items (products/services/packages), handoffs (sales leads), adds owner_whatsapp to users |
+| `010_billing.sql` | user_credits, credit_purchases, campaign_schedules; adds credit_balance, last_credit_purchase_at to users table |
 
 *Note: Startup automatic alteration schema checks add `customer_avatar` (VARCHAR(500)) dynamically to the `conversations` table at startup inside `main.go` to support WhatsApp profile photo thumbnail caching and displays.*
 
@@ -693,6 +748,15 @@ users ──── conversations ──── messages
 | GET | /api/v1/inventory/:id | Yes | User | Yes |
 | PUT | /api/v1/inventory/:id | Yes | User | Yes |
 | DELETE | /api/v1/inventory/:id | Yes | User | Yes |
+| **Credits** (30 req/min per user) | | | | |
+| GET | /api/v1/credits/balance | Yes | User | Yes |
+| GET | /api/v1/credits/limits | Yes | User | Yes |
+| POST | /api/v1/credits/purchase | Yes | User | Yes |
+| GET | /api/v1/credits/history | Yes | User | Yes |
+| **Campaigns** (30 req/min per user) | | | | |
+| GET | /api/v1/campaigns | Yes | User | Yes |
+| POST | /api/v1/campaigns | Yes | User | Yes |
+| DELETE | /api/v1/campaigns/:id | Yes | User | Yes |
 | **Handoffs** (60 req/min per user) | | | | |
 | GET | /api/v1/handoffs | Yes | User | Yes |
 | GET | /api/v1/handoffs/:id | Yes | User | Yes |
@@ -1317,7 +1381,7 @@ backend/
 ├── main.go                    # Entry point: bootstrap, middleware, routes, graceful shutdown
 ├── go.mod / go.sum            # Module: noant (Go 1.25), deps: gin, jwt, gorilla/websocket, etc.
 ├── config/
-│   └── config.go              # Config struct + Load() from env vars
+│   └── config.go              # Config struct + Load() from env vars (includes Polar checkout URLs for billing system)
 ├── internal/
 │   ├── domain/
 │   │   ├── models.go           # All domain models (User, Conversation, Message, QAPair, etc.)
@@ -1336,6 +1400,9 @@ backend/
 │   │   ├── email.go            # EmailService: wraps Resend (primary) + SMTP (fallback)
 │   │   ├── openwa.go           # OpenWAService: self-hosted WhatsApp API integration
 │   │   ├── telegram.go         # TelegramService: Telegram bot integration
+│   │   ├── credit.go           # CreditService: Pulse credit management
+│   │   ├── plan.go             # PlanService: plan limit enforcement
+│   │   ├── campaign.go         # CampaignService: Campaign Mode management
 │   │   ├── vector.go           # VectorSearch: keyword search with word-by-word fallback
 │   │   ├── retention.go        # RetentionService: data cleanup
 │   │   └── 2fa.go              # TFAService: TOTP two-factor auth

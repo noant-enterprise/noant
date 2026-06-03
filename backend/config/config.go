@@ -63,6 +63,13 @@ type Config struct {
 	PolarOrganizationID string
 	PolarServerURL      string
 	PolarWebhookSecret  string
+	// Billing system - Polar checkout URLs
+	PolarPulseSmallURL  string
+	PolarPulseMediumURL string
+	PolarPulseLargeURL  string
+	PolarProMonthlyURL  string
+	PolarProAnnualURL   string
+	PolarEnterpriseURL  string
 	CORSOrigins         []string
 
 	// Telegram
@@ -165,6 +172,13 @@ func Load() *Config {
 		PolarOrganizationID: getEnv("POLAR_ORGANIZATION_ID", ""),
 		PolarServerURL:      getEnv("POLAR_SERVER_URL", "https://api.polar.sh"),
 		PolarWebhookSecret:  getEnv("POLAR_WEBHOOK_SECRET", ""),
+		// Billing system - Polar checkout URLs (no internal product IDs needed)
+		PolarPulseSmallURL:  getEnv("POLAR_PULSE_SMALL_URL", ""),
+		PolarPulseMediumURL: getEnv("POLAR_PULSE_MEDIUM_URL", ""),
+		PolarPulseLargeURL:  getEnv("POLAR_PULSE_LARGE_URL", ""),
+		PolarProMonthlyURL:  getEnv("POLAR_PRO_MONTHLY_URL", ""),
+		PolarProAnnualURL:   getEnv("POLAR_PRO_ANNUAL_URL", ""),
+		PolarEnterpriseURL:  getEnv("POLAR_ENTERPRISE_URL", ""),
 
 		TelegramBotToken:   getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramWebhookURL: getEnv("TELEGRAM_WEBHOOK_URL", ""),

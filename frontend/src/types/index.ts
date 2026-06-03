@@ -188,6 +188,54 @@ export interface APIKey {
   created_at: string;
 }
 
+// Billing System
+export interface UserCredit {
+  id: string;
+  user_id: string;
+  balance: number;
+  expires_at: string;
+  last_updated_at: string;
+}
+
+export interface CreditPurchase {
+  id: string;
+  user_id: string;
+  checkout_id: string;
+  pack_type: string;
+  amount: number;
+  status: string;
+  purchased_at: string;
+  expires_at: string;
+}
+
+export interface CampaignSchedule {
+  id: string;
+  user_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  status: 'draft' | 'active' | 'completed' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanLimit {
+  plan_id: string;
+  max_responses: number;
+  max_handoffs: number;
+  max_inventory_items: number;
+  has_notification: boolean;
+  price_ngn: number;
+  description: string;
+}
+
+// Create Campaign Request
+export interface CreateCampaignRequest {
+  name: string;
+  start_date: string; // ISO date string
+  end_date: string;   // ISO date string
+}
+
 // WebSocket
 export interface WSMessage {
   type: 'new_message' | 'new_conversation' | 'status_change' | 'typing' | 'integration_update' | 'unknown_question' | 'notification' | 'typing_indicator';

@@ -33,6 +33,8 @@ type Handlers struct {
 	Handoff      *HandoffHandler
 	OpenWA       *OpenWAHandler
 	Telegram     *TelegramHandler
+	Credit       *CreditHandler
+	Campaign     *CampaignHandler
 }
 
 func NewHandlers(cfg *config.Config, services *service.Services, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
@@ -52,6 +54,8 @@ func NewHandlers(cfg *config.Config, services *service.Services, logger *infrast
 		Handoff:      NewHandoffHandler(services.Handoff, logger),
 		OpenWA:       NewOpenWAHandler(cfg, services.OpenWA, services.Chat, logger, wsHub),
 		Telegram:     NewTelegramHandler(services.Integration, logger),
+		Credit:       NewCreditHandler(services.Credit, services.Plan, logger),
+		Campaign:     NewCampaignHandler(services.Campaign, logger),
 	}
 }
 
@@ -1204,7 +1208,14 @@ func (h *PaymentHandler) Subscribe(c *gin.Context) {
 
 func (h *PaymentHandler) Webhook(c *gin.Context) {
 	payload, _ := c.GetRawData()
-	if err := h.service.Webhook(c.Request.Context(), payload); err != nil {
+
+	headers := map[string]string{
+		"webhook-id":        c.GetHeader("webhook-id"),
+		"webhook-timestamp": c.GetHeader("webhook-timestamp"),
+		"webhook-signature": c.GetHeader("webhook-signature"),
+	}
+
+	if err := h.service.Webhook(c.Request.Context(), payload, headers); err != nil {
 		utils.RespondValidationError(c, err.Error())
 		return
 	}
@@ -2122,4 +2133,196 @@ func cleanPhone(phone string) string {
 		}
 	}
 	return string(result)
+}
+
+// CreditHandler handles credit and billing related endpoints
+type CreditHandler struct {
+	creditSvc *service.CreditService
+	planSvc   *service.PlanService
+	logger    *infrastructure.Logger
+}
+
+func NewCreditHandler(creditSvc *service.CreditService, planSvc *service.PlanService, logger *infrastructure.Logger) *CreditHandler {
+	return &CreditHandler{
+		creditSvc: creditSvc,
+		planSvc:   planSvc,
+		logger:    logger,
+	}
+}
+
+// GetBalance returns the user's current credit balance and expiry
+func (h *CreditHandler) GetBalance(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists || userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	balance, err := h.creditSvc.GetBalance(c.Request.Context(), userID.(string))
+	if err != nil {
+		h.logger.Error("Failed to get credit balance", "error", err, "userID", userID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get credit balance"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"balance":     balance.Balance,
+		"expires_at":  balance.ExpiresAt,
+		"last_updated": balance.LastUpdatedAt,
+	})
+}
+
+// GetLimits returns the current plan limits for the user
+func (h *CreditHandler) GetLimits(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists || userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	limits, err := h.planSvc.GetLimitsByUserID(c.Request.Context(), userID.(string))
+	if err != nil {
+		h.logger.Error("Failed to get plan limits", "error", err, "userID", userID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get plan limits"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"limits": limits,
+	})
+}
+
+// PurchasePack initiates a credit pack purchase by returning a Polar checkout URL
+func (h *CreditHandler) PurchasePack(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists || userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	var req struct {
+		PackType string `json:"pack_type" binding:"required,oneof=small medium large"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+
+	checkoutURL, err := h.creditSvc.PurchasePack(c.Request.Context(), userID.(string), req.PackType)
+	if err != nil {
+		h.logger.Error("Failed to get checkout URL", "error", err, "userID", userID, "packType", req.PackType)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initiate purchase"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"checkout_url": checkoutURL,
+	})
+}
+
+// GetHistory returns the user's credit purchase history
+func (h *CreditHandler) GetHistory(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists || userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	history, err := h.creditSvc.GetPurchaseHistory(c.Request.Context(), userID.(string))
+	if err != nil {
+		h.logger.Error("Failed to get purchase history", "error", err, "userID", userID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get purchase history"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"history": history,
+	})
+}
+
+// CampaignHandler handles campaign mode related endpoints
+type CampaignHandler struct {
+	campaignSvc *service.CampaignService
+	logger      *infrastructure.Logger
+}
+
+func NewCampaignHandler(campaignSvc *service.CampaignService, logger *infrastructure.Logger) *CampaignHandler {
+	return &CampaignHandler{
+		campaignSvc: campaignSvc,
+		logger:      logger,
+	}
+}
+
+// List returns all campaigns for the current user
+func (h *CampaignHandler) List(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists || userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	campaigns, err := h.campaignSvc.List(c.Request.Context(), userID.(string))
+	if err != nil {
+		h.logger.Error("Failed to list campaigns", "error", err, "userID", userID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list campaigns"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"campaigns": campaigns,
+	})
+}
+
+// Create creates a new campaign schedule
+func (h *CampaignHandler) Create(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists || userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	var req service.CreateCampaignRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+
+	campaign, err := h.campaignSvc.Create(c.Request.Context(), userID.(string), req)
+	if err != nil {
+		h.logger.Error("Failed to create campaign", "error", err, "userID", userID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create campaign"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"campaign": campaign,
+	})
+}
+
+// Cancel cancels a campaign by ID
+func (h *CampaignHandler) Cancel(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists || userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Campaign ID is required"})
+		return
+	}
+
+	if err := h.campaignSvc.Cancel(c.Request.Context(), id, userID.(string)); err != nil {
+		h.logger.Error("Failed to cancel campaign", "error", err, "userID", userID, "campaignID", id)
+		if err.Error() == "campaign not found or access denied" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Campaign not found or access denied"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel campaign"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+	})
 }

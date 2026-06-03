@@ -265,3 +265,47 @@ type Handoff struct {
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
 }
+
+// UserCredit tracks Pulse response balance and expiry
+type UserCredit struct {
+	ID            string    `json:"id" db:"id"`
+	UserID        string    `json:"user_id" db:"user_id"`
+	Balance       int       `json:"balance" db:"balance"`
+	ExpiresAt     *time.Time `json:"expires_at" db:"expires_at"`
+	LastUpdatedAt time.Time `json:"last_updated_at" db:"last_updated_at"`
+}
+
+// CreditPurchase represents a credit purchase history record
+type CreditPurchase struct {
+	ID           string    `json:"id" db:"id"`
+	UserID       string    `json:"user_id" db:"user_id"`
+	CheckoutID   string    `json:"checkout_id" db:"checkout_id"`
+	PackType     string    `json:"pack_type" db:"pack_type"` // small/medium/large
+	Amount       int       `json:"amount" db:"amount"`
+	Status       string    `json:"status" db:"status"` // pending/completed/failed/refunded
+	PurchasedAt  time.Time `json:"purchased_at" db:"purchased_at"`
+	ExpiresAt    time.Time `json:"expires_at" db:"expires_at"`
+}
+
+// CampaignSchedule represents a campaign mode schedule
+type CampaignSchedule struct {
+	ID          string    `json:"id" db:"id"`
+	UserID      string    `json:"user_id" db:"user_id"`
+	Name        string    `json:"name" db:"name"`
+	StartDate   string    `json:"start_date" db:"start_date"` // stored as DATE, but handled as string
+	EndDate     string    `json:"end_date" db:"end_date"`     // stored as DATE, but handled as string
+	Status      string    `json:"status" db:"status"` // draft/active/completed/cancelled
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// PlanLimit defines limits per plan
+type PlanLimit struct {
+	PlanID               string `json:"plan_id" db:"plan_id"`
+	MaxResponses         int    `json:"max_responses" db:"max_responses"`
+	MaxHandoffs          int    `json:"max_handoffs" db:"max_handoffs"`
+	MaxInventoryItems    int    `json:"max_inventory_items" db:"max_inventory_items"`
+	HasNotification      bool   `json:"has_notification" db:"has_notification"`
+	PriceNGN             int    `json:"price_ngn" db:"price_ngn"`
+	Description          string `json:"description" db:"description"`
+}

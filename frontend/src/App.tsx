@@ -13,7 +13,7 @@ import ChatsPage from '@/app/(dashboard)/chats/page'
 import TeachPage from '@/app/(dashboard)/teach/page'
 import InsightsPage from '@/app/(dashboard)/insights/page'
 import ChannelsPage from '@/app/(dashboard)/channels/page'
-import SetupPage from '@/app/(dashboard)/setup/page'
+
 import SettingsPage from '@/app/(dashboard)/settings/page'
 import NotificationsPage from '@/app/(dashboard)/notifications/page'
 import BillingPage from '@/app/(dashboard)/billing/page'
@@ -123,7 +123,7 @@ const router = createBrowserRouter([
           { path: 'teach', element: <TeachPage /> },
           { path: 'insights', element: <InsightsPage /> },
           { path: 'channels', element: <ChannelsPage /> },
-          { path: 'setup', element: <SetupPage /> },
+
           { path: 'settings', element: <SettingsPage /> },
           { path: 'notifications', element: <NotificationsPage /> },
           { path: 'billing', element: <BillingPage /> },

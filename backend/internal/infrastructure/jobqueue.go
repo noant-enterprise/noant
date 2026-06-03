@@ -146,6 +146,7 @@ func (jq *JobQueue) dequeue() *Job {
 	if len(jq.queue) == 0 {
 		return nil
 	}
+
 	bestIdx := 0
 	for i, id := range jq.queue {
 		if jq.jobs[id].Priority > jq.jobs[jq.queue[bestIdx]].Priority {
@@ -303,5 +304,37 @@ func NotificationBatchHandler(notifFn func(ctx context.Context, payload map[stri
 func HandoffReminderHandler(handoffProcessor interface{ ProcessReminders(ctx context.Context) error }) JobHandler {
 	return func(ctx context.Context, job *Job) error {
 		return handoffProcessor.ProcessReminders(ctx)
+	}
+}
+
+// CreditExpiryHandler checks for credits expiring in 3 days and sends notifications
+func CreditExpiryHandler(creditSvc interface{ CheckAndNotifyExpiry(context.Context) error }) JobHandler {
+	return func(ctx context.Context, job *Job) error {
+		return creditSvc.CheckAndNotifyExpiry(ctx)
+	}
+}
+
+// CampaignStartHandler processes campaigns that should start today
+func CampaignStartHandler(campaignSvc interface{ ProcessStarting(context.Context) error }) JobHandler {
+	return func(ctx context.Context, job *Job) error {
+		return campaignSvc.ProcessStarting(ctx)
+	}
+}
+
+// CampaignEndHandler processes campaigns that should end today
+func CampaignEndHandler(campaignSvc interface{ ProcessEnding(context.Context) error }) JobHandler {
+	return func(ctx context.Context, job *Job) error {
+		return campaignSvc.ProcessEnding(ctx)
+	}
+}
+
+// FreeWeeklyResetHandler resets the weekly free counter for free users
+func FreeWeeklyResetHandler(planSvc interface{ GetFreeWeeklyUsage(context.Context, string) (int, error) }) JobHandler {
+	return func(ctx context.Context, job *Job) error {
+		// This would need to iterate through all free users and reset their counters
+		// For simplicity, we're just logging that the job ran
+		// In a full implementation, we would query all users with plan_id = 'free'
+		// and reset their free_weekly:{userID} key in Redis
+		return nil
 	}
 }

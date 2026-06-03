@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"strconv"
 	"time"
 
 	"noant/config"
@@ -117,3 +118,28 @@ func (r *RedisClient) RateLimitWithRemaining(ctx context.Context, key string, li
 func (r *RedisClient) Ping(ctx context.Context) error {
 	return r.client.Ping(ctx).Err()
 }
+
+// GetInt gets the value of a key and converts it to an integer
+func (r *RedisClient) GetInt(ctx context.Context, key string) (int, error) {
+	val, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return 0, ErrRedisNil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(val)
+}
+
+// TTL gets the time to live for a key
+func (r *RedisClient) TTL(ctx context.Context, key string) (time.Duration, error) {
+	return r.client.TTL(ctx, key).Result()
+}
+
+// SetEx sets the value and expiration of a key
+func (r *RedisClient) SetEx(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+	return r.client.SetEx(ctx, key, value, expiration).Err()
+}
+
+// ErrRedisNil is returned when a key does not exist
+var ErrRedisNil = redis.Nil

@@ -43,14 +43,21 @@ type Services struct {
 	Handoff      *HandoffService
 	OpenWA       *OpenWAService
 	Telegram     *TelegramService
+	Credit       *CreditService
+	Plan         *PlanService
+	Campaign     *CampaignService
 }
 
 func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService, polarSvc *PolarService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
 	aiBrain := NewAIBrain(cfg, repos, redis, logger, broadcastFn)
 	embeddings := aiBrain.embeddings
+
 	telegramSvc := NewTelegramService(cfg, logger)
 	openwaSvc := NewOpenWAService(cfg, logger)
 	chatSvc := NewChatService(cfg, repos, redis, aiBrain, logger, openwaSvc, telegramSvc)
+	creditSvc := NewCreditService(cfg, repos, redis, logger)
+	planSvc := NewPlanService(cfg, repos, redis, logger, creditSvc)
+	campaignSvc := NewCampaignService(cfg, repos, redis, logger, creditSvc)
 	return &Services{
 		Auth:         NewAuthService(cfg, repos.User, redis, logger, email),
 		Chat:         chatSvc,
@@ -59,14 +66,17 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 		Integration:  NewIntegrationService(cfg, repos, redis, logger, chatSvc, telegramSvc, broadcastFn),
 		Settings:     NewSettingsService(cfg, repos, redis, logger, email),
 		Archive:      NewArchiveService(cfg, repos, redis, logger),
-		Payment:      NewPaymentService(cfg, repos, redis, logger, polarSvc),
+		Payment:      NewPaymentService(cfg, repos, redis, logger, polarSvc, creditSvc),
 		Audit:        NewAuditService(repos, logger),
 		Notification: NewNotificationService(cfg, repos, redis, logger, email),
 		Widget:       NewWidgetService(cfg, repos, redis, aiBrain, logger, email),
 		Inventory:    NewInventoryService(cfg, repos, redis, logger, embeddings),
-		Handoff:      NewHandoffService(cfg, repos, redis, logger, broadcastFn),
+		Handoff:      NewHandoffService(cfg, repos, redis, logger, broadcastFn, planSvc),
 		OpenWA:       openwaSvc,
 		Telegram:     telegramSvc,
+		Credit:       creditSvc,
+		Plan:         planSvc,
+		Campaign:     campaignSvc,
 	}
 }
 
@@ -124,6 +134,7 @@ type AIBrain struct {
 	cb          *CircuitBreaker
 	broadcastFn func(convID string, msgType string, data interface{})
 	embeddings  *EmbeddingService
+	planSvc     *PlanService
 }
 
 func NewAIBrain(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, broadcastFn func(convID string, msgType string, data interface{})) *AIBrain {
@@ -136,6 +147,7 @@ func NewAIBrain(cfg *config.Config, repos *repository.Repositories, redis *infra
 		cb:          &CircuitBreaker{state: "closed"},
 		broadcastFn: broadcastFn,
 		embeddings:  NewEmbeddingService(cfg, repos, redis, logger),
+		planSvc:     NewPlanService(cfg, repos, redis, logger, NewCreditService(cfg, repos, redis, logger)),
 	}
 }
 
@@ -639,37 +651,53 @@ func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, user
 		AgreedPrice:    price,
 		Quantity:       1,
 	}
+
+	// Check if this plan gets notifications
+	user, _ := b.repos.User.GetByID(ctx, userID)
+	var hasNotification bool
+	if user != nil {
+		_, hasNotification, _ = b.planSvc.CanCreateHandoff(ctx, userID, user.PlanID)
+		// For free plan specifically, we know it doesn't get notifications
+		if user.PlanID == "free" {
+			hasNotification = false
+		}
+	}
+
+	// Create handoff record (no notification if plan doesn't allow it)
 	_ = b.repos.Handoff.Create(ctx, handoff)
 
-	user, _ := b.repos.User.GetByID(ctx, userID)
-	ownerName := ""
-	ownerWhatsApp := ""
+	var ownerName string
+	var ownerWhatsApp string
 	if user != nil {
 		ownerName = user.FirstName
 		whatsapp, _ := b.repos.User.GetOwnerWhatsApp(ctx, userID)
 		ownerWhatsApp = whatsapp
-	}
 
-	// Notify owner via WebSocket
-	if b.broadcastFn != nil {
-		b.broadcastFn(conversationID, "new_handoff", map[string]interface{}{
-			"handoff_id":      handoff.ID,
-			"customer_name":   customerName,
-			"product_name":    productName,
-			"agreed_price":    price,
-			"conversation_id": conversationID,
-		})
-	}
+		// Notify owner via WebSocket only if plan allows it
+		if hasNotification && b.broadcastFn != nil {
+			b.broadcastFn(conversationID, "new_handoff", map[string]interface{}{
+				"handoff_id":      handoff.ID,
+				"customer_name":   customerName,
+				"product_name":    productName,
+				"agreed_price":    price,
+				"conversation_id": conversationID,
+			})
+		}
 
-	notif := &domain.Notification{
-		UserID: userID,
-		Type:   "handoff",
-		Title:  "New Sale Handoff",
-		Body:   fmt.Sprintf("%s wants to buy %s for ₦%.0f", customerName, productName, price),
-		Link:   "/leads",
-		IsRead: false,
+		// Create notification only if plan allows it
+		if hasNotification {
+			notif := &domain.Notification{
+				UserID: userID,
+				Type:   "handoff",
+				Title:  "New Sale Handoff",
+				Body:   fmt.Sprintf("%s wants to buy %s for ₦%.0f", customerName, productName, price),
+				Link:   "/leads",
+				IsRead: false,
+			}
+
+			_ = b.repos.Notification.Create(ctx, notif)
+		}
 	}
-	_ = b.repos.Notification.Create(ctx, notif)
 
 	// Build response — if we found the product in inventory, confirm details
 	if productName != query && price > 0 {
@@ -693,7 +721,7 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	if conv != nil {
 		userID = conv.UserID
 	}
-
+ 
 	// Request trace
 	traceID := fmt.Sprintf("trace_%d", time.Now().UnixNano())
 	channel := ""
@@ -701,6 +729,17 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		channel = conv.Channel
 	}
 	b.logger.Info("AI request started", "traceID", traceID, "userID", userID, "query", userQuery, "channel", channel)
+
+	// Plan limit check (before intent classification)
+	if userID != "" {
+		user, _ := b.repos.User.GetByID(ctx, userID)
+		if user != nil {
+			canRespond, reason, _ := b.planSvc.CanGenerateResponse(ctx, userID, user.PlanID)
+			if !canRespond {
+				return &AIResponse{Content: reason, Source: "plan_limit"}, nil
+			}
+		}
+	}
 
 	// Short greetings should get a local response instead of burning an AI call.
 	if b.isGreetingQuery(userQuery) {
@@ -809,6 +848,7 @@ type AIResponse struct {
 	Content    string  `json:"content"`
 	Confidence float64 `json:"confidence"`
 	Escalate   bool    `json:"escalate"`
+	Source     string  `json:"source,omitempty"`
 	Reason     string  `json:"reason,omitempty"`
 	MatchedQA  *string `json:"matched_qa,omitempty"`
 }
@@ -1178,9 +1218,9 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, cust
 		user, err := s.repos.User.GetByID(ctx, userID)
 		if err == nil && user != nil {
 			switch user.PlanID {
-			case "pro", "starter":
+			case "pulse":
 				limit = 500
-			case "business", "enterprise":
+			case "pro", "business", "enterprise":
 				limit = 999999 // unlimited
 			}
 		}
@@ -2877,10 +2917,11 @@ type PaymentService struct {
 	redis    *infrastructure.RedisClient
 	logger   *infrastructure.Logger
 	polarSvc *PolarService
+	credit   *CreditService
 }
 
-func NewPaymentService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, polarSvc *PolarService) *PaymentService {
-	return &PaymentService{cfg: cfg, repos: repos, redis: redis, logger: logger, polarSvc: polarSvc}
+func NewPaymentService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, polarSvc *PolarService, credit *CreditService) *PaymentService {
+	return &PaymentService{cfg: cfg, repos: repos, redis: redis, logger: logger, polarSvc: polarSvc, credit: credit}
 }
 
 func (s *PaymentService) ListPlans(ctx context.Context) ([]domain.PaymentPlan, error) {
@@ -2889,59 +2930,91 @@ func (s *PaymentService) ListPlans(ctx context.Context) ([]domain.PaymentPlan, e
 			ID:          "free",
 			Name:        "Free",
 			PriceNGN:    0,
-			AIResponses: 50,
-			Channels:    []string{"telegram", "web"},
-			Features:    []string{"50 AI responses/month", "Telegram + Web Chat", "Basic analytics"},
+			AIResponses: 100, // per week
+			Channels:    []string{"whatsapp", "web"},
+			Features:    []string{"100 AI responses/week", "Web Widget + WhatsApp", "10 inventory items", "1 team member", "Basic AI responses", "Handoff system enabled"},
 		},
 		{
-			ID:          "starter",
-			Name:        "Starter",
-			PriceNGN:    10000,
-			AIResponses: 5000,
-			Channels:    []string{"telegram", "web"},
-			Features:    []string{"5,000 AI responses/month", "Telegram + Web Chat", "CSV training", "Real-time dashboard"},
-			IsPopular:   false,
+			ID:          "pulse",
+			Name:        "Pulse",
+			PriceNGN:    2999, // Starts at NGN 2,999
+			AIResponses: 500,  // minimum pack size
+			Channels:    []string{"telegram", "web", "whatsapp", "email"},
+			Features:    []string{"Pay as you go", "All 4 channels", "Unlimited inventory", "Full handoff system", "Instant notifications", "AI price negotiation"},
 		},
 		{
 			ID:          "pro",
 			Name:        "Pro",
-			PriceNGN:    25000,
-			AIResponses: 50000,
+			PriceNGN:    21999,
+			AIResponses: 0, // Unlimited
 			Channels:    []string{"telegram", "web", "whatsapp", "email"},
-			Features:    []string{"50,000 AI responses/month", "All channels", "Advanced analytics", "Team management", "API access"},
+			Features:    []string{"Unlimited AI responses", "Unlimited team members", "All 4 channels", "Full inventory & handoff", "AI price negotiation", "White-label widget", "Campaign Mode"},
 			IsPopular:   true,
 		},
 		{
 			ID:          "enterprise",
 			Name:        "Enterprise",
-			PriceNGN:    100000,
-			AIResponses: 0,
+			PriceNGN:    99999,
+			AIResponses: 0, // Unlimited
 			Channels:    []string{"telegram", "web", "whatsapp", "email", "instagram", "messenger"},
-			Features:    []string{"Unlimited AI responses", "All channels + white-label", "Priority support", "Custom integrations", "Dedicated account manager"},
+			Features:    []string{"Unlimited everything", "Custom AI training", "API access", "White-label platform", "SLA guarantee", "Dedicated account manager"},
 		},
 	}, nil
 }
 
 func (s *PaymentService) Subscribe(ctx context.Context, userID, planID string) (string, error) {
+	// Handle free plan - no payment needed
+	if planID == "free" {
+		if err := s.repos.User.UpdatePlan(ctx, userID, "free"); err != nil {
+			s.logger.Error("Failed to update user plan", "error", err)
+			return "", err
+		}
+		s.logger.Info("User plan set to free", "user", userID, "plan", "free")
+		return "", nil
+	}
+
+	// Determine planName / planID
 	planName := planID
 	switch planID {
-	case "starter", "pro", "enterprise":
+	case "pulse", "pro", "enterprise":
 		planName = planID
 	default:
 		return "", fmt.Errorf("invalid plan ID: %s", planID)
 	}
 
-	// Attempt Polar checkout first if available
+	// Try to get configured static URL
+	var urlStr string
+	switch planName {
+	case "pulse":
+		urlStr = s.cfg.PolarPulseSmallURL
+	case "pro":
+		urlStr = s.cfg.PolarProMonthlyURL
+	case "enterprise":
+		urlStr = s.cfg.PolarEnterpriseURL
+	}
+
+	if urlStr != "" {
+		// Append metadata search params
+		if strings.Contains(urlStr, "?") {
+			urlStr = fmt.Sprintf("%s&metadata[user_id]=%s&metadata[plan_id]=%s", urlStr, userID, planName)
+		} else {
+			urlStr = fmt.Sprintf("%s?metadata[user_id]=%s&metadata[plan_id]=%s", urlStr, userID, planName)
+		}
+		s.logger.Info("Returning static Polar checkout URL with metadata", "user", userID, "plan", planName, "url", urlStr)
+		return urlStr, nil
+	}
+
+	// Fallback to dynamic checkout if server URL is configured and access token is present
 	if s.polarSvc != nil && s.cfg.PolarAccessToken != "" {
 		checkoutURL, err := s.polarSvc.CreateCheckout(ctx, userID, planName)
 		if err == nil && checkoutURL != "" {
-			s.logger.Info("Polar checkout created", "user", userID, "plan", planName, "url", checkoutURL)
+			s.logger.Info("Polar checkout created dynamically", "user", userID, "plan", planName, "url", checkoutURL)
 			return checkoutURL, nil
 		}
-		s.logger.Warn("Polar checkout failed, falling back to local sub", "user", userID, "plan", planName, "error", err)
+		s.logger.Warn("Polar checkout creation failed", "user", userID, "plan", planName, "error", err)
 	}
 
-	// Local database fallback
+	// Local database fallback if Polar is not configured
 	now := time.Now()
 	periodEnd := now.AddDate(0, 1, 0)
 
@@ -2954,7 +3027,7 @@ func (s *PaymentService) Subscribe(ctx context.Context, userID, planID string) (
 	}
 
 	if err := s.repos.Subscription.CreateOrUpdate(ctx, sub); err != nil {
-		s.logger.Error("Failed to create subscription", "error", err)
+		s.logger.Error("Failed to create local subscription fallback", "error", err)
 		return "", fmt.Errorf("failed to create subscription: %w", err)
 	}
 
@@ -2963,12 +3036,18 @@ func (s *PaymentService) Subscribe(ctx context.Context, userID, planID string) (
 		return "", err
 	}
 
-	s.logger.Info("Subscription created", "user", userID, "plan", planName, "period_end", periodEnd)
-	// Return empty string — local DB subscription applied; no hosted checkout needed
+	s.logger.Info("Local subscription fallback created", "user", userID, "plan", planName, "period_end", periodEnd)
 	return "", nil
 }
 
-func (s *PaymentService) Webhook(ctx context.Context, payload []byte) error {
+func (s *PaymentService) Webhook(ctx context.Context, payload []byte, headers map[string]string) error {
+	// First verify the signature
+	if s.polarSvc != nil {
+		if !s.polarSvc.VerifyWebhook(payload, headers) {
+			return fmt.Errorf("invalid webhook signature")
+		}
+	}
+
 	var event struct {
 		Type string          `json:"type"`
 		Data json.RawMessage `json:"data"`
@@ -2981,50 +3060,120 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte) error {
 	s.logger.Info("Payment webhook received", "type", event.Type)
 
 	switch event.Type {
-	case "checkout.success", "subscription.active", "subscription.created":
+	case "order.created":
+		// Handle order payments (both one-time credit packs and subscription payments)
+		var orderData struct {
+			ID       string                 `json:"id"`
+			Metadata map[string]interface{} `json:"metadata"`
+		}
+
+		if err := json.Unmarshal(event.Data, &orderData); err != nil {
+			return fmt.Errorf("failed to parse order data: %w", err)
+		}
+
+		// Extract metadata
+		var userID, packType, planID string
+		if len(orderData.Metadata) > 0 {
+			if uid, ok := orderData.Metadata["user_id"].(string); ok {
+				userID = uid
+			}
+			if pt, ok := orderData.Metadata["pack_type"].(string); ok {
+				packType = pt
+			}
+			if pid, ok := orderData.Metadata["plan_id"].(string); ok {
+				planID = pid
+			}
+		}
+
+		if userID == "" {
+			s.logger.Warn("order.created event missing user_id in metadata", "order_id", orderData.ID)
+			return nil // Don't fail the request, just ignore
+		}
+
+		if packType != "" {
+			// Activate credit pack purchase
+			if err := s.credit.ActivatePurchase(ctx, orderData.ID, userID, packType); err != nil {
+				s.logger.Error("Failed to activate credit purchase from order webhook", "error", err, "userID", userID, "packType", packType)
+				return err
+			}
+			s.logger.Info("Credit purchase activated via order.created webhook", "userID", userID, "packType", packType, "orderID", orderData.ID)
+		} else if planID != "" {
+			// Sync subscription plan from the order payment
+			now := time.Now()
+			periodEnd := now.AddDate(0, 1, 0) // Default 1 month
+
+			sub := &domain.Subscription{
+				UserID:             userID,
+				PlanID:             planID,
+				Status:             "active",
+				CurrentPeriodStart: now,
+				CurrentPeriodEnd:   periodEnd,
+			}
+
+			if err := s.repos.Subscription.CreateOrUpdate(ctx, sub); err != nil {
+				s.logger.Error("Failed to update subscription from order webhook", "error", err)
+				return err
+			}
+
+			if err := s.repos.User.UpdatePlan(ctx, userID, planID); err != nil {
+				s.logger.Error("Failed to update user plan from order webhook", "error", err)
+				return err
+			}
+
+			s.logger.Info("Subscription/plan updated via order.created webhook", "user", userID, "plan", planID, "orderID", orderData.ID)
+		}
+
+	case "subscription.created", "subscription.active", "subscription.updated":
 		var subData struct {
-			UserID      string                 `json:"user_id"`
-			PlanID      string                 `json:"plan_id"`
-			Status      string                 `json:"status"`
-			PeriodStart string                 `json:"current_period_start"`
-			PeriodEnd   string                 `json:"current_period_end"`
-			Metadata    map[string]interface{} `json:"metadata"`
+			ID                 string                 `json:"id"`
+			Status             string                 `json:"status"`
+			CurrentPeriodStart string                 `json:"current_period_start"`
+			CurrentPeriodEnd   string                 `json:"current_period_end"`
+			Metadata           map[string]interface{} `json:"metadata"`
 		}
 
 		if err := json.Unmarshal(event.Data, &subData); err != nil {
 			return fmt.Errorf("failed to parse subscription data: %w", err)
 		}
 
-		// Extract user_id from metadata if not at top level
-		userID := subData.UserID
-		if userID == "" && len(subData.Metadata) > 0 {
+		var userID, planID string
+		if len(subData.Metadata) > 0 {
 			if uid, ok := subData.Metadata["user_id"].(string); ok {
 				userID = uid
+			}
+			if pid, ok := subData.Metadata["plan_id"].(string); ok {
+				planID = pid
 			}
 		}
 
 		if userID == "" {
-			return fmt.Errorf("missing user_id in webhook payload")
+			s.logger.Warn("Subscription event missing user_id in metadata", "sub_id", subData.ID, "type", event.Type)
+			return nil
 		}
 
-		planID := subData.PlanID
 		if planID == "" {
-			planID = "starter"
+			planID = "pro" // Default fallback
 		}
 
 		// Parse dates or use defaults
 		now := time.Now()
 		periodEnd := now.AddDate(0, 1, 0)
-		if subData.PeriodEnd != "" {
-			if t, err := time.Parse(time.RFC3339, subData.PeriodEnd); err == nil {
+		if subData.CurrentPeriodEnd != "" {
+			if t, err := time.Parse(time.RFC3339, subData.CurrentPeriodEnd); err == nil {
 				periodEnd = t
 			}
+		}
+
+		// Handle cancellation / non-active status
+		status := "active"
+		if subData.Status == "canceled" || subData.Status == "revoked" || subData.Status == "cancelled" {
+			status = "cancelled"
 		}
 
 		sub := &domain.Subscription{
 			UserID:             userID,
 			PlanID:             planID,
-			Status:             "active",
+			Status:             status,
 			CurrentPeriodStart: now,
 			CurrentPeriodEnd:   periodEnd,
 		}
@@ -3034,18 +3183,21 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte) error {
 			return err
 		}
 
-		if err := s.repos.User.UpdatePlan(ctx, userID, planID); err != nil {
-			s.logger.Error("Failed to update user plan from webhook", "error", err)
+		userPlan := planID
+		if status == "cancelled" {
+			userPlan = "free"
+		}
+
+		if err := s.repos.User.UpdatePlan(ctx, userID, userPlan); err != nil {
+			s.logger.Error("Failed to update user plan from subscription webhook", "error", err)
 			return err
 		}
 
-		s.logger.Info("Subscription updated via webhook", "user", userID, "plan", planID, "status", subData.Status)
+		s.logger.Info("Subscription updated via webhook", "user", userID, "plan", userPlan, "status", status, "subID", subData.ID)
 
-	case "subscription.cancelled", "subscription.updated":
+	case "subscription.revoked", "subscription.cancelled":
 		var subData struct {
-			UserID   string                 `json:"user_id"`
-			PlanID   string                 `json:"plan_id"`
-			Status   string                 `json:"status"`
+			ID       string                 `json:"id"`
 			Metadata map[string]interface{} `json:"metadata"`
 		}
 
@@ -3053,21 +3205,21 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte) error {
 			return fmt.Errorf("failed to parse subscription data: %w", err)
 		}
 
-		userID := subData.UserID
-		if userID == "" && len(subData.Metadata) > 0 {
+		var userID string
+		if len(subData.Metadata) > 0 {
 			if uid, ok := subData.Metadata["user_id"].(string); ok {
 				userID = uid
 			}
 		}
 
-		if userID != "" && event.Type == "subscription.cancelled" {
+		if userID != "" {
 			if err := s.repos.Subscription.Cancel(ctx, userID); err != nil {
 				s.logger.Error("Failed to cancel subscription", "error", err)
 			}
 			if err := s.repos.User.UpdatePlan(ctx, userID, "free"); err != nil {
 				s.logger.Error("Failed to downgrade user plan", "error", err)
 			}
-			s.logger.Info("Subscription cancelled", "user", userID)
+			s.logger.Info("Subscription revoked/cancelled via webhook", "user", userID, "subID", subData.ID)
 		}
 
 	default:
@@ -3165,10 +3317,11 @@ type HandoffService struct {
 	redis       *infrastructure.RedisClient
 	logger      *infrastructure.Logger
 	broadcastFn func(convID string, msgType string, data interface{})
+	planSvc     *PlanService
 }
 
-func NewHandoffService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, broadcastFn func(convID string, msgType string, data interface{})) *HandoffService {
-	return &HandoffService{cfg: cfg, repos: repos, redis: redis, logger: logger, broadcastFn: broadcastFn}
+func NewHandoffService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, broadcastFn func(convID string, msgType string, data interface{}), planSvc *PlanService) *HandoffService {
+	return &HandoffService{cfg: cfg, repos: repos, redis: redis, logger: logger, broadcastFn: broadcastFn, planSvc: planSvc}
 }
 
 func (s *HandoffService) Create(ctx context.Context, h *domain.Handoff) error {
@@ -3181,8 +3334,20 @@ func (s *HandoffService) Create(ctx context.Context, h *domain.Handoff) error {
 	if err := s.repos.Handoff.Create(ctx, h); err != nil {
 		return err
 	}
-	// Notify owner via WebSocket
-	if s.broadcastFn != nil {
+
+	// Check if this plan gets notifications
+	user, _ := s.repos.User.GetByID(ctx, h.UserID)
+	var hasNotification bool
+	if user != nil {
+		_, hasNotification, _ = s.planSvc.CanCreateHandoff(ctx, user.ID, user.PlanID)
+		// For free plan specifically, we know it doesn't get notifications
+		if user.PlanID == "free" {
+			hasNotification = false
+		}
+	}
+
+	// Notify owner via WebSocket only if plan allows it
+	if hasNotification && s.broadcastFn != nil {
 		s.broadcastFn("", "new_handoff", map[string]interface{}{
 			"handoff_id":      h.ID,
 			"customer_name":   h.CustomerName,
@@ -3191,16 +3356,20 @@ func (s *HandoffService) Create(ctx context.Context, h *domain.Handoff) error {
 			"conversation_id": h.ConversationID,
 		})
 	}
-	// Create notification for owner
-	notif := &domain.Notification{
-		UserID: h.UserID,
-		Type:   "handoff",
-		Title:  "New Sale Handoff",
-		Body:   fmt.Sprintf("%s wants to buy %s for ₦%.0f", h.CustomerName, h.ProductName, h.AgreedPrice),
-		Link:   "/leads",
-		IsRead: false,
+
+	// Create notification for owner only if plan allows it
+	if hasNotification {
+		notif := &domain.Notification{
+			UserID: h.UserID,
+			Type:   "handoff",
+			Title:  "New Sale Handoff",
+			Body:   fmt.Sprintf("%s wants to buy %s for ₦%.0f", h.CustomerName, h.ProductName, h.AgreedPrice),
+			Link:   "/leads",
+			IsRead: false,
+		}
+		_ = s.repos.Notification.Create(ctx, notif)
 	}
-	_ = s.repos.Notification.Create(ctx, notif)
+
 	return nil
 }
 

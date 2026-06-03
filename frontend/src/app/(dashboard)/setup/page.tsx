@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAPI } from '@/hooks/useAPI'
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/Toast'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { useModal } from '@/hooks/useModal'
 import { cn } from '@/lib/utils'
+import BillingPage from '../billing/page'
 
 export default function SetupPage() {
   const { open: showRemove, openModal: openRemove, closeModal: closeRemove } = useModal()
@@ -23,9 +24,6 @@ export default function SetupPage() {
   
   const teamAPI = useAPI() as any
   const { data: teamData, get: getTeam, loading: teamLoading } = teamAPI
-  
-  const planAPI = useAPI() as any
-  const { data: plans, get: getPlans, loading: planLoading } = planAPI
   
   const keyAPI = useAPI() as any
   const { data: keys, get: getKeys, loading: keyLoading } = keyAPI
@@ -44,7 +42,6 @@ export default function SetupPage() {
   useEffect(() => {
     if (tab === 'profile') getProfile('/settings/profile')
     if (tab === 'team') getTeam('/settings/team')
-    if (tab === 'billing') getPlans('/payments/plans')
     if (tab === 'api') getKeys('/settings/api-keys')
   }, [tab])
 
@@ -130,7 +127,6 @@ export default function SetupPage() {
   }
 
   const members = teamData?.members || []
-  const planList = plans?.plans || []
   const keyList = keys?.api_keys || []
 
   return (
@@ -220,36 +216,7 @@ export default function SetupPage() {
         )}
 
         {tab === 'billing' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-5">
-            {planLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="rounded-xl border border-default bg-surface p-4 lg:p-6 space-y-4">
-                  <Skeleton className="h-6 w-24 mx-auto rounded" />
-                  <Skeleton className="h-10 w-32 mx-auto rounded" />
-                  <div className="space-y-2">
-                    {Array.from({ length: 4 }).map((_, j) => (
-                      <Skeleton key={j} className="h-4 w-full rounded" />
-                    ))}
-                  </div>
-                  <Skeleton className="h-10 w-full rounded-lg" />
-                </div>
-              ))
-            ) : planList.length === 0 ? (
-              <EmptyPlans />
-            ) : (
-              planList.map((p: any) => (
-                <Card key={p.id} className={`p-4 lg:p-6 text-center ${p.is_popular ? 'border-2 border-noant-sky shadow-sky' : ''}`}>
-                  {p.is_popular && <span className="inline-block px-3 py-1 bg-noant-sky text-white text-xs font-semibold rounded-full -mt-8 mb-4">Most popular</span>}
-                  <p className="text-xl lg:text-2xl font-bold text-primary mb-1">{p.name}</p>
-                  <p className="text-2xl lg:text-3xl font-bold text-primary mb-4">₦{p.price_ngn.toLocaleString()}<span className="text-base font-normal text-secondary">/month</span></p>
-                  <ul className="text-left space-y-2 mb-6">
-                    {p.features.map((f: string, i: number) => <li key={i} className="text-sm text-secondary">✓ {f}</li>)}
-                  </ul>
-                  <Button variant={p.is_popular ? 'accent' : 'primary'} className="w-full">{p.price_ngn === 0 ? 'Current' : 'Upgrade'}</Button>
-                </Card>
-              ))
-            )}
-          </div>
+          <BillingPage />
         )}
 
         {tab === 'api' && (
@@ -361,14 +328,6 @@ function EmptyTeam() {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center px-4">
       <p className="text-secondary text-sm">No team members yet. Invite someone to collaborate.</p>
-    </div>
-  )
-}
-
-function EmptyPlans() {
-  return (
-    <div className="flex flex-col items-center justify-center py-12 text-center col-span-full px-4">
-      <p className="text-secondary text-sm">No plans available.</p>
     </div>
   )
 }

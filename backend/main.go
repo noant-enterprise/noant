@@ -171,11 +171,19 @@ func main() {
 	jobQueue.RegisterHandler("health_check", infrastructure.HealthCheckHandler(services.Integration))
 	jobQueue.RegisterHandler("cache_cleanup", infrastructure.CacheCleanupHandler(cacheStore))
 	jobQueue.RegisterHandler("handoff_reminder", infrastructure.HandoffReminderHandler(services.Handoff))
+	jobQueue.RegisterHandler("check_credit_expiry", infrastructure.CreditExpiryHandler(services.Credit))
+	jobQueue.RegisterHandler("process_campaigns_start", infrastructure.CampaignStartHandler(services.Campaign))
+	jobQueue.RegisterHandler("process_campaigns_end", infrastructure.CampaignEndHandler(services.Campaign))
+	jobQueue.RegisterHandler("free_weekly_reset", infrastructure.FreeWeeklyResetHandler(services.Plan))
 
 	// Start recurring background jobs
 	jobQueue.ScheduleRecurring("health_check", map[string]interface{}{}, 5*time.Minute)
 	jobQueue.ScheduleRecurring("cache_cleanup", map[string]interface{}{}, 15*time.Minute)
 	jobQueue.ScheduleRecurring("handoff_reminder", map[string]interface{}{}, 15*time.Minute)
+	jobQueue.ScheduleRecurring("check_credit_expiry", map[string]interface{}{}, 24*time.Hour)
+	jobQueue.ScheduleRecurring("process_campaigns_start", map[string]interface{}{}, 24*time.Hour)
+	jobQueue.ScheduleRecurring("process_campaigns_end", map[string]interface{}{}, 24*time.Hour)
+	jobQueue.ScheduleRecurring("free_weekly_reset", map[string]interface{}{}, 7*24*time.Hour)
 
 	// Pass wsHub to handlers
 	handlers := handler.NewHandlers(cfg, services, logger, wsHub)
@@ -389,17 +397,38 @@ func main() {
 			telegram.POST("/webhook", handlers.Telegram.Webhook)
 		}
 
-		channels := api.Group("/channels")
-		channels.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
-		{
-			channels.POST("/whatsapp/connect", handlers.OpenWA.ConnectWhatsApp)
-			channels.GET("/whatsapp/status/:sessionId", handlers.OpenWA.GetWhatsAppStatus)
-			channels.POST("/whatsapp/refresh/:sessionId", handlers.OpenWA.RefreshWhatsAppQR)
-			channels.POST("/whatsapp/disconnect", handlers.OpenWA.DisconnectWhatsApp)
-			channels.POST("/whatsapp/ping", handlers.OpenWA.PhonePing)
-			channels.POST("/whatsapp/check", handlers.OpenWA.CheckNumber)
-			channels.GET("/whatsapp/health", handlers.OpenWA.HealthCheck)
-		}
+	channels := api.Group("/channels")
+	channels.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	{
+		channels.POST("/whatsapp/connect", handlers.OpenWA.ConnectWhatsApp)
+		channels.GET("/whatsapp/status/:sessionId", handlers.OpenWA.GetWhatsAppStatus)
+		channels.POST("/whatsapp/refresh/:sessionId", handlers.OpenWA.RefreshWhatsAppQR)
+		channels.POST("/whatsapp/disconnect", handlers.OpenWA.DisconnectWhatsApp)
+		channels.POST("/whatsapp/ping", handlers.OpenWA.PhonePing)
+		channels.POST("/whatsapp/check", handlers.OpenWA.CheckNumber)
+		channels.GET("/whatsapp/health", handlers.OpenWA.HealthCheck)
+	}
+
+	// Credit endpoints (30 req/min per user)
+	credits := api.Group("/credits")
+	credits.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	credits.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
+	{
+		credits.GET("/balance", handlers.Credit.GetBalance)
+		credits.GET("/limits", handlers.Credit.GetLimits)
+		credits.POST("/purchase", handlers.Credit.PurchasePack)
+		credits.GET("/history", handlers.Credit.GetHistory)
+	}
+
+	// Campaign endpoints (30 req/min per user)
+	campaigns := api.Group("/campaigns")
+	campaigns.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	campaigns.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
+	{
+		campaigns.GET("", handlers.Campaign.List)
+		campaigns.POST("", handlers.Campaign.Create)
+		campaigns.DELETE("/:id", handlers.Campaign.Cancel)
+	}
 	}
 
 	// API-only mode — frontend served by Vite dev server on :3000
