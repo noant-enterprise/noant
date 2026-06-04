@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useAPI } from '@/hooks/useAPI'
 import { useToast } from '@/components/ui/Toast'
 import { Card, CardBody } from '@/components/ui/Card'
@@ -305,11 +306,11 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
     })
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[15000] flex items-center justify-center overflow-y-auto p-4 sm:p-6 bg-overlay backdrop-blur-sm">
       <div className="absolute inset-0" onClick={onClose} />
-      <div className="relative w-full max-w-2xl mx-auto bg-surface border border-default rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)]">
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-default shrink-0">
+      <div className="relative w-full max-w-md mx-auto bg-surface border border-default rounded-2xl shadow-2xl flex flex-col my-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-default shrink-0">
           <div>
             <h3 className="text-lg font-semibold text-primary">{item ? 'Edit Item' : 'Add Item'}</h3>
             <p className="text-xs text-secondary mt-0.5">Keep your inventory details clean and sales-ready.</p>
@@ -318,8 +319,8 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
             <X className="w-4 h-4" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="grid gap-4 p-5 sm:p-6 sm:grid-cols-2 overflow-y-auto min-h-0">
-          <div className="sm:col-span-2">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-5 overflow-y-auto">
+          <div>
             <label className="block text-xs font-medium text-secondary mb-1.5">Type</label>
             <div className="flex gap-2">
               {['product', 'service', 'package'].map(t => (
@@ -337,7 +338,7 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
             </div>
           </div>
 
-          <div className="sm:col-span-2">
+          <div>
             <label className="block text-xs font-medium text-secondary mb-1.5">Name *</label>
             <input
               type="text"
@@ -349,43 +350,45 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
             />
           </div>
 
-          <div className="sm:col-span-2">
+          <div>
             <label className="block text-xs font-medium text-secondary mb-1.5">Description</label>
             <textarea
               value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               className="w-full px-3 py-2 bg-inset border border-default rounded-xl text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-noant-sky/30 resize-none"
-              rows={2}
+              rows={3}
               placeholder="Brief description..."
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-secondary mb-1.5">Price (₦) *</label>
-            <input
-              type="number"
-              value={form.price}
-              onChange={e => setForm(f => ({ ...f, price: Number(e.target.value) }))}
-              className="w-full px-3 py-2 bg-inset border border-default rounded-xl text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-noant-sky/30"
-              min="0"
-              required
-            />
-          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Price (₦) *</label>
+              <input
+                type="number"
+                value={form.price}
+                onChange={e => setForm(f => ({ ...f, price: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-inset border border-default rounded-xl text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-noant-sky/30"
+                min="0"
+                required
+              />
+            </div>
 
-          <div>
-            <label className="block text-xs font-medium text-secondary mb-1.5">Min Price (₦)</label>
-            <input
-              type="number"
-              value={form.min_price}
-              onChange={e => setForm(f => ({ ...f, min_price: e.target.value }))}
-              className="w-full px-3 py-2 bg-inset border border-default rounded-xl text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-noant-sky/30"
-              min="0"
-              placeholder="Floor price"
-            />
+            <div>
+              <label className="block text-xs font-medium text-secondary mb-1.5">Min Price (₦)</label>
+              <input
+                type="number"
+                value={form.min_price}
+                onChange={e => setForm(f => ({ ...f, min_price: e.target.value }))}
+                className="w-full px-3 py-2 bg-inset border border-default rounded-xl text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-noant-sky/30"
+                min="0"
+                placeholder="Floor"
+              />
+            </div>
           </div>
 
           {form.type === 'product' && (
-            <div className="sm:col-span-2">
+            <div>
               <label className="block text-xs font-medium text-secondary mb-1.5">Stock Quantity</label>
               <input
                 type="number"
@@ -398,7 +401,7 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
             </div>
           )}
 
-          <div className="sm:col-span-2 flex gap-2 pt-2 shrink-0">
+          <div className="flex gap-2 pt-2 shrink-0">
             <Button type="button" variant="ghost" className="flex-1" onClick={onClose}>
               Cancel
             </Button>
@@ -408,6 +411,7 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
