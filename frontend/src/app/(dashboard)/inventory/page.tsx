@@ -306,17 +306,20 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-surface border border-default rounded-2xl w-full max-w-md p-6 shadow-xl">
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-lg font-semibold text-primary">{item ? 'Edit Item' : 'Add Item'}</h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-inset flex items-center justify-center text-tertiary hover:text-primary">
+    <div className="fixed inset-0 z-[15000] flex items-center justify-center overflow-y-auto p-4 sm:p-6 bg-overlay backdrop-blur-sm">
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative w-full max-w-2xl mx-auto bg-surface border border-default rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)]">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-default shrink-0">
+          <div>
+            <h3 className="text-lg font-semibold text-primary">{item ? 'Edit Item' : 'Add Item'}</h3>
+            <p className="text-xs text-secondary mt-0.5">Keep your inventory details clean and sales-ready.</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-inset flex items-center justify-center text-tertiary hover:text-primary hover:bg-surface-hover transition-colors" aria-label="Close">
             <X className="w-4 h-4" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
+        <form onSubmit={handleSubmit} className="grid gap-4 p-5 sm:p-6 sm:grid-cols-2 overflow-y-auto min-h-0">
+          <div className="sm:col-span-2">
             <label className="block text-xs font-medium text-secondary mb-1.5">Type</label>
             <div className="flex gap-2">
               {['product', 'service', 'package'].map(t => (
@@ -325,7 +328,7 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
                   type="button"
                   onClick={() => setForm(f => ({ ...f, type: t as 'product' | 'service' | 'package' }))}
                   className={`flex-1 py-2 rounded-xl text-xs font-medium transition-all ${
-                    form.type === t ? 'bg-noant-sky text-white' : 'bg-inset text-secondary'
+                    form.type === t ? 'bg-noant-sky text-white shadow-sm' : 'bg-inset text-secondary hover:bg-surface-hover'
                   }`}
                 >
                   {typeConfig[t]?.label || t}
@@ -333,7 +336,8 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
               ))}
             </div>
           </div>
-          <div>
+
+          <div className="sm:col-span-2">
             <label className="block text-xs font-medium text-secondary mb-1.5">Name *</label>
             <input
               type="text"
@@ -344,7 +348,8 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
               required
             />
           </div>
-          <div>
+
+          <div className="sm:col-span-2">
             <label className="block text-xs font-medium text-secondary mb-1.5">Description</label>
             <textarea
               value={form.description}
@@ -354,32 +359,33 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
               placeholder="Brief description..."
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-secondary mb-1.5">Price (₦) *</label>
-              <input
-                type="number"
-                value={form.price}
-                onChange={e => setForm(f => ({ ...f, price: Number(e.target.value) }))}
-                className="w-full px-3 py-2 bg-inset border border-default rounded-xl text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-noant-sky/30"
-                min="0"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-secondary mb-1.5">Min Price (₦)</label>
-              <input
-                type="number"
-                value={form.min_price}
-                onChange={e => setForm(f => ({ ...f, min_price: e.target.value }))}
-                className="w-full px-3 py-2 bg-inset border border-default rounded-xl text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-noant-sky/30"
-                min="0"
-                placeholder="Floor price"
-              />
-            </div>
+
+          <div>
+            <label className="block text-xs font-medium text-secondary mb-1.5">Price (₦) *</label>
+            <input
+              type="number"
+              value={form.price}
+              onChange={e => setForm(f => ({ ...f, price: Number(e.target.value) }))}
+              className="w-full px-3 py-2 bg-inset border border-default rounded-xl text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-noant-sky/30"
+              min="0"
+              required
+            />
           </div>
+
+          <div>
+            <label className="block text-xs font-medium text-secondary mb-1.5">Min Price (₦)</label>
+            <input
+              type="number"
+              value={form.min_price}
+              onChange={e => setForm(f => ({ ...f, min_price: e.target.value }))}
+              className="w-full px-3 py-2 bg-inset border border-default rounded-xl text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-noant-sky/30"
+              min="0"
+              placeholder="Floor price"
+            />
+          </div>
+
           {form.type === 'product' && (
-            <div>
+            <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-secondary mb-1.5">Stock Quantity</label>
               <input
                 type="number"
@@ -391,9 +397,14 @@ function InventoryModal({ item, onClose, onSave }: { item: InventoryItem | null;
               />
             </div>
           )}
-          <div className="flex gap-2 pt-2">
-            <Button type="button" variant="ghost" className="flex-1" onClick={onClose}>Cancel</Button>
-            <Button type="submit" className="flex-1">{item ? 'Update' : 'Create'}</Button>
+
+          <div className="sm:col-span-2 flex gap-2 pt-2 shrink-0">
+            <Button type="button" variant="ghost" className="flex-1" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" className="flex-1">
+              {item ? 'Update' : 'Create'}
+            </Button>
           </div>
         </form>
       </div>

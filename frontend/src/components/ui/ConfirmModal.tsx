@@ -141,7 +141,7 @@ export function ConfirmModal({
   return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[15000] flex items-center justify-center p-4 bg-overlay backdrop-blur-sm"
+      className="fixed inset-0 z-[15000] flex items-center justify-center overflow-y-auto p-4 sm:p-6 bg-overlay backdrop-blur-sm"
       style={{ animation: 'noantOverlayIn 200ms ease forwards' }}
       onClick={(e) => {
         if (resolvedCloseOnOverlay && e.target === overlayRef.current) onClose()
@@ -152,7 +152,7 @@ export function ConfirmModal({
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
         aria-describedby={description ? 'confirm-modal-desc' : undefined}
-        className="bg-surface rounded-xl shadow-2xl max-w-md w-full mx-4 p-5 sm:p-6 relative"
+        className="bg-surface rounded-2xl shadow-2xl max-w-md w-full mx-auto max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] p-5 sm:p-6 relative overflow-hidden flex flex-col"
         style={{ animation: 'noantModalIn 200ms ease forwards' }}
       >
         {/* Close X */}
@@ -206,7 +206,7 @@ export function ConfirmModal({
         )}
 
         {/* Buttons */}
-        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-6">
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-6 shrink-0">
           <button
             ref={cancelBtnRef}
             onClick={onClose}

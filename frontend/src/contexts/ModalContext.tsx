@@ -212,7 +212,7 @@ function ConfirmModalRenderer({
       {/* Overlay */}
       <div
         ref={overlayRef}
-        className="fixed inset-0 z-[15000] flex items-center justify-center p-4 bg-overlay backdrop-blur-sm"
+        className="fixed inset-0 z-[15000] flex items-center justify-center overflow-y-auto p-4 sm:p-6 bg-overlay backdrop-blur-sm"
         style={{ animation: 'noantOverlayIn 200ms ease forwards' }}
         onClick={(e) => {
           if (resolvedCloseOnOverlay && e.target === overlayRef.current) {
@@ -226,7 +226,7 @@ function ConfirmModalRenderer({
           aria-modal="true"
           aria-labelledby="noant-modal-title"
           aria-describedby="noant-modal-body"
-          className="bg-surface rounded-xl shadow-2xl max-w-md w-full mx-4 p-6 relative"
+          className="bg-surface rounded-2xl shadow-2xl max-w-md w-full mx-auto max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] p-6 relative overflow-hidden flex flex-col"
           style={{ animation: 'noantModalIn 200ms ease forwards' }}
         >
           {/* Close button */}
@@ -260,7 +260,7 @@ function ConfirmModalRenderer({
           </h2>
 
           {/* Body */}
-          <div id="noant-modal-body" className="text-sm text-secondary mt-2">
+          <div id="noant-modal-body" className="text-sm text-secondary mt-2 overflow-y-auto min-h-0">
             {typeof body === 'string' ? <p>{body}</p> : body}
           </div>
 
@@ -288,7 +288,7 @@ function ConfirmModalRenderer({
           )}
 
           {/* Action buttons */}
-          <div className="flex justify-end gap-3 mt-6">
+          <div className="flex justify-end gap-3 mt-6 shrink-0">
             <button
               ref={cancelBtnRef}
               onClick={onCancel}

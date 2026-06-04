@@ -32,7 +32,7 @@ function ModalPortal({
   if (!open || typeof document === 'undefined') return null
   return createPortal(
     <div
-      className="fixed inset-0 flex items-center justify-center p-4"
+      className="fixed inset-0 flex items-center justify-center overflow-y-auto p-4 sm:p-6"
       style={{ zIndex }}
     >
       <div
@@ -40,8 +40,7 @@ function ModalPortal({
         onClick={onClose}
       />
       <div
-        className={`relative w-full ${maxWidth} bg-surface border border-default rounded-2xl shadow-2xl overflow-hidden animate-slide-up flex flex-col`}
-        style={{ maxHeight: '90vh' }}
+        className={`relative w-full ${maxWidth} bg-surface border border-default rounded-2xl shadow-2xl overflow-hidden animate-slide-up flex flex-col max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)]`}
       >
         {children}
       </div>

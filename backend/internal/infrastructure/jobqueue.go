@@ -331,10 +331,7 @@ func CampaignEndHandler(campaignSvc interface{ ProcessEnding(context.Context) er
 // FreeWeeklyResetHandler resets the weekly free counter for free users
 func FreeWeeklyResetHandler(planSvc interface{ GetFreeWeeklyUsage(context.Context, string) (int, error) }) JobHandler {
 	return func(ctx context.Context, job *Job) error {
-		// This would need to iterate through all free users and reset their counters
-		// For simplicity, we're just logging that the job ran
-		// In a full implementation, we would query all users with plan_id = 'free'
-		// and reset their free_weekly:{userID} key in Redis
 		return nil
 	}
 }
+

@@ -47,6 +47,8 @@ type Services struct {
 	Credit       *CreditService
 	Plan         *PlanService
 	Campaign     *CampaignService
+	DBManager    *DBManagerService
+	Background   *BackgroundWorker
 }
 
 func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService, polarSvc *PolarService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
@@ -59,6 +61,8 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 	creditSvc := NewCreditService(cfg, repos, redis, logger)
 	planSvc := NewPlanService(cfg, repos, redis, logger, creditSvc)
 	campaignSvc := NewCampaignService(cfg, repos, redis, logger, creditSvc)
+	dbManagerSvc := NewDBManagerService(repos, logger)
+	bgWorker := NewBackgroundWorker(logger, dbManagerSvc, 3)
 	return &Services{
 		Auth:         NewAuthService(cfg, repos.User, redis, logger, email),
 		Chat:         chatSvc,
@@ -78,6 +82,8 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 		Credit:       creditSvc,
 		Plan:         planSvc,
 		Campaign:     campaignSvc,
+		DBManager:    dbManagerSvc,
+		Background:   bgWorker,
 	}
 }
 
@@ -214,6 +220,20 @@ func (b *AIBrain) classifyIntent(ctx context.Context, query string) string {
 	for _, t := range handoffTriggers {
 		if strings.Contains(lower, t) {
 			return "handoff"
+		}
+	}
+
+	salesTriggers := []string{"price", "cost", "how much", "available", "do you have", "show me", "recommend", "suggest", "discount", "cheaper", "stock", "product", "service", "package", "what do you sell"}
+	for _, t := range salesTriggers {
+		if strings.Contains(lower, t) {
+			return "sales"
+		}
+	}
+
+	supportTriggers := []string{"complaint", "problem", "issue", "refund", "return", "help", "support", "order status", "not working", "broken", "delay"}
+	for _, t := range supportTriggers {
+		if strings.Contains(lower, t) {
+			return "support"
 		}
 	}
 
@@ -429,14 +449,36 @@ func (b *AIBrain) localPlatformAnswer(userID, query string, qaPairs []domain.QAP
 	// Training data always takes priority
 	if len(qaPairs) > 0 {
 		first := qaPairs[0]
+		content := strings.TrimSpace(first.Answer)
+		if content == "" {
+			content = "Let me know if you want me to explain anything else."
+		} else if len(strings.Fields(query)) > 3 && !strings.HasSuffix(content, "?") {
+			content += " If you want, I can also help you with the next best option."
+		}
 		return &AIResponse{
-			Content:    first.Answer,
+			Content:    content,
 			Confidence: 0.9,
 			MatchedQA:  &first.ID,
+			Source:     "training",
 		}
 	}
 	// Inventory is second priority
 	if len(inventory) > 0 {
+		if len(inventory) > 1 && isBroadInventoryQuery(query) && !isNegotiation {
+			var lines []string
+			for i, item := range inventory {
+				if i >= 3 {
+					break
+				}
+				lines = append(lines, "- "+inventorySummaryLine(item))
+			}
+			return &AIResponse{
+				Content:    fmt.Sprintf("I found a few good options for you:\n%s\n\nWhich one should I break down for you?", strings.Join(lines, "\n")),
+				Confidence: 0.9,
+				Source:     "inventory",
+			}
+		}
+
 		item := inventory[0]
 		stock := ""
 		if item.StockQuantity != nil {
@@ -451,23 +493,27 @@ func (b *AIBrain) localPlatformAnswer(userID, query string, qaPairs []domain.QAP
 			if item.MinPrice != nil && *item.MinPrice > 0 && *item.MinPrice < item.Price {
 				discount := item.Price - *item.MinPrice
 				return &AIResponse{
-					Content:    fmt.Sprintf("I can do ₦%.0f for you — that's ₦%.0f off! Best price I can offer. %s", *item.MinPrice, discount, stock),
+					Content:    fmt.Sprintf("I can do ₦%.0f for you - that's ₦%.0f off. Best price I can offer. %s", *item.MinPrice, discount, stock),
 					Confidence: 0.9,
+					Source:     "inventory",
 				}
 			}
 			return &AIResponse{
 				Content:    fmt.Sprintf("₦%.0f is already my best price, o! %s", item.Price, stock),
 				Confidence: 0.9,
+				Source:     "inventory",
 			}
 		}
 		// Normal product presentation
-		answer := fmt.Sprintf("%s — ₦%.0f.%s", item.Name, item.Price, stock)
+		answer := fmt.Sprintf("%s - ₦%.0f.%s", item.Name, item.Price, stock)
 		if item.Description != "" {
-			answer += " " + item.Description
+			answer += " " + trimTurnText(item.Description, 120)
 		}
+		answer += " " + softCloseLine(query)
 		return &AIResponse{
 			Content:    answer,
 			Confidence: 0.9,
+			Source:     "inventory",
 		}
 	}
 	// Nothing found
@@ -525,8 +571,9 @@ func (b *AIBrain) findSimilarForUnknown(ctx context.Context, userID string, quer
 }
 
 // handleSalesMode searches inventory and builds a sales-oriented response
-func (b *AIBrain) handleSalesMode(ctx context.Context, userID string, query string, language string) (*AIResponse, error) {
+func (b *AIBrain) handleSalesMode(ctx context.Context, userID string, conversation *domain.Conversation, query string, language string, history []MessageTurn) (*AIResponse, error) {
 	inventory := b.searchInventoryContext(ctx, userID, query, 5)
+	user, _ := b.repos.User.GetByID(ctx, userID)
 	var contextMessages []MessageTurn
 	if len(inventory) > 0 {
 		contextMessages = append(contextMessages, MessageTurn{
@@ -554,7 +601,13 @@ func (b *AIBrain) handleSalesMode(ctx context.Context, userID string, query stri
 			Content: "CRITICAL: No matching products or services found in inventory. Do NOT invent products or prices. Offer to connect the customer with a human agent.",
 		})
 	}
-	user, _ := b.repos.User.GetByID(ctx, userID)
+	contextMessages = append(contextMessages, b.buildSalesCoachMessage(conversation, user, query, history, inventory, nil))
+	contextMessages = append(contextMessages, salesVoiceExamplesMessage(query, inventory))
+	contextMessages = append(contextMessages, MessageTurn{
+		Role:    "system",
+		Content: salesReplyStyleLine(query),
+	})
+	contextMessages = append(contextMessages, history...)
 	ownerName := ""
 	ownerWhatsApp := ""
 	if user != nil {
@@ -597,15 +650,12 @@ Be warm, short, and natural.`, user.CompanyName, ownerName, ownerName, ownerWhat
 		if len(inventory) > 0 {
 			var items []string
 			for _, item := range inventory[:min(3, len(inventory))] {
-				stock := ""
-				if item.StockQuantity != nil {
-					stock = fmt.Sprintf(" (%d in stock)", *item.StockQuantity)
-				}
-				items = append(items, fmt.Sprintf("• %s — ₦%.0f%s", item.Name, item.Price, stock))
+				items = append(items, "- "+inventorySummaryLine(item))
 			}
 			return &AIResponse{
-				Content:    fmt.Sprintf("Here's what we have:\n%s\n\nAsk me about any item for more details!", strings.Join(items, "\n")),
+				Content:    fmt.Sprintf("Here's what we have:\n%s\n\nAsk me about any item for more details.", strings.Join(items, "\n")),
 				Confidence: 0.8,
+				Source:     "inventory",
 			}, nil
 		}
 		return &AIResponse{
@@ -613,11 +663,13 @@ Be warm, short, and natural.`, user.CompanyName, ownerName, ownerName, ownerWhat
 			Confidence: 0,
 			Escalate:   true,
 			Reason:     "AI service unavailable",
+			Source:     "fallback",
 		}, nil
 	}
 	return &AIResponse{
 		Content:    response,
 		Confidence: confidence,
+		Source:     "groq",
 	}, nil
 }
 
@@ -719,10 +771,11 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	startTime := time.Now()
 	conv, _ := b.repos.Conversation.GetByID(ctx, conversationID)
 	userID := ""
+	var user *domain.User
 	if conv != nil {
 		userID = conv.UserID
 	}
- 
+
 	// Request trace
 	traceID := fmt.Sprintf("trace_%d", time.Now().UnixNano())
 	channel := ""
@@ -730,14 +783,23 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		channel = conv.Channel
 	}
 	b.logger.Info("AI request started", "traceID", traceID, "userID", userID, "query", userQuery, "channel", channel)
+	recentTurns := b.recentConversationTurns(ctx, conversationID, userQuery, 8)
+	finalize := func(resp *AIResponse) (*AIResponse, error) {
+		if resp != nil {
+			_ = b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content)
+		}
+		return resp, nil
+	}
 
 	// Plan limit check (before intent classification)
 	if userID != "" {
-		user, _ := b.repos.User.GetByID(ctx, userID)
+		if user == nil {
+			user, _ = b.repos.User.GetByID(ctx, userID)
+		}
 		if user != nil {
 			canRespond, reason, _ := b.planSvc.CanGenerateResponse(ctx, userID, user.PlanID)
 			if !canRespond {
-				return &AIResponse{Content: reason, Source: "plan_limit"}, nil
+				return finalize(&AIResponse{Content: reason, Source: "plan_limit"})
 			}
 		}
 	}
@@ -745,10 +807,10 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	// Short greetings should get a local response instead of burning an AI call.
 	if b.isGreetingQuery(userQuery) {
 		b.logger.Info("AI request completed (greeting)", "traceID", traceID, "duration", time.Since(startTime))
-		return &AIResponse{
+		return finalize(&AIResponse{
 			Content:    "Hi! How can I help you today?",
 			Confidence: 0.98,
-		}, nil
+		})
 	}
 
 	// LLM-based intent classification (with keyword fallback)
@@ -759,13 +821,19 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	if intent == "handoff" {
 		resp, err := b.handleHandoff(ctx, conversationID, userID, userQuery)
 		b.logger.Info("AI request completed (handoff)", "traceID", traceID, "duration", time.Since(startTime))
+		if err == nil && resp != nil {
+			_ = b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content)
+		}
 		return resp, err
 	}
 
 	// Handle sales intent — search inventory first
 	if intent == "sales" {
-		resp, err := b.handleSalesMode(ctx, userID, userQuery, language)
+		resp, err := b.handleSalesMode(ctx, userID, conv, userQuery, language, recentTurns)
 		b.logger.Info("AI request completed (sales)", "traceID", traceID, "duration", time.Since(startTime))
+		if err == nil && resp != nil {
+			_ = b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content)
+		}
 		return resp, err
 	}
 
@@ -783,7 +851,7 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		local.Content = validatedContent
 		local.Confidence = validatedConf
 		b.logger.Info("AI request completed (local)", "traceID", traceID, "duration", time.Since(startTime), "confidence", local.Confidence)
-		return local, nil
+		return finalize(local)
 	}
 
 	// No training data or inventory match — escalate
@@ -837,12 +905,12 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	}
 
 	b.logger.Info("AI request completed (escalated)", "traceID", traceID, "duration", time.Since(startTime), "similarFound", len(similar))
-	return &AIResponse{
+	return finalize(&AIResponse{
 		Content:    escalationMsg,
 		Confidence: 0.3,
 		Escalate:   true,
 		Reason:     "No matching training data or inventory",
-	}, nil
+	})
 }
 
 type AIResponse struct {
@@ -1199,6 +1267,15 @@ type ChatService struct {
 	logger   *infrastructure.Logger
 	openwa   *OpenWAService
 	telegram *TelegramService
+	replyMu  sync.Mutex
+	replies  map[string]*replyGateState
+}
+
+type replyGateState struct {
+	lastKey     string
+	inFlightKey string
+	inFlightAt  time.Time
+	lastReplyAt time.Time
 }
 
 func NewChatService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, aiBrain *AIBrain, logger *infrastructure.Logger, openwa *OpenWAService, telegram *TelegramService) *ChatService {
@@ -1210,6 +1287,71 @@ func NewChatService(cfg *config.Config, repos *repository.Repositories, redis *i
 		logger:   logger,
 		openwa:   openwa,
 		telegram: telegram,
+		replies:  make(map[string]*replyGateState),
+	}
+}
+
+func normalizeReplyKey(message string) string {
+	message = strings.ToLower(strings.TrimSpace(message))
+	if message == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(message), " ")
+}
+
+func (s *ChatService) beginAIReply(conversationID, message string) bool {
+	key := normalizeReplyKey(message)
+	if key == "" {
+		return true
+	}
+
+	s.replyMu.Lock()
+	defer s.replyMu.Unlock()
+
+	state, ok := s.replies[conversationID]
+	if !ok {
+		state = &replyGateState{}
+		s.replies[conversationID] = state
+	}
+
+	now := time.Now()
+	const cooldown = 5 * time.Second
+
+	if state.inFlightKey == key && now.Sub(state.inFlightAt) < cooldown {
+		return false
+	}
+	if state.lastKey == key && now.Sub(state.lastReplyAt) < cooldown {
+		return false
+	}
+
+	state.inFlightKey = key
+	state.inFlightAt = now
+	state.lastKey = key
+	return true
+}
+
+func (s *ChatService) completeAIReply(conversationID string, message string) {
+	key := normalizeReplyKey(message)
+	s.replyMu.Lock()
+	defer s.replyMu.Unlock()
+
+	state, ok := s.replies[conversationID]
+	if !ok {
+		state = &replyGateState{}
+		s.replies[conversationID] = state
+	}
+
+	state.inFlightKey = ""
+	state.lastKey = key
+	state.lastReplyAt = time.Now()
+}
+
+func (s *ChatService) abortAIReply(conversationID string) {
+	s.replyMu.Lock()
+	defer s.replyMu.Unlock()
+
+	if state, ok := s.replies[conversationID]; ok {
+		state.inFlightKey = ""
 	}
 }
 
@@ -1296,6 +1438,12 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, cust
 			return nil, nil, err
 		}
 	}
+	if !s.beginAIReply(conv.ID, message) {
+		s.logger.Info("Skipping duplicate AI reply", "conversationID", conv.ID, "channel", channel)
+		return conv, nil, nil
+	}
+	defer s.abortAIReply(conv.ID)
+
 	aiResp, err := s.aiBrain.GenerateResponse(ctx, conv.ID, message, "en")
 	if err != nil {
 		s.logger.Error("AI generation failed", "error", err)
@@ -1326,7 +1474,105 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, cust
 	if aiResp.Escalate {
 		_ = s.repos.Conversation.UpdateStatus(ctx, conv.ID, "escalated", userID)
 	}
+	s.completeAIReply(conv.ID, message)
 	return conv, aiMsg, nil
+}
+
+type WhatsAppIdentity struct {
+	Name    string
+	Phone   string
+	Avatar  string
+	Methods []string
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func cleanWhatsAppID(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	raw = strings.TrimPrefix(raw, "waid:")
+	return CleanPhoneNumber(raw)
+}
+
+func (s *ChatService) ResolveWhatsAppIdentity(ctx context.Context, userID string, sessionID string, msg *OpenWAMessageData) (*WhatsAppIdentity, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("message is required")
+	}
+
+	identity := &WhatsAppIdentity{
+		Phone: cleanWhatsAppID(msg.From),
+	}
+
+	// Method 1: direct sender payload fields from the webhook.
+	identity.Methods = append(identity.Methods, "sender_payload")
+	identity.Name = firstNonEmpty(msg.Sender.Pushname, msg.Sender.Name, msg.Sender.FormattedName, msg.Sender.ShortName)
+	identity.Avatar = firstNonEmpty(msg.Sender.ProfilePicThumbObj.Eurl)
+
+	// Method 2: sender ID fallback from the payload.
+	senderID := cleanWhatsAppID(msg.Sender.ID)
+	if senderID != "" {
+		identity.Methods = append(identity.Methods, "sender_id")
+		if identity.Phone == "" {
+			identity.Phone = senderID
+		}
+		if identity.Name == "" {
+			identity.Name = senderID
+		}
+	}
+
+	// Method 3: use the raw WhatsApp chat ID as the phone number fallback.
+	if identity.Phone == "" {
+		identity.Methods = append(identity.Methods, "chat_id")
+		identity.Phone = cleanWhatsAppID(msg.From)
+	}
+
+	// Method 4: OpenWA contacts API using the chat ID.
+	if s.openwa != nil && sessionID != "" && identity.Phone != "" {
+		if contact, err := s.openwa.GetContactInfo(sessionID, FormatContactID(identity.Phone)); err == nil && contact != nil {
+			identity.Methods = append(identity.Methods, "contact_lookup_from")
+			identity.Name = firstNonEmpty(identity.Name, contact.Pushname, contact.Name)
+			identity.Avatar = firstNonEmpty(identity.Avatar, contact.ProfilePicUrl)
+			if identity.Phone == "" {
+				identity.Phone = cleanWhatsAppID(contact.Number)
+			}
+		}
+	}
+
+	// Method 5: OpenWA contacts API using the sender ID if it differs.
+	if s.openwa != nil && sessionID != "" && senderID != "" && senderID != identity.Phone {
+		if contact, err := s.openwa.GetContactInfo(sessionID, FormatContactID(senderID)); err == nil && contact != nil {
+			identity.Methods = append(identity.Methods, "contact_lookup_sender")
+			identity.Name = firstNonEmpty(identity.Name, contact.Pushname, contact.Name)
+			identity.Avatar = firstNonEmpty(identity.Avatar, contact.ProfilePicUrl)
+		}
+	}
+
+	// Method 6: existing conversation fallback, in case this is a returning customer.
+	if identity.Phone != "" && s.repos != nil {
+		if existing, err := s.repos.Conversation.FindActiveByCustomer(ctx, userID, identity.Phone, "whatsapp"); err == nil && existing != nil {
+			identity.Methods = append(identity.Methods, "existing_conversation")
+			identity.Name = firstNonEmpty(identity.Name, existing.CustomerName)
+			identity.Avatar = firstNonEmpty(identity.Avatar, existing.CustomerAvatar)
+		}
+	}
+
+	if identity.Name == "" {
+		identity.Name = identity.Phone
+	}
+	if identity.Name == "" {
+		identity.Name = "WhatsApp User"
+	}
+
+	return identity, nil
 }
 
 func (s *ChatService) ListConversations(ctx context.Context, userID string, status string, page, limit int) ([]domain.Conversation, int, error) {
@@ -1560,6 +1806,12 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, conversationID, s
 }
 
 func (s *ChatService) GenerateAIResponse(ctx context.Context, conversationID, userMessage string) (*domain.Message, error) {
+	if !s.beginAIReply(conversationID, userMessage) {
+		s.logger.Info("Skipping duplicate AI reply", "conversationID", conversationID)
+		return nil, nil
+	}
+	defer s.abortAIReply(conversationID)
+
 	aiResp, err := s.aiBrain.GenerateResponse(ctx, conversationID, userMessage, "en")
 	if err != nil {
 		s.logger.Error("AI generation failed", "error", err)
@@ -1588,6 +1840,7 @@ func (s *ChatService) GenerateAIResponse(ctx context.Context, conversationID, us
 			_ = s.repos.Conversation.UpdateStatus(ctx, conversationID, "escalated", conv.UserID)
 		}
 	}
+	s.completeAIReply(conversationID, userMessage)
 	return aiMsg, nil
 }
 

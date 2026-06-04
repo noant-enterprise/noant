@@ -81,7 +81,7 @@ export function Modal({ open, onClose, title, description, children, size = 'md'
   return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-overlay backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4 sm:p-6 bg-overlay backdrop-blur-sm animate-fade-in"
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose()
       }}
@@ -92,12 +92,12 @@ export function Modal({ open, onClose, title, description, children, size = 'md'
         aria-labelledby={title ? 'modal-primitive-title' : undefined}
         aria-describedby={description ? 'modal-primitive-desc' : undefined}
         className={cn(
-          'w-full bg-surface border border-default rounded-2xl shadow-2xl animate-toast-in overflow-hidden',
+          'w-full max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] bg-surface border border-default rounded-2xl shadow-2xl animate-toast-in overflow-hidden flex flex-col min-w-0',
           sizeClasses[size]
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-default">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-default shrink-0">
           <div>
             {title && (
               <h3 id="modal-primitive-title" className="text-base font-semibold text-primary">
@@ -123,7 +123,7 @@ export function Modal({ open, onClose, title, description, children, size = 'md'
         </div>
 
         {/* Body */}
-        <div className="px-5 py-4">
+        <div className="px-5 py-4 overflow-y-auto min-h-0">
           {children}
         </div>
       </div>

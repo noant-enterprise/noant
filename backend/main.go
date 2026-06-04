@@ -177,6 +177,59 @@ func main() {
 	jobQueue.RegisterHandler("process_campaigns_start", infrastructure.CampaignStartHandler(services.Campaign))
 	jobQueue.RegisterHandler("process_campaigns_end", infrastructure.CampaignEndHandler(services.Campaign))
 	jobQueue.RegisterHandler("free_weekly_reset", infrastructure.FreeWeeklyResetHandler(services.Plan))
+	dbCleanupCfg := service.DefaultCleanupConfig()
+	jobQueue.RegisterHandler("db_cleanup_all", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.RunAllCleanups(ctx, dbCleanupCfg)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_old_conversations", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupOldResolvedConversations(ctx, dbCleanupCfg.OldConversationsDays)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_abandoned", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupAbandonedConversations(ctx, dbCleanupCfg.AbandonedConversationsDays)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_orphaned_msgs", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupOrphanedMessages(ctx)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_unknown_questions", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupStaleUnknownQuestions(ctx, dbCleanupCfg.UnknownQuestionsDays)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_expired_handoffs", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupExpiredHandoffs(ctx, dbCleanupCfg.HandoffsDays)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_audit_logs", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupOldAuditLogs(ctx, dbCleanupCfg.AuditLogsDays)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_notifications", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupOldNotifications(ctx, dbCleanupCfg.NotificationsDays)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_integrations", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupStaleInactiveIntegrations(ctx, dbCleanupCfg.InactiveIntegrationDays)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_expired_trials", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupExpiredTrials(ctx, dbCleanupCfg.ExpiredTrialDays)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_expired_credits", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupExpiredCredits(ctx)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_credit_purchases", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupStaleCreditPurchases(ctx, dbCleanupCfg.CreditPurchasesDays)
+		return nil
+	})
+	jobQueue.RegisterHandler("db_cleanup_campaigns", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupCompletedCampaigns(ctx, dbCleanupCfg.CompletedCampaignsDays)
+		return nil
+	})
 
 	// Start recurring background jobs
 	jobQueue.ScheduleRecurring("health_check", map[string]interface{}{}, 5*time.Minute)
@@ -186,6 +239,10 @@ func main() {
 	jobQueue.ScheduleRecurring("process_campaigns_start", map[string]interface{}{}, 24*time.Hour)
 	jobQueue.ScheduleRecurring("process_campaigns_end", map[string]interface{}{}, 24*time.Hour)
 	jobQueue.ScheduleRecurring("free_weekly_reset", map[string]interface{}{}, 7*24*time.Hour)
+	jobQueue.ScheduleRecurring("db_cleanup_all", map[string]interface{}{}, 6*time.Hour)
+	jobQueue.ScheduleRecurring("db_cleanup_expired_credits", map[string]interface{}{}, 1*time.Hour)
+	jobQueue.ScheduleRecurring("db_cleanup_orphaned_msgs", map[string]interface{}{}, 1*time.Hour)
+	jobQueue.ScheduleRecurring("db_cleanup_expired_handoffs", map[string]interface{}{}, 30*time.Minute)
 
 	// Pass wsHub to handlers
 	handlers := handler.NewHandlers(cfg, services, logger, wsHub)
@@ -431,6 +488,26 @@ func main() {
 		campaigns.GET("", handlers.Campaign.List)
 		campaigns.POST("", handlers.Campaign.Create)
 		campaigns.DELETE("/:id", handlers.Campaign.Cancel)
+	}
+
+	// DB Manager endpoints (admin/owner only)
+	dbManager := api.Group("/db-manager")
+	dbManager.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	{
+		dbManager.GET("/tasks", handlers.DBManager.ListCleanupTasks)
+		dbManager.GET("/config", handlers.DBManager.GetCleanupConfig)
+		dbManager.POST("/run-all", handlers.DBManager.RunAllCleanups)
+		dbManager.POST("/run", handlers.DBManager.RunCleanupTask)
+	}
+
+	// Background Worker endpoints (admin/owner only)
+	background := api.Group("/background")
+	background.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	{
+		background.POST("/submit", handlers.Background.SubmitTask)
+		background.GET("/tasks", handlers.Background.ListTasks)
+		background.GET("/tasks/:id", handlers.Background.GetTaskStatus)
+		background.GET("/stats", handlers.Background.WorkerStats)
 	}
 	}
 	// Serve frontend static files if the static directory exists

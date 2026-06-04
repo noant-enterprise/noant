@@ -37,6 +37,8 @@ type Handlers struct {
 	Telegram     *TelegramHandler
 	Credit       *CreditHandler
 	Campaign     *CampaignHandler
+	DBManager    *DBManagerHandler
+	Background   *BackgroundHandler
 }
 
 func NewHandlers(cfg *config.Config, services *service.Services, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
@@ -58,6 +60,8 @@ func NewHandlers(cfg *config.Config, services *service.Services, logger *infrast
 		Telegram:     NewTelegramHandler(services.Integration, logger),
 		Credit:       NewCreditHandler(services.Credit, services.Plan, logger),
 		Campaign:     NewCampaignHandler(services.Campaign, logger),
+		DBManager:    NewDBManagerHandler(services.DBManager, logger),
+		Background:   NewBackgroundHandler(services.Background, logger),
 	}
 }
 
@@ -441,6 +445,19 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		if err != nil {
 			h.logger.Error("AI generation failed in goroutine", "error", err)
 			// Remove typing indicator on error
+			if h.wsHub != nil {
+				h.wsHub.BroadcastMessage(WebSocketMessage{
+					ConversationID: id,
+					Type:           "typing_indicator",
+					Data: map[string]interface{}{
+						"conversation_id": id,
+						"is_typing":       false,
+					},
+				})
+			}
+			return
+		}
+		if aiMsg == nil {
 			if h.wsHub != nil {
 				h.wsHub.BroadcastMessage(WebSocketMessage{
 					ConversationID: id,
@@ -1623,9 +1640,9 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 	}
 
 	chatID := msg.From
-	customerPhone := service.CleanPhoneNumber(chatID)
 	content := msg.Body
 
+	customerPhone := service.CleanPhoneNumber(chatID)
 	h.logger.Info("OpenWA incoming message", "from", customerPhone, "body", content)
 
 	integration, err := h.chat.GetWhatsAppIntegrationBySessionID(c.Request.Context(), event.SessionID)
@@ -1643,15 +1660,35 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 		return
 	}
 
-	// Extract customer name and avatar from message sender details
-	customerName := msg.Sender.Pushname
-	if customerName == "" {
-		customerName = msg.Sender.Name
+	// Resolve identity using multiple fallbacks so a partial payload still becomes a usable customer profile.
+	identity, err := h.chat.ResolveWhatsAppIdentity(c.Request.Context(), userID, event.SessionID, msg)
+	if err != nil {
+		h.logger.Warn("WhatsApp identity resolution failed, using basic fallback", "error", err)
+	}
+	customerName := customerPhone
+	customerAvatar := ""
+	if identity != nil {
+		if identity.Name != "" {
+			customerName = identity.Name
+		}
+		if identity.Phone != "" {
+			customerPhone = identity.Phone
+		}
+		if identity.Avatar != "" {
+			customerAvatar = identity.Avatar
+		}
+		h.logger.Info("WhatsApp identity resolved", "methods", identity.Methods, "name", customerName, "phone", customerPhone, "avatar", customerAvatar != "")
+	} else {
+		if msg.Sender.Pushname != "" {
+			customerName = msg.Sender.Pushname
+		} else if msg.Sender.Name != "" {
+			customerName = msg.Sender.Name
+		}
+		customerAvatar = msg.Sender.ProfilePicThumbObj.Eurl
 	}
 	if customerName == "" {
 		customerName = customerPhone
 	}
-	customerAvatar := msg.Sender.ProfilePicThumbObj.Eurl
 
 	// Process through chat service (same flow as web widget)
 	conv, aiResp, err := h.chat.DirectChat(c.Request.Context(), userID, customerName, customerPhone, content, "whatsapp", customerAvatar)
@@ -1876,7 +1913,6 @@ func (h *OpenWAHandler) CheckNumber(c *gin.Context) {
 	})
 }
 
-
 // ========== SIMPLIFIED WHATSAPP CHANNEL ENDPOINTS ==========
 
 // ConnectWhatsApp creates an OpenWA session and returns QR code
@@ -2008,7 +2044,7 @@ func (h *OpenWAHandler) GetWhatsAppStatus(c *gin.Context) {
 	// Long poll: if not connected, not expired, not failed, not disconnected, not force-connecting, and poll is true, wait up to 25 seconds for updates
 	if !isConnected && status != "expired" && status != "failed" && status != "disconnected" && !forceConnect && poll {
 		h.logger.Info("Long-polling WhatsApp status starting", "sessionID", sessionID, "initialStatus", status)
-		
+
 		timeout := time.After(25 * time.Second)
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
@@ -2229,8 +2265,8 @@ func (h *CreditHandler) GetBalance(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"balance":     balance.Balance,
-		"expires_at":  balance.ExpiresAt,
+		"balance":      balance.Balance,
+		"expires_at":   balance.ExpiresAt,
 		"last_updated": balance.LastUpdatedAt,
 	})
 }

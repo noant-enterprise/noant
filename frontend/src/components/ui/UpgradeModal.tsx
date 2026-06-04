@@ -52,7 +52,7 @@ export function UpgradeModal({
   return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[15000] flex items-center justify-center p-4 bg-overlay backdrop-blur-sm"
+      className="fixed inset-0 z-[15000] flex items-center justify-center overflow-y-auto p-4 sm:p-6 bg-overlay backdrop-blur-sm"
       style={{ animation: 'noantOverlayIn 200ms ease forwards' }}
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose()
@@ -61,7 +61,7 @@ export function UpgradeModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="bg-surface border border-default rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6 relative overflow-hidden"
+        className="bg-surface border border-default rounded-2xl shadow-2xl max-w-md w-full mx-auto max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] p-6 relative overflow-hidden flex flex-col"
         style={{ animation: 'noantModalIn 200ms ease forwards' }}
       >
         {/* Glow decoration */}
@@ -90,7 +90,7 @@ export function UpgradeModal({
         </p>
 
         {/* Premium Features List */}
-        <div className="mt-5 p-4 rounded-xl bg-inset/50 border border-default">
+        <div className="mt-5 p-4 rounded-xl bg-inset/50 border border-default overflow-y-auto min-h-0">
           <p className="text-xs font-bold text-primary mb-3 uppercase tracking-wide">Included in Pro plan:</p>
           <ul className="space-y-2.5">
             {featureList.map((feature, i) => (

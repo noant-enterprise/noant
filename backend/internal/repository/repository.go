@@ -1769,3 +1769,120 @@ func (r *CampaignRepository) UpdateStatus(ctx context.Context, id string, status
 		status, id)
 	return err
 }
+
+// ========== CLEANUP REPOSITORY METHODS ==========
+
+func (r *ConversationRepository) CleanupOldResolved(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM conversations WHERE status = 'resolved' AND updated_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *ConversationRepository) CleanupAbandoned(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE conversations SET status = 'resolved', resolved_at = NOW()
+		 WHERE status = 'active' AND updated_at < NOW() - INTERVAL ? DAY
+		 AND id NOT IN (SELECT DISTINCT conversation_id FROM messages WHERE created_at > NOW() - INTERVAL ? DAY)`,
+		days, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *MessageRepository) CleanupOrphaned(ctx context.Context) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM messages WHERE conversation_id NOT IN (SELECT id FROM conversations)`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *UnknownQuestionRepository) CleanupStale(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM unknown_questions WHERE status IN ('trained', 'ignored') AND created_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *HandoffRepository) CleanupExpired(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE handoffs SET status = 'expired', updated_at = NOW()
+		 WHERE status = 'pending' AND created_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *AuditRepository) CleanupOld(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *NotificationRepository) CleanupOld(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM notifications WHERE created_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *IntegrationRepository) CleanupStaleInactive(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM integrations WHERE status = 'inactive' AND updated_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *UserRepository) CleanupExpiredTrials(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE users SET is_active = FALSE
+		 WHERE plan_id = 'free' AND trial_expires_at IS NOT NULL
+		 AND trial_expires_at < NOW() - INTERVAL ? DAY
+		 AND is_active = TRUE`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *CreditRepository) CleanupExpired(ctx context.Context) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM user_credits WHERE expires_at IS NOT NULL AND expires_at < NOW()`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *CreditRepository) CleanupStalePurchases(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM credit_purchases WHERE created_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *CampaignRepository) CleanupCompleted(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM campaign_schedules WHERE status IN ('completed', 'cancelled') AND updated_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

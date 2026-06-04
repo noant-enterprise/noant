@@ -504,8 +504,8 @@ export default function BillingPage() {
 
       {/* Pulse upgrade modal — per-pack buy buttons */}
       {showPulseModal && createPortal(
-        <div className="fixed inset-0 z-[15000] flex items-center justify-center p-4 bg-overlay backdrop-blur-sm" onClick={() => setShowPulseModal(false)} style={{ animation: 'noantOverlayIn 200ms ease forwards' }}>
-          <div className="bg-surface rounded-xl shadow-2xl max-w-sm w-full mx-4 p-5 sm:p-6 relative" onClick={e => e.stopPropagation()} style={{ animation: 'noantModalIn 200ms ease forwards' }}>
+        <div className="fixed inset-0 z-[15000] flex items-center justify-center overflow-y-auto p-4 sm:p-6 bg-overlay backdrop-blur-sm" onClick={() => setShowPulseModal(false)} style={{ animation: 'noantOverlayIn 200ms ease forwards' }}>
+          <div className="bg-surface rounded-2xl shadow-2xl max-w-sm w-full mx-auto max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] p-5 sm:p-6 relative overflow-hidden flex flex-col" onClick={e => e.stopPropagation()} style={{ animation: 'noantModalIn 200ms ease forwards' }}>
             <button onClick={() => setShowPulseModal(false)} className="absolute top-4 right-4 w-7 h-7 rounded-lg bg-inset hover:bg-surface-hover flex items-center justify-center text-secondary hover:text-primary transition-colors" aria-label="Close">
               <X className="w-4 h-4" />
             </button>
@@ -517,7 +517,7 @@ export default function BillingPage() {
             <h2 className="text-base sm:text-lg font-semibold text-primary pr-8">Buy Response Credits</h2>
             <p className="text-xs sm:text-sm text-secondary mt-1 mb-5">Choose a pack — credits never expire within 30 days</p>
 
-            <div className="space-y-2 mb-2">
+            <div className="space-y-2 mb-2 overflow-y-auto min-h-0">
               {pulsePacks.map(pack => (
                 <div key={pack.id} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
                   pack.badge ? 'border-noant-sky/40 bg-noant-sky/[0.04]' : 'border-default bg-inset/50'
