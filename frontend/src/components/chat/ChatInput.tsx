@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react'
-import { Send, User } from 'lucide-react'
+import { useState, useRef, useEffect, type FormEvent } from 'react'
+import { Send, User, Smile } from 'lucide-react'
+import EmojiPicker, { Theme } from 'emoji-picker-react'
 import { cn } from '@/lib/utils'
 import { useOffline } from '@/hooks/useOffline'
 
@@ -13,8 +14,22 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, onTakeover, disabled, typing, typingText }: ChatInputProps) {
   const [text, setText] = useState('')
+  const [showEmoji, setShowEmoji] = useState(false)
+  const emojiRef = useRef<HTMLDivElement>(null)
   const isOffline = useOffline()
   const isInputDisabled = disabled || isOffline
+
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (emojiRef.current && !emojiRef.current.contains(e.target as Node)) {
+        setShowEmoji(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -36,7 +51,7 @@ export function ChatInput({ onSend, onTakeover, disabled, typing, typingText }: 
         </div>
       )}
       
-      <form onSubmit={handleSubmit} className="p-3 lg:p-3 flex gap-2 items-end pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <form onSubmit={handleSubmit} className="pt-3 px-3 flex gap-2 items-end">
         <input
           type="text"
           value={text}
@@ -50,8 +65,44 @@ export function ChatInput({ onSend, onTakeover, disabled, typing, typingText }: 
             isOffline ? 'border-red-500/20 bg-red-500/5 focus:border-red-500/30 placeholder:text-red-500/40' : '',
             'disabled:opacity-50'
           )}
+          style={{ fontFamily: "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', sans-serif" }}
         />
         
+        <div className="relative shrink-0" ref={emojiRef}>
+          <button
+            type="button"
+            onClick={() => setShowEmoji(!showEmoji)}
+            disabled={isInputDisabled}
+            className={cn(
+              'w-11 h-11 lg:w-9 lg:h-9 rounded-full shrink-0',
+              'flex items-center justify-center transition-all active:scale-90',
+              showEmoji
+                ? 'bg-noant-sky/10 text-noant-sky'
+                : 'text-tertiary hover:text-secondary hover:bg-inset',
+              'disabled:opacity-40'
+            )}
+          >
+            <Smile className="w-5 h-5 lg:w-4 lg:h-4" strokeWidth={1.5} />
+          </button>
+          {showEmoji && (
+            <div className="absolute bottom-full right-0 mb-2 z-50" style={{
+              '--epr-highlight-color': '#0ea5e9',
+              '--epr-category-icon-active-color': '#0ea5e9',
+              '--epr-search-border-color': '#0ea5e9',
+              '--epr-picker-border-radius': '12px',
+            } as React.CSSProperties}>
+              <EmojiPicker
+                onEmojiClick={(emojiData) => {
+                  setText(prev => prev + emojiData.emoji)
+                }}
+                theme={isDark ? Theme.DARK : Theme.LIGHT}
+                width={300}
+                height={350}
+              />
+            </div>
+          )}
+        </div>
+
         <button
           type="submit"
           disabled={isInputDisabled || !text.trim()}

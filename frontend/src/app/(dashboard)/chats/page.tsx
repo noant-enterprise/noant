@@ -448,7 +448,7 @@ export default function ChatsPage() {
 
       {/* Chat Area */}
       <div className={cn(
-        'flex-1 flex flex-col bg-base lg:border-x lg:border-default min-w-0 h-full overflow-hidden absolute lg:relative inset-0 lg:inset-auto z-20 transition-transform duration-300 lg:transition-none bg-surface',
+        'flex-1 flex flex-col bg-base min-w-0 h-full overflow-hidden absolute lg:relative inset-0 lg:inset-auto z-20 transition-transform duration-300 lg:transition-none bg-surface',
         isMobileChatView ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
       )}>
         {activeConv ? (

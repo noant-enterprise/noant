@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
@@ -15,7 +15,8 @@ export function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(true)
   const location = useLocation()
-  
+  const [searchParams] = useSearchParams()
+
   const isOffline = useOffline()
   const [showOnlineBanner, setShowOnlineBanner] = useState(false)
   const prevOfflineRef = useRef(isOffline)
@@ -30,6 +31,9 @@ export function DashboardLayout() {
   }, [isOffline])
 
   const isFullBleed = FULL_BLEED_ROUTES.some(r => location.pathname.startsWith(r))
+  // Hide header + bottom nav on mobile only when viewing a chat thread (not the chat list)
+  const isChatThread = location.pathname.startsWith('/chats') && !!searchParams.get('id')
+  const hideChromeOnMobile = isChatThread
 
   return (
     <div className="h-screen flex overflow-hidden bg-base relative">
@@ -55,7 +59,9 @@ export function DashboardLayout() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative z-0">
-        <Header onMenuClick={() => setSidebarOpen(true)} />
+        <div className={cn(hideChromeOnMobile && 'hidden lg:block')}>
+          <Header onMenuClick={() => setSidebarOpen(true)} />
+        </div>
         <main className={cn(
           'flex-1 relative',
           isFullBleed
@@ -74,8 +80,10 @@ export function DashboardLayout() {
             </div>
           )}
         </main>
-        {/* Bottom nav — mobile only */}
-        <BottomNav />
+        {/* Bottom nav — mobile only, hidden when viewing a chat thread */}
+        <div className={cn(hideChromeOnMobile && 'hidden lg:block')}>
+          <BottomNav />
+        </div>
       </div>
       {/* Offline Alert Glassmorphism Banner */}
       {isOffline && (

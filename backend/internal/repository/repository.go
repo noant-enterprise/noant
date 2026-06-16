@@ -928,6 +928,31 @@ func (r *IntegrationRepository) ListActive(ctx context.Context) ([]domain.Integr
 	return integrations, nil
 }
 
+func (r *IntegrationRepository) ListByChannel(ctx context.Context, channel string) ([]domain.Integration, error) {
+	query := `SELECT id, user_id, channel, status, config, webhook_url, last_error, created_at, updated_at FROM integrations WHERE channel = ?`
+	rows, err := r.db.QueryContext(ctx, query, channel)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var integrations []domain.Integration
+	for rows.Next() {
+		var i domain.Integration
+		var configStr string
+		err := rows.Scan(&i.ID, &i.UserID, &i.Channel, &i.Status, &configStr, &i.WebhookURL, &i.LastError, &i.CreatedAt, &i.UpdatedAt)
+		if err != nil {
+			continue
+		}
+		if configStr != "" && configStr != "{}" {
+			_ = json.Unmarshal([]byte(configStr), &i.Config)
+		} else {
+			i.Config = map[string]interface{}{}
+		}
+		integrations = append(integrations, i)
+	}
+	return integrations, nil
+}
+
 func (r *IntegrationRepository) UpdateStatus(ctx context.Context, id string, status string, lastError *string) error {
 	query := `UPDATE integrations SET status = ?, last_error = ? WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, status, lastError, id)

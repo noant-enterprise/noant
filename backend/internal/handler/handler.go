@@ -1992,14 +1992,25 @@ func (h *OpenWAHandler) ConnectWhatsApp(c *gin.Context) {
 		}
 		h.logger.Info("Background: Session started successfully", "sessionID", sid)
 
-		// Configure webhook
-		webhookURL := "http://host.docker.internal:8080/api/v1/openwa/webhook"
-		h.logger.Info("Background: Configuring webhook", "url", webhookURL, "sessionID", sid)
-		if err := h.openwa.ConfigureWebhook(sid, webhookURL, h.cfg.OpenWAWebhookSecret); err != nil {
-			h.logger.Warn("Background: Webhook configuration failed (non-critical)", "error", err, "sessionID", sid)
-			// Try localhost fallback
-			altURL := "http://localhost:8080/api/v1/openwa/webhook"
-			_ = h.openwa.ConfigureWebhook(sid, altURL, h.cfg.OpenWAWebhookSecret)
+		// Configure webhook with multiple fallback URLs
+		webhookURLs := []string{
+			"http://host.docker.internal:8080/api/v1/openwa/webhook",
+			"http://172.19.0.1:8080/api/v1/openwa/webhook",
+			"http://localhost:8080/api/v1/openwa/webhook",
+		}
+		var webhookOK bool
+		for _, webhookURL := range webhookURLs {
+			h.logger.Info("Background: Configuring webhook", "url", webhookURL, "sessionID", sid)
+			if err := h.openwa.ConfigureWebhook(sid, webhookURL, h.cfg.OpenWAWebhookSecret); err != nil {
+				h.logger.Warn("Background: Webhook URL failed", "url", webhookURL, "error", err, "sessionID", sid)
+			} else {
+				h.logger.Info("Background: Webhook configured successfully", "url", webhookURL, "sessionID", sid)
+				webhookOK = true
+				break
+			}
+		}
+		if !webhookOK {
+			h.logger.Error("Background: All webhook URLs failed for session", "sessionID", sid)
 		}
 	}(sessionID, userID.(string), req.Phone)
 

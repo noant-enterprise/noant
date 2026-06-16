@@ -136,11 +136,11 @@ export function ChatMessages({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto overscroll-contain px-3 lg:px-4 py-4 flex flex-col gap-1.5 bg-base"
+      className="flex-1 overflow-y-auto overscroll-contain flex flex-col gap-1.5 bg-base"
     >
       {/* Sentinel loader for older messages */}
       {hasMore && (
-        <div ref={setSentinel} className="py-2.5 flex justify-center w-full shrink-0">
+        <div ref={setSentinel} className="py-2.5 flex justify-center w-full shrink-0 px-3 lg:px-4">
           {loadingMore ? (
             <span className="inline-block w-4 h-4 border-2 border-noant-sky border-t-transparent rounded-full animate-spin" />
           ) : (
@@ -169,7 +169,7 @@ export function ChatMessages({
 
         if (isPlanLimit) {
           return (
-            <div key={m.id} className="flex flex-col gap-1 w-full shrink-0 items-center my-3">
+            <div key={m.id} className="flex flex-col gap-1 w-full shrink-0 items-center my-3 px-3 lg:px-4">
               {dateHeader && (
                 <div className="self-center my-3 bg-surface border border-default text-secondary text-[11px] lg:text-[10px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm select-none">
                   {dateHeader}
@@ -194,7 +194,7 @@ export function ChatMessages({
         }
 
         return (
-          <div key={m.id} className="flex flex-col gap-1 w-full shrink-0">
+          <div key={m.id} className="flex flex-col gap-1 w-full shrink-0 px-3 lg:px-4">
             {dateHeader && (
               <div className="self-center my-3 bg-surface border border-default text-secondary text-[11px] lg:text-[10px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm select-none">
                 {dateHeader}
@@ -213,7 +213,7 @@ export function ChatMessages({
               )}
             >
               {!isCustomer && !isSystem && <SourceBadge message={m} />}
-              <p className="whitespace-pre-wrap">{m.content}</p>
+              <p className="whitespace-pre-wrap" style={{ fontFamily: "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', sans-serif" }}>{m.content}</p>
               <div
                 className={cn(
                   'text-[11px] lg:text-[10px] mt-1.5 flex items-center gap-1.5',
@@ -241,7 +241,7 @@ export function ChatMessages({
         )
       })}
       {conversationId && (
-        <div className="flex flex-col gap-1 w-full shrink-0">
+        <div className="flex flex-col gap-1 w-full shrink-0 px-3 lg:px-4">
           <TypingIndicator conversationId={conversationId} />
         </div>
       )}
