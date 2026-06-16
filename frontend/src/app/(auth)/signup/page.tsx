@@ -32,8 +32,8 @@ export default function SignupPage() {
         password,
         company_name: company,
       })
-      toast('Account created!', 'success')
-      navigate('/dashboard')
+      toast('Account created! Please check your email for a verification code.', 'success')
+      navigate(`/verify-email?email=${encodeURIComponent(email)}`)
     } catch (err: any) {
       toast(err?.message || 'Failed to create account', 'error')
     } finally {

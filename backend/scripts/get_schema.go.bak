@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	dsn := "4AGgT4yCvxVAhsL.root:yrQsrsUeMFuJh8V8@tcp(gateway01.eu-central-1.prod.aws.tidbcloud.com:4000)/omagent?tls=true"
+	dsn := "4AGgT4yCvxVAhsL.root:yrQsrsUeMFuJh8V8@tcp(gateway01.eu-central-1.prod.aws.tidbcloud.com:4000)/noant?tls=true"
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		log.Fatal(err)

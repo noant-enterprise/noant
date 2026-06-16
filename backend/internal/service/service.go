@@ -197,7 +197,7 @@ CRITICAL RULES — YOU MUST FOLLOW THESE:
 2. You MUST answer ONLY from the "Relevant training data entries" and "Relevant inventory items" provided below.
 3. If the training data or inventory has an answer, use it. Be natural and helpful.
 4. If the customer asks about something NOT in the training data or inventory, say: "Let me check with my manager on that" or "I'll find out for you" — then escalate.
-5. NEVER say "I'm an AI" or "I'm a bot" or "Omagent" or mention any platform name. You are a shop assistant.
+5. NEVER say "I'm an AI" or "I'm a bot" or "Noant" or mention any platform name. You are a shop assistant.
 6. NEVER say "based on my training" or "generally" or "typically".
 7. For price negotiations: if the customer wants a lower price, you can offer a small discount or say "Let me check with my manager". Never go below min_price.
 8. Be warm, use the customer's name if known. Use Nigerian expressions when appropriate (Oga, o, abeg, etc).
@@ -1047,6 +1047,23 @@ func NewAuthService(cfg *config.Config, userRepo *repository.UserRepository, red
 	return &AuthService{cfg: cfg, userRepo: userRepo, redis: redis, logger: logger, email: email}
 }
 
+func generateVerificationCode() string {
+	var table = [...]byte{'1', '2', '3', '4', '5', '6', '7', '8', '9', '0'}
+	b := make([]byte, 6)
+	// We import "io" in service.go. Let's make sure rand.Reader is used from crypto/rand (which is already imported).
+	n, err := rand.Read(b)
+	if n != 6 || err != nil {
+		for i := 0; i < 6; i++ {
+			b[i] = table[time.Now().UnixNano()%10]
+		}
+		return string(b)
+	}
+	for i := 0; i < len(b); i++ {
+		b[i] = table[int(b[i])%len(table)]
+	}
+	return string(b)
+}
+
 func (s *AuthService) Register(ctx context.Context, email, password, firstName, lastName, companyName string) (*domain.User, error) {
 	existing, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
@@ -1064,6 +1081,7 @@ func (s *AuthService) Register(ctx context.Context, email, password, firstName, 
 	now := time.Now()
 	trialExpires := now.AddDate(0, 0, 14)
 
+	code := generateVerificationCode()
 	user := &domain.User{
 		Email:              email,
 		Password:           string(hashedPassword),
@@ -1075,10 +1093,19 @@ func (s *AuthService) Register(ctx context.Context, email, password, firstName, 
 		IsActive:           true,
 		MustChangePassword: true,
 		TrialExpiresAt:     &trialExpires,
+		IsVerified:         false,
+		VerificationCode:   &code,
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
+
+	if s.email != nil {
+		if _, err := s.email.SendVerificationEmail(ctx, email, code); err != nil {
+			s.logger.Error("Failed to send verification email on registration", "error", err)
+		}
+	}
+
 	created, _ := s.userRepo.GetByEmail(ctx, email)
 	return created, nil
 }
@@ -1100,6 +1127,9 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*domai
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return nil, "", "", fmt.Errorf("invalid credentials")
 	}
+	if !user.IsVerified {
+		return nil, "", "", fmt.Errorf("email_not_verified")
+	}
 	_ = s.userRepo.UpdateLastLogin(ctx, user.ID)
 	token, err := s.generateToken(user)
 	if err != nil {
@@ -1112,6 +1142,75 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*domai
 	}
 
 	return user, token, refreshToken, nil
+}
+
+func (s *AuthService) VerifyEmail(ctx context.Context, email, code string) (*domain.User, string, string, error) {
+	user, err := s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("database error: %w", err)
+	}
+	if user == nil {
+		return nil, "", "", fmt.Errorf("user not found")
+	}
+	if user.IsVerified {
+		token, err := s.generateToken(user)
+		if err != nil {
+			return nil, "", "", fmt.Errorf("failed to generate token: %w", err)
+		}
+		refreshToken := s.generateRefreshToken()
+		if s.redis != nil {
+			_ = s.redis.Set(ctx, "refresh:"+refreshToken, user.ID, 7*24*time.Hour)
+		}
+		return user, token, refreshToken, nil
+	}
+	if user.VerificationCode == nil || *user.VerificationCode != code {
+		return nil, "", "", fmt.Errorf("invalid verification code")
+	}
+
+	if err := s.userRepo.UpdateVerificationStatus(ctx, user.ID, true); err != nil {
+		return nil, "", "", fmt.Errorf("failed to update verification status: %w", err)
+	}
+
+	user.IsVerified = true
+	user.VerificationCode = nil
+
+	token, err := s.generateToken(user)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to generate token: %w", err)
+	}
+	refreshToken := s.generateRefreshToken()
+	if s.redis != nil {
+		_ = s.redis.Set(ctx, "refresh:"+refreshToken, user.ID, 7*24*time.Hour)
+	}
+
+	return user, token, refreshToken, nil
+}
+
+func (s *AuthService) ResendVerification(ctx context.Context, email string) error {
+	user, err := s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return fmt.Errorf("database error: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+	if user.IsVerified {
+		return fmt.Errorf("email already verified")
+	}
+
+	code := generateVerificationCode()
+	if err := s.userRepo.UpdateVerificationCode(ctx, user.ID, code); err != nil {
+		return fmt.Errorf("failed to update verification code: %w", err)
+	}
+
+	if s.email != nil {
+		if _, err := s.email.SendVerificationEmail(ctx, user.Email, code); err != nil {
+			s.logger.Error("Failed to resend verification email", "error", err)
+			return fmt.Errorf("failed to send verification email: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (s *AuthService) generateToken(user *domain.User) (string, error) {

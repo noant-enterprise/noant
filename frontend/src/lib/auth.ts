@@ -23,10 +23,17 @@ export async function login(credentials: LoginRequest): Promise<AuthResponse> {
   return api.post<AuthResponse>('/auth/login', credentials)
 }
 
-// Backend /auth/register returns { user }; we follow up with a cookie-based login.
-export async function signup(data: SignupRequest): Promise<AuthResponse> {
-  await api.post<{ message: string; user: User }>('/auth/register', data)
-  return login({ email: data.email, password: data.password })
+// Backend /auth/register returns { user }; we do NOT auto-login — user must verify email first.
+export async function signup(data: SignupRequest): Promise<{ message: string; user: User }> {
+  return api.post<{ message: string; user: User }>('/auth/register', data)
+}
+
+export async function verifyEmail(email: string, code: string): Promise<AuthResponse> {
+  return api.post<AuthResponse>('/auth/verify', { email, code })
+}
+
+export async function resendVerification(email: string): Promise<{ message: string }> {
+  return api.post<{ message: string }>('/auth/resend-verification', { email })
 }
 
 export async function logout(): Promise<void> {

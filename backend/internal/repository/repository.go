@@ -91,9 +91,9 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 	if user.ID == "" {
 		user.ID = generateUUID()
 	}
-	query := `INSERT INTO users (id, email, password_hash, first_name, last_name, role, company_name, phone, plan_id, is_active, must_change_password, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
-	_, err := r.db.ExecContext(ctx, query, user.ID, user.Email, user.Password, user.FirstName, user.LastName, user.Role, user.CompanyName, user.Phone, user.PlanID, user.IsActive, user.MustChangePassword)
+	query := `INSERT INTO users (id, email, password_hash, first_name, last_name, role, company_name, phone, plan_id, is_active, must_change_password, is_verified, verification_code, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	_, err := r.db.ExecContext(ctx, query, user.ID, user.Email, user.Password, user.FirstName, user.LastName, user.Role, user.CompanyName, user.Phone, user.PlanID, user.IsActive, user.MustChangePassword, user.IsVerified, user.VerificationCode)
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
 	}
@@ -101,10 +101,10 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 }
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
-	query := `SELECT id, email, password_hash, first_name, last_name, role, company_name, phone, avatar, plan_id, is_active, must_change_password, last_login_at, created_at, updated_at FROM users WHERE email = ?`
+	query := `SELECT id, email, password_hash, first_name, last_name, role, company_name, phone, avatar, plan_id, is_active, must_change_password, last_login_at, is_verified, verification_code, created_at, updated_at FROM users WHERE email = ?`
 	row := r.db.QueryRowContext(ctx, query, email)
 	user := &domain.User{}
-	err := row.Scan(&user.ID, &user.Email, &user.Password, &user.FirstName, &user.LastName, &user.Role, &user.CompanyName, &user.Phone, &user.Avatar, &user.PlanID, &user.IsActive, &user.MustChangePassword, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt)
+	err := row.Scan(&user.ID, &user.Email, &user.Password, &user.FirstName, &user.LastName, &user.Role, &user.CompanyName, &user.Phone, &user.Avatar, &user.PlanID, &user.IsActive, &user.MustChangePassword, &user.LastLoginAt, &user.IsVerified, &user.VerificationCode, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -121,10 +121,10 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 			_ = cached
 		}
 	}
-	query := `SELECT id, email, password_hash, first_name, last_name, role, company_name, phone, avatar, plan_id, is_active, must_change_password, last_login_at, created_at, updated_at FROM users WHERE id = ?`
+	query := `SELECT id, email, password_hash, first_name, last_name, role, company_name, phone, avatar, plan_id, is_active, must_change_password, last_login_at, is_verified, verification_code, created_at, updated_at FROM users WHERE id = ?`
 	row := r.db.QueryRowContext(ctx, query, id)
 	user := &domain.User{}
-	err := row.Scan(&user.ID, &user.Email, &user.Password, &user.FirstName, &user.LastName, &user.Role, &user.CompanyName, &user.Phone, &user.Avatar, &user.PlanID, &user.IsActive, &user.MustChangePassword, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt)
+	err := row.Scan(&user.ID, &user.Email, &user.Password, &user.FirstName, &user.LastName, &user.Role, &user.CompanyName, &user.Phone, &user.Avatar, &user.PlanID, &user.IsActive, &user.MustChangePassword, &user.LastLoginAt, &user.IsVerified, &user.VerificationCode, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -152,6 +152,18 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, id string, hashedPa
 func (r *UserRepository) UpdatePlan(ctx context.Context, userID string, planID string) error {
 	query := `UPDATE users SET plan_id = ? WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, planID, userID)
+	return err
+}
+
+func (r *UserRepository) UpdateVerificationStatus(ctx context.Context, id string, verified bool) error {
+	query := `UPDATE users SET is_verified = ?, verification_code = NULL WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, verified, id)
+	return err
+}
+
+func (r *UserRepository) UpdateVerificationCode(ctx context.Context, id string, code string) error {
+	query := `UPDATE users SET verification_code = ? WHERE id = ?`
+	_, err := r.db.ExecContext(ctx, query, code, id)
 	return err
 }
 

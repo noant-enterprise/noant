@@ -21,6 +21,8 @@ type User struct {
 	TrialExpiresAt *time.Time `json:"trial_expires_at" db:"trial_expires_at"`
 	LastLoginAt  *time.Time `json:"last_login_at" db:"last_login_at"`
 	OwnerWhatsapp *string  `json:"owner_whatsapp,omitempty" db:"owner_whatsapp"`
+	IsVerified   bool      `json:"is_verified" db:"is_verified"`
+	VerificationCode *string `json:"-" db:"verification_code"`
 	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
 }

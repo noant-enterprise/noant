@@ -26,6 +26,12 @@ export default function LoginPage() {
       toast('Welcome back!', 'success')
       navigate('/dashboard')
     } catch (err: any) {
+      // If backend says email_not_verified, redirect to the verification page
+      if (err?.code === 'email_not_verified' || err?.message === 'email_not_verified') {
+        toast('Please verify your email before signing in.', 'error')
+        navigate(`/verify-email?email=${encodeURIComponent(email)}`)
+        return
+      }
       toast(err?.message || 'Invalid credentials', 'error')
     } finally {
       setLoading(false)

@@ -30,7 +30,7 @@ services:
       - key: TIDB_PASSWORD
         sync: false
       - key: TIDB_DATABASE
-        value: omagent
+        value: noant
       - key: DB_POOL_SIZE
         value: 10
 

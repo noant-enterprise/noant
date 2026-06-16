@@ -54,8 +54,8 @@ func RunMigrations(db *sql.DB, migrationsDir string) error {
 		// Split into individual statements and execute one by one
 		statements := splitSQLStatements(string(content))
 		for _, stmt := range statements {
-			stmt = strings.TrimSpace(stmt)
-			if stmt == "" || strings.HasPrefix(stmt, "--") {
+			stmt = strings.TrimSpace(stripComments(stmt))
+			if stmt == "" {
 				continue
 			}
 			_, err = db.Exec(stmt)
@@ -117,3 +117,17 @@ func splitSQLStatements(sql string) []string {
 
 	return statements
 }
+
+func stripComments(stmt string) string {
+	lines := strings.Split(stmt, "\n")
+	var cleanLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		cleanLines = append(cleanLines, line)
+	}
+	return strings.Join(cleanLines, "\n")
+}
+

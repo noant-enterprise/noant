@@ -316,6 +316,8 @@ func main() {
 			auth.POST("/change-password", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.ChangePassword)
 			auth.POST("/forgot-password", handlers.Auth.ForgotPassword)
 			auth.POST("/reset-password", handlers.Auth.ResetPassword)
+			auth.POST("/verify", handlers.Auth.VerifyEmail)
+			auth.POST("/resend-verification", handlers.Auth.ResendVerification)
 		}
 
 		// Session check endpoints: relaxed rate limiting (120 req/min per IP)

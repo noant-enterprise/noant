@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -126,7 +128,26 @@ func (s *ResendService) SendPasswordReset(ctx context.Context, toEmail, resetTok
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("resend API error: %s", resp.Status)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		detail := ""
+		if len(bodyBytes) > 0 {
+			var errResp struct {
+				Message string `json:"message"`
+				Error   string `json:"error"`
+			}
+			if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Message != "" {
+				detail = ": " + errResp.Message
+			} else if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "" {
+				detail = ": " + errResp.Error
+			} else {
+				snippet := strings.TrimSpace(string(bodyBytes))
+				if len(snippet) > 200 {
+					snippet = snippet[:200]
+				}
+				detail = ": " + snippet
+			}
+		}
+		return "", fmt.Errorf("resend API error: %s%s", resp.Status, detail)
 	}
 
 	var result resendResponse
@@ -169,7 +190,26 @@ func (s *ResendService) SendNotificationEmail(ctx context.Context, toEmail, subj
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("resend API error: %s", resp.Status)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		detail := ""
+		if len(bodyBytes) > 0 {
+			var errResp struct {
+				Message string `json:"message"`
+				Error   string `json:"error"`
+			}
+			if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Message != "" {
+				detail = ": " + errResp.Message
+			} else if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "" {
+				detail = ": " + errResp.Error
+			} else {
+				snippet := strings.TrimSpace(string(bodyBytes))
+				if len(snippet) > 200 {
+					snippet = snippet[:200]
+				}
+				detail = ": " + snippet
+			}
+		}
+		return "", fmt.Errorf("resend API error: %s%s", resp.Status, detail)
 	}
 
 	var result resendResponse
@@ -189,6 +229,119 @@ func (s *ResendService) SendHTMLEmail(ctx context.Context, toEmail, subject, htm
 		"from":    s.from,
 		"to":      []string{toEmail},
 		"subject": subject,
+		"html":    htmlBody,
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal email payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.resend.com/emails", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		detail := ""
+		if len(bodyBytes) > 0 {
+			var errResp struct {
+				Message string `json:"message"`
+				Error   string `json:"error"`
+			}
+			if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Message != "" {
+				detail = ": " + errResp.Message
+			} else if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "" {
+				detail = ": " + errResp.Error
+			} else {
+				snippet := strings.TrimSpace(string(bodyBytes))
+				if len(snippet) > 200 {
+					snippet = snippet[:200]
+				}
+				detail = ": " + snippet
+			}
+		}
+		return "", fmt.Errorf("resend API error: %s%s", resp.Status, detail)
+	}
+
+	var result resendResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode resend response: %w", err)
+	}
+
+	return result.ID, nil
+}
+
+func (s *ResendService) SendVerificationEmail(ctx context.Context, toEmail, code string) (string, error) {
+	if s.apiKey == "" {
+		return "", fmt.Errorf("resend API key not configured")
+	}
+
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Verify your NOANT email address</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0a0a0a;font-family:'Inter',system-ui,sans-serif;">
+  <table width="100%%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:linear-gradient(145deg,#111111,#1a1a1a);border:1px solid #1e1e2e;border-radius:16px;overflow:hidden;max-width:600px;width:100%%;">
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#1e3a5f 0%%,#0f2444 100%%);padding:40px 48px 32px;text-align:center;border-bottom:1px solid #1e2d4a;">
+            <div style="display:inline-block;background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:12px;padding:10px 20px;margin-bottom:20px;">
+              <span style="color:#3b82f6;font-size:22px;font-weight:800;letter-spacing:-0.5px;">NOANT</span>
+              <span style="color:#64748b;font-size:11px;font-weight:500;margin-left:8px;text-transform:uppercase;letter-spacing:2px;">AI Support</span>
+            </div>
+            <h1 style="color:#f1f5f9;font-size:26px;font-weight:700;margin:0;line-height:1.3;">Verify your email</h1>
+            <p style="color:#64748b;font-size:14px;margin:10px 0 0;">Please use the verification code below to complete registration.</p>
+          </td>
+        </tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:40px 48px;">
+            <p style="color:#94a3b8;font-size:15px;line-height:1.7;margin:0 0 28px;">
+              Hi there,<br/><br/>
+              Thank you for creating an account with NOANT. Enter this 6-digit verification code to verify your email address:
+            </p>
+            <div style="text-align:center;margin:36px 0;">
+              <div style="display:inline-block;background:#1e1e2e;border:1px solid #3b82f6;color:#3b82f6;font-size:32px;font-weight:800;letter-spacing:6px;padding:14px 36px;border-radius:10px;box-shadow:0 4px 20px rgba(59,130,246,0.15);">
+                %s
+              </div>
+            </div>
+            <p style="color:#475569;font-size:13px;line-height:1.6;margin:28px 0 0;padding-top:24px;border-top:1px solid #1e293b;">
+              This code will expire in 30 minutes. If you did not request this email, you can safely ignore it.
+            </p>
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="background:#0d0d0d;border-top:1px solid #1e1e2e;padding:24px 48px;text-align:center;">
+            <p style="color:#334155;font-size:12px;margin:0;">© 2026 NOANT. All rights reserved.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`, code)
+
+	payload := map[string]interface{}{
+		"from":    s.from,
+		"to":      []string{toEmail},
+		"subject": "Verify your NOANT email address",
 		"html":    htmlBody,
 	}
 

@@ -127,6 +127,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	user, token, refreshToken, err := h.service.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
 		h.logger.Error("Login failed", "error", err)
+		if err.Error() == "email_not_verified" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "email_not_verified"})
+			return
+		}
 		utils.RespondUnauthorized(c, "Invalid email or password")
 		return
 	}
@@ -155,6 +159,79 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		"user":       user,
 		"trial_info": trialInfo,
 	})
+}
+
+func (h *AuthHandler) VerifyEmail(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+		Code  string `json:"code" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, err.Error())
+		return
+	}
+	utils.SanitizeStruct(&req)
+
+	user, token, refreshToken, err := h.service.VerifyEmail(c.Request.Context(), req.Email, req.Code)
+	if err != nil {
+		h.logger.Error("Email verification failed", "error", err)
+		if err.Error() == "invalid verification code" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_code"})
+			return
+		}
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	middleware.SetAuthCookies(c, token, refreshToken, 24*time.Hour, 7*24*time.Hour)
+	c.Header("Cache-Control", "no-store")
+
+	var trialInfo map[string]interface{}
+	if user.TrialExpiresAt != nil {
+		trialInfo = map[string]interface{}{
+			"trial_expires_at": user.TrialExpiresAt.Format(time.RFC3339),
+			"trial_ended":      time.Now().After(*user.TrialExpiresAt),
+			"trial_days_left":  int(time.Until(*user.TrialExpiresAt).Hours() / 24),
+		}
+		if trialInfo["trial_days_left"].(int) < 0 {
+			trialInfo["trial_days_left"] = 0
+		}
+	} else {
+		trialInfo = map[string]interface{}{
+			"trial_ended": false,
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Email verified successfully",
+		"user":       user,
+		"trial_info": trialInfo,
+	})
+}
+
+func (h *AuthHandler) ResendVerification(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, err.Error())
+		return
+	}
+	utils.SanitizeStruct(&req)
+
+	if err := h.service.ResendVerification(c.Request.Context(), req.Email); err != nil {
+		h.logger.Error("Resend verification failed", "error", err)
+		if err.Error() == "email already verified" {
+			c.JSON(http.StatusOK, gin.H{"message": "Email is already verified"})
+			return
+		}
+		utils.RespondInternalError(c, "Failed to resend verification email")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Verification code sent successfully"})
 }
 
 func (h *AuthHandler) RefreshToken(c *gin.Context) {

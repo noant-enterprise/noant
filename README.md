@@ -1,4 +1,4 @@
-# NOANT Enterprise — v2.0 (OmAgent Custom Edition)
+# NOANT Enterprise — v2.0
 ### Autonomous & Human-in-the-Loop AI Customer Support Platform
 *Built in Nigeria. For the World.*
 

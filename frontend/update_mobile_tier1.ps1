@@ -1,4 +1,4 @@
-cd C:\Users\USER\Downloads\omagent\frontend
+cd C:\Users\USER\Downloads\noant\frontend
 
 # ============================================
 # 1. tailwind.config.ts

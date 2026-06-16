@@ -221,3 +221,36 @@ func (s *EmailService) SendHTMLEmail(ctx context.Context, toEmail, subject, html
 	// Fall back to SMTP (do not escape HTML tags)
 	return sendSMTPMessage(ctx, smtpSettingsFromConfig(s.cfg, nil), toEmail, subject, htmlBody)
 }
+
+func (s *EmailService) SendVerificationEmail(ctx context.Context, toEmail, code string) (string, error) {
+	// Try Resend first if configured
+	if s.resend != nil {
+		id, err := s.resend.SendVerificationEmail(ctx, toEmail, code)
+		if err == nil {
+			return id, nil
+		}
+		s.logger.Warn("Resend failed, falling back to SMTP", "error", err)
+	}
+
+	// Fall back to SMTP
+	safeEmail := html.EscapeString(toEmail)
+	safeCode := html.EscapeString(code)
+
+	body := fmt.Sprintf(`
+<html>
+<body style="font-family:Arial,sans-serif;background:#f6f8fb;padding:24px;">
+  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;border:1px solid #e5e7eb;">
+    <h2 style="margin:0 0 16px;">Verify your NOANT email address</h2>
+    <p style="color:#374151;line-height:1.6;">Thank you for creating an account with NOANT. Enter this 6-digit verification code to verify your email address for <strong>%s</strong>:</p>
+    <div style="text-align:center;margin:32px 0;">
+      <div style="display:inline-block;background:#f3f4f6;border:1px solid #e5e7eb;color:#111827;font-size:32px;font-weight:800;letter-spacing:6px;padding:14px 36px;border-radius:10px;">
+        %s
+      </div>
+    </div>
+    <p style="color:#6b7280;font-size:13px;">This code will expire in 30 minutes.</p>
+  </div>
+</body>
+</html>`, safeEmail, safeCode)
+
+	return sendSMTPMessage(ctx, smtpSettingsFromConfig(s.cfg, nil), toEmail, "Verify your NOANT email address", body)
+}

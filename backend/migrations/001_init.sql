@@ -1,4 +1,4 @@
--- Omagent Database Schema
+-- Noant Database Schema
 -- TiDB Cloud Compatible
 
 CREATE TABLE IF NOT EXISTS users (

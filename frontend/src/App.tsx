@@ -8,6 +8,7 @@ import LoginPage from '@/app/(auth)/login/page'
 import SignupPage from '@/app/(auth)/signup/page'
 import ForgotPasswordPage from '@/app/(auth)/forgot-password/page'
 import ResetPasswordPage from '@/app/(auth)/reset-password/page'
+import VerifyEmailPage from '@/app/(auth)/verify-email/page'
 import OverviewPage from '@/app/(dashboard)/page'
 import ChatsPage from '@/app/(dashboard)/chats/page'
 import TeachPage from '@/app/(dashboard)/teach/page'
@@ -31,7 +32,7 @@ function AppShell() {
   const location = useLocation()
 
   useEffect(() => {
-    const authPaths = ['/login', '/signup', '/forgot-password', '/reset-password']
+    const authPaths = ['/login', '/signup', '/forgot-password', '/reset-password', '/verify-email']
     if (authPaths.some((path) => location.pathname.startsWith(path))) {
       return
     }
@@ -104,6 +105,15 @@ const router = createBrowserRouter([
           </GuestRoute>
         ),
         children: [{ index: true, element: <ResetPasswordPage /> }],
+      },
+      {
+        path: '/verify-email',
+        element: (
+          <GuestRoute>
+            <AuthLayout />
+          </GuestRoute>
+        ),
+        children: [{ index: true, element: <VerifyEmailPage /> }],
       },
       // Dashboard routes - protected
       {
