@@ -1,46 +1,133 @@
 # NOANT Enterprise — v2.0
-### Autonomous & Human-in-the-Loop AI Customer Support Platform
-*Built in Nigeria. For the World.*
+
+Autonomous & Human-in-the-Loop AI Customer Support Platform. Built in Nigeria. For the World.
 
 ---
 
-## 📖 Table of Contents
-1. [Overview & Visual Identity](#-overview--visual-identity)
-2. [Architecture & System Topology](#-architecture--system-topology)
-3. [AI Orchestration & "In-the-Round" Communication Flow](#-ai-orchestration--in-the-round-communication-flow)
-4. [Core Subsystems & Features Deep Dive](#-core-subsystems--features-deep-dive)
-5. [Database Schema & TiDB Storage Topology](#-database-schema--tidb-storage-topology)
-6. [Premium Accomplishments & Enhancements](#-premium-accomplishments--enhancements)
-7. [Installation & Local Deployment Guide](#-installation--local-deployment-guide)
-8. [Comprehensive API Directory](#-comprehensive-api-directory)
-9. [License & Development Credits](#-license--development-credits)
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Technology Stack](#technology-stack)
+3. [Project Structure](#project-structure)
+4. [Architecture & System Topology](#architecture--system-topology)
+5. [AI Orchestration Flow](#ai-orchestration-flow)
+6. [Security Features](#security-features)
+7. [Core Subsystems](#core-subsystems)
+8. [Configuration Reference](#configuration-reference)
+9. [Installation & Deployment](#installation--deployment)
+10. [Testing](#testing)
+11. [API Directory](#api-directory)
+12. [Operations](#operations)
+13. [Database Schema](#database-schema)
 
 ---
 
-## 🎨 Overview & Visual Identity
+## Overview
 
-**NOANT Enterprise** is a state-of-the-art, high-throughput, multi-tenant customer relationship and messaging platform designed to support high-performance businesses across Nigeria, Africa, and globally.
+NOANT Enterprise is a state-of-the-art, high-throughput, multi-tenant customer relationship and messaging platform. It features a **hybrid automation model** — balancing high-confidence AI answering capabilities with seamless, real-time human escalation across WhatsApp, Telegram, Facebook Messenger, and embedded Web Widgets.
 
-The system features a **hybrid automation model**—balancing high-confidence AI answering capabilities with seamless, real-time human escalation. 
+### Brand Identity
 
-### 👁️ The Visual Branding (Logo)
-The branding identity of the system is modeled after an advanced conversation-loop icon:
-* **The Outer Dashed Ring**: Symbolizes the multi-channel messaging endpoints (WhatsApp, Telegram, Facebook, Web Widget) spinning in perpetual synchrony.
-* **The Solid Black Core**: Represents the central AI Brain container.
-* **The Three White Dots**: Symbolize message propagation, growing in scale as intelligence accumulates.
+The logo is modeled after an advanced conversation-loop icon:
 
-> [!NOTE]
-> The browser favicon has been fully engineered from this high-resolution logo, package-generating standard transparent `.ico`, `.png` assets (including modern responsive vector `favicon.svg` and `apple-touch-icon.png` for mobile devices) for 100% device compatibility.
+- **Outer Dashed Ring** — Multi-channel messaging endpoints spinning in synchrony.
+- **Solid Black Core** — Central AI Brain container.
+- **Three White Dots** — Message propagation, growing as intelligence accumulates.
 
 ---
 
-## 🏗️ Architecture & System Topology
+## Technology Stack
 
-The platform is designed around a decoupled microservice-compatible structure, enforcing a strict separation of concerns, multi-tenant workspace isolation, and real-time state synchronization.
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Backend** | Go 1.22, Gin | HTTP API server, WebSocket hub, business logic |
+| **Frontend** | React 18, TypeScript, Vite | Single-page application dashboard |
+| **AI** | Groq Llama 3.3 (via REST API) | Natural language understanding & response generation |
+| **Database** | TiDB Cloud (MySQL-compatible) | Distributed SQL for conversations, users, training data |
+| **Cache & Queue** | Redis (Upstash) | Session tokens, rate limits, AI history, job queue |
+| **Payments** | Polar API | Subscription & credit pack processing |
+| **Embeddings** | Custom Go vector search | Semantic QA pair matching |
+| **Deployment** | Render, Docker | Unified static + API server |
+
+---
+
+## Project Structure
+
+```
+noant/
+├── backend/
+│   ├── main.go                    # Entry point, router, middleware wiring
+│   ├── config/
+│   │   └── config.go              # Environment-based configuration
+│   ├── migrations/                # SQL migration files (sequenced)
+│   ├── internal/
+│   │   ├── domain/
+│   │   │   └── models.go          # Core domain types (User, Conversation, etc.)
+│   │   ├── infrastructure/
+│   │   │   ├── db.go              # TiDB connection pool
+│   │   │   ├── redis.go           # Redis client wrapper
+│   │   │   ├── cache.go           # Generic cache layer
+│   │   │   ├── bottleneck.go      # Concurrency limiter
+│   │   │   ├── jobqueue.go        # Background job scheduler
+│   │   │   ├── blacklist.go       # In-memory token blacklist (Redis fallback)
+│   │   │   ├── memory_ratelimit.go# In-memory rate limiter (Redis fallback)
+│   │   │   └── logger.go          # Structured logger
+│   │   ├── middleware/
+│   │   │   ├── auth.go            # JWT auth, CSP, rate limiting, token blacklist
+│   │   │   ├── csrf.go            # Origin/Referer CSRF validation
+│   │   │   ├── bodylimit.go       # 1 MB request body limit
+│   │   │   ├── sanitize.go        # XSS sanitization middleware
+│   │   │   ├── audit.go           # Request audit logging
+│   │   │   └── websocket_auth.go  # WebSocket origin validation
+│   │   ├── handler/
+│   │   │   ├── handler.go         # Auth, Chat, Integration, Inventory handlers
+│   │   │   ├── websocket.go       # WebSocket hub & connection management
+│   │   │   ├── health.go          # /health endpoint
+│   │   │   ├── notifications.go   # Notification polling
+│   │   │   └── background.go      # Background task endpoints
+│   │   ├── service/
+│   │   │   ├── service.go         # Auth, Chat, AI Brain, Integration services
+│   │   │   ├── ai_sales.go        # Sales mode AI logic
+│   │   │   ├── embedding.go       # Vector search & QA matching
+│   │   │   ├── email.go           # Email sending (SMTP, Resend)
+│   │   │   ├── plan.go            # Plan gating & enforcement
+│   │   │   ├── credit.go          # Credit balance management
+│   │   │   ├── campaign.go        # Broadcast campaign scheduling
+│   │   │   ├── openwa.go          # Open WhatsApp API integration
+│   │   │   ├── telegram.go        # Telegram bot integration
+│   │   │   ├── dbmanager.go       # Data retention cleanup jobs
+│   │   │   └── notifications.go   # Notification service
+│   │   ├── repository/
+│   │   │   ├── repository.go      # All DB repository implementations
+│   │   │   ├── uow.go             # Unit of Work (transaction wrapper)
+│   │   │   ├── audit.go           # Audit log repository
+│   │   │   ├── notifications.go   # Notification repository
+│   │   │   └── fcm_repository.go  # FCM push notification repository
+│   │   └── utils/
+│   │       ├── errors.go          # Standardized error responses
+│   │       └── sanitize.go        # Reflection-based struct sanitizer
+│   └── .env.example               # Environment variable template
+├── frontend/
+│   ├── src/
+│   │   ├── app/                   # Next.js-style App Router pages
+│   │   ├── components/            # Reusable UI components
+│   │   ├── hooks/                 # Custom React hooks
+│   │   ├── lib/                   # API client, WebSocket manager
+│   │   ├── contexts/              # React context providers
+│   │   └── types/                 # TypeScript type definitions
+│   └── public/                    # Static assets, favicons
+├── brain/                         # Design assets (logos, branding)
+└── README.md
+```
+
+---
+
+## Architecture & System Topology
+
+The platform is designed around a decoupled microservice-compatible structure enforcing strict separation of concerns, multi-tenant workspace isolation, and real-time state synchronization.
 
 ```mermaid
 graph TD
-    %% Clients
     subgraph Clients ["Client Gateways"]
         WA[WhatsApp App / Twilio]
         TG[Telegram Bot API]
@@ -48,35 +135,38 @@ graph TD
         WB[Web Widget Custom JS]
     end
 
-    %% Routing Layer
     subgraph Edge ["Network & Security Layer"]
         R_PROXY[Reverse Proxy / CORS Guard]
         JWT_AUTH[JWT Auth Validator]
-        RATE_LIM[Upstash Redis Rate Limiter]
+        RATE_LIM[Redis Rate Limiter / In-Memory Fallback]
+        CSRF[CSRF Origin Validation]
+        BODY_LIMIT[1 MB Body Limit]
+        SANITIZE[XSS Sanitizer]
     end
 
-    %% Application Backend
     subgraph Backend ["Go 1.22 App Service (Gin)"]
         H_CHATS[ChatHandler]
         H_INTEG[IntegrationHandler]
         H_TRAIN[TrainingHandler]
         H_ANALY[AnalyticsHandler]
-        
+
         S_INTEG[IntegrationService]
         S_WIDGET[WidgetService]
         S_CHAT[ChatService]
-        
+
         AI_BRAIN[Groq Llama 3.3 AI Brain]
+        AI_VALIDATE[Response Validator / Anti-Hallucination]
         WS_HUB[WebSocket Hub / Broadcast Server]
+        JOB_Q[Background Job Queue]
     end
 
-    %% Persistence Layer
     subgraph Storage ["Distributed Persistence"]
         DB_TIDB[TiDB Cloud SQL Distributed Cluster]
         CACHE_RED[Upstash Cache & Memory Store]
+        MEM_BLACKLIST[In-Memory Token Blacklist]
+        MEM_RATELIMIT[In-Memory Rate Limiter]
     end
 
-    %% Frontend App
     subgraph UI ["React SPA Frontend (Vite)"]
         RT_CONN[Network Context & Banners]
         WC_CTX[Widget Config Context]
@@ -84,14 +174,17 @@ graph TD
         ANALY_DASH[Overview Analytics]
     end
 
-    %% Connections
     WA --> R_PROXY
     TG --> R_PROXY
     FB --> R_PROXY
     WB --> R_PROXY
 
-    R_PROXY --> JWT_AUTH
+    R_PROXY --> SANITIZE
+    SANITIZE --> BODY_LIMIT
+    BODY_LIMIT --> CSRF
+    CSRF --> JWT_AUTH
     JWT_AUTH --> RATE_LIM
+
     RATE_LIM --> H_CHATS
     RATE_LIM --> H_INTEG
     RATE_LIM --> H_TRAIN
@@ -103,11 +196,16 @@ graph TD
     H_ANALY --> S_CHAT
 
     S_CHAT --> AI_BRAIN
+    AI_BRAIN --> AI_VALIDATE
     S_CHAT --> WS_HUB
     S_WIDGET --> DB_TIDB
 
     S_CHAT --> DB_TIDB
     S_CHAT --> CACHE_RED
+    S_CHAT --> MEM_BLACKLIST
+    S_CHAT --> MEM_RATELIMIT
+
+    JOB_Q --> DB_TIDB
 
     WS_HUB -.->|WebSocket Real-time Feed| UI
     UI -->|API Requests| R_PROXY
@@ -115,9 +213,9 @@ graph TD
 
 ---
 
-## 🔄 AI Orchestration & "In-the-Round" Communication Flow
+## AI Orchestration Flow
 
-The "In-the-Round" orchestration describes how a message from an external user is safely consumed by the AI, verified against security and anti-hallucination thresholds, and either auto-replied or escalated to a live agent, closing the feedback loop through training.
+The "In-the-Round" orchestration describes how a message from an external user is consumed by the AI, verified against security and anti-hallucination thresholds, and either auto-replied or escalated to a live agent.
 
 ```mermaid
 sequenceDiagram
@@ -125,6 +223,7 @@ sequenceDiagram
     actor Customer as WhatsApp / Widget User
     participant WH as Webhooks / Backend Handler
     participant AI as AI Brain & Llama 3.3
+    participant VAL as Response Validator
     participant DB as TiDB Database
     participant WS as WebSocket Broadcast Hub
     participant Client as React Dashboard (Agent View)
@@ -133,95 +232,552 @@ sequenceDiagram
     Customer->>WH: Sends message (e.g. "Do you ship to Lagos?")
     WH->>DB: Logs incoming message as unread
     WH->>WS: Broadcasts `new_message` event
-    WS->>Client: Triggers real-time conversation list refresh (Last Message / Unread count update)
-    
+    WS->>Client: Triggers real-time conversation list refresh
+
     WH->>AI: Prompts AI Brain with Query & Context
     activate AI
     AI->>DB: Semantic database search matching QA pairs
     DB-->>AI: Returns closest matching candidate (Confidence score)
-    
+
     alt Confidence Score >= 0.70 (High Confidence Answering)
         AI-->>WH: Generates high-confidence response
+        WH->>VAL: Validate response for hallucinated prices
+        VAL-->>WH: Passes validation (confidence preserved)
         WH->>DB: Inserts AI message into `messages`
         WH->>WS: Broadcasts `new_message` to websocket
-        WS->>Client: Automatically displays AI's answer in inbox
+        WS->>Client: Automatically displays AI's answer
         WH->>Customer: Delivers reply back to customer chat
-    else Confidence Score < 0.70 (Anti-Hallucination Guardrail & Escalation)
+    else Confidence Score < 0.70 (Anti-Hallucination Guardrail)
         AI-->>WH: Flags Query as Ambiguous / Unknown
         deactivate AI
         WH->>DB: Updates Conversation Status to 'escalated'
         WH->>DB: Inserts task in `unknown_questions` queue
-        WH->>DB: Inserts preconfigured fallback warning text in `messages`
+        WH->>DB: Inserts fallback warning text
         WH->>WS: Broadcasts `unknown_question` & `integration_update`
-        WS->>Client: Triggers visual pulse / alert, shows unread escalated badge
-        WH->>Customer: Replies with: "I'm passing you to a human agent..."
-        
+        WS->>Client: Visual pulse alert, escalated badge
+        WH->>Customer: "I'm passing you to a human agent..."
+
         Agent->>Client: Selects conversation thread
         Client->>WH: GET /chats/conversations/:id
-        WH->>DB: Calls `MarkRead` SQL, updates unread to 0
+        WH->>DB: Calls MarkRead, updates unread to 0
         DB-->>Client: Returns conversation thread & messages
         Agent->>WH: Clicks 'Takeover' conversation
         WH->>DB: Sets `taken_over_by` as Agent ID
-        
-        Agent->>Client: Resolves ticket & submits corrected answer in training form
+
+        Agent->>Client: Resolves ticket & submits corrected answer
         Client->>WH: POST /training/unknown-questions/:id/train
-        WH->>DB: Inserts new QA pair, updates unknown_question status to 'trained'
-        WH-->>Agent: Training complete! Knowledge Base instantly updated.
+        WH->>DB: Inserts new QA pair, updates status to 'trained'
+        WH-->>Agent: Training complete! Knowledge Base updated.
     end
 ```
 
 ---
 
-## ⚙️ Core Subsystems & Features Deep Dive
+## Security Features
 
-### 1. The Anti-Hallucination Guardrail & Semantic Matcher
-The Go backend implements a LangChain-style orchestration layer. When a user queries the bot:
-* It searches the `qa_pairs` table using semantic full-text search.
-* A strict confidence boundary of **`0.70`** is enforced.
-* Under `0.70`, the system rejects the AI generation, logs the gap, triggers human escalation via real-time WebSocket signals, and saves the question in the dashboard's "Knowledge Gap" training view.
+### Authentication & Session Management
 
-### 2. Live Platform Health Monitoring
-To ensure 100% uptime for critical integrations:
-* A background ticker routine in `main.go` performs diagnostic checks of Facebook, Instagram, WhatsApp, and Telegram integration channels every 5 minutes.
-* Status flags are written back to the database, ensuring agents receive instant visual reports when channel configurations become invalid.
+| Feature | Implementation |
+|---|---|
+| **JWT-based auth** | Access tokens (24h default, 7d with remember-me) + refresh tokens (7d / 30d) |
+| **Cookie security** | `SameSite=LaxMode`, `Secure` in production, `HttpOnly` |
+| **Token revocation** | Redis blacklist with in-memory fallback when Redis is unavailable |
+| **Password hashing** | bcrypt with cost factor 12 |
+| **Password reset** | Single-use tokens stored in Redis with 1-hour TTL; rate-limited to 3/hour per email |
+| **Force password change** | `must_change_password` flag enforced at login and route level |
 
-### 3. Role-Based Tenancy & Data Isolation
-Security is structured for multi-agent support:
-* **Tenant Isolation**: Every chat message, analytics query, and Q&A pair is bound directly to a filtered `user_id` context.
-* **Role Heirarchy**: Owners and Admins manage integrations, configurations, and team invites, while Agents focus entirely on reading, resolving, and training conversations.
+### API Protection
 
-### 4. Polar Payment Integration & Plan Gating
-A built-in checkout gateway powered by **Polar** allows users to purchase credit packs and subscribe to plans (`pulse`, `pro`, `enterprise`):
-* **Webhook Signature Verification**: Standard Webhook signatures are validated using a computed HMAC-SHA256 hash matching the `webhook-signature` header (`v1,sig_hash`).
-* **Subscription Lifecycle**: Processes `subscription.created`, `subscription.updated`, and `subscription.cancelled` / `subscription.revoked` to dynamically adjust the user's plan.
-* **Credit Purchases**: Processes `order.created` containing `pack_type` metadata to provision credit allotments.
-* **Limits Gating**:
-  - `free` plan: Restricted to a maximum of 10 items in inventory, team invitations are disabled, and premium channels (Telegram/Gmail) are gated.
-  - Limits are enforced at the API layer and visually prompt a premium upgrade modal on the frontend.
+| Feature | Implementation |
+|---|---|
+| **CSRF** | Origin/Referer header validation on all POST/PUT/PATCH/DELETE requests |
+| **Rate limiting** | Redis-based sliding window with in-memory fallback (3 req/hour for password reset, 500 req/min per user for chats) |
+| **Request body limit** | 1 MB cap enforced before any JSON parsing |
+| **XSS sanitization** | Reflection-based struct sanitizer strips HTML, event handlers, script tags from all input |
+| **File upload** | 2 MB limit, `.csv` only, content sniffing (512 bytes), CSV data sanitized before persistence |
+| **Error hardening** | All internal errors return generic `"An unexpected error occurred"` — no stack or detail leakage |
+| **CORS** | Configurable allowlist, credentials enabled |
 
-### 5. Unified Render Cloud Deployment
-To facilitate zero-configuration cloud hosting:
-* **Single-Service Architecture**: The Go backend is equipped to serve the production-compiled React static assets directly from the `./static` directory.
-* **Relative API & WebSocket Binding**: This eliminates the need to configure `VITE_API_URL` or `VITE_WS_URL` env variables at build time, since frontend assets are served on the same host and port.
-* **SPA Routing Fallback**: Non-API/WebSocket routes automatically fallback to serving `index.html`, allowing client-side React Router navigation to work out of the box.
+### Content Security
 
-### 6. Robust Input Sanitization & Security Hardening
-To secure the application against Cross-Site Scripting (XSS), code injection, and malicious file uploads:
-* **Reflection-Based Struct Sanitizer**: Automatically traverses and sanitizes all bound JSON structures on every API request. Sensitive fields (e.g. passwords, secrets, API keys, tokens) are automatically skipped to preserve credential validity.
-* **URL/Form Parameter Scrubbing**: A global query-parameter middleware automatically strips HTML tags, event handlers (`onerror`, `onload`), script blocks, and `javascript:` URLs from URL queries and multipart forms.
-* **Hardened File Uploads**:
-  - Size limitation restricted to 2MB.
-  - Extension whitelist restricted strictly to `.csv`.
-  - Content sniffing (first 512 bytes) to detect and reject executables, archives, and compressed formats.
-  - Direct sanitization of all parsed CSV data (categories, questions, and answers) before database persistence.
+- **CSP**: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' api.groq.com; frame-ancestors 'none'`
+- **Headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
+- **Permissions**: `camera=(), microphone=(), geolocation=()`
+
+### Redis Failure Resilience
+
+When Redis is unavailable, the system degrades gracefully:
+
+| Feature | Fallback |
+|---|---|
+| **Rate limiting** | In-memory sliding window with periodic cleanup |
+| **Token blacklist** | In-memory map with 24h TTL and 10-minute cleanup goroutine |
+| **Auth middleware** | Falls back to in-memory blacklist check when Redis is nil |
+| **Conversation history** | Loaded from MySQL instead of Redis cache |
 
 ---
 
-## 🗄️ Database Schema & TiDB Storage Topology
+## Core Subsystems
 
-Our migrations are built for **TiDB Cloud** (distributed SQL clustering), optimizing read performance for real-time customer messaging.
+### 1. AI Brain & Anti-Hallucination Guardrail
 
-### Database ER Model Summary
+The Go backend implements a LangChain-style orchestration layer:
+
+- **Semantic Search**: Queries `qa_pairs` using full-text search, returns closest match with confidence score.
+- **Confidence Threshold**: Strict boundary of **0.70**. Below it, the system rejects AI generation, logs the gap, and escalates.
+- **Response Validation**: Extracts price claims (e.g. `₦1,500`) from AI responses using regex and cross-references against the user's inventory. If a claimed price doesn't match any inventory item, the response is replaced with a safe fallback.
+- **Hallucination Signals**: Phrases like "according to my training", "based on my knowledge", "generally speaking" reduce confidence by 30%.
+- **Context Window**: Last 10 conversation turns stored in Redis (3-day TTL), falls back to MySQL.
+
+### 2. Multi-Channel Integration Hub
+
+Supports bidirectional messaging across:
+
+| Channel | Protocol | Webhook | Polling |
+|---|---|---|---|
+| WhatsApp | OpenWA API (self-hosted) | Yes | No |
+| Telegram | Bot API | Yes | No |
+| Facebook Messenger | Graph API | Yes | No |
+| Instagram | Graph API | Yes | No |
+| Web Widget | Custom JS SDK + WebSocket | No | Yes |
+
+### 3. Background Job Scheduler
+
+Built-in job queue with Redis persistence handles recurring maintenance:
+
+| Job | Interval | Purpose |
+|---|---|---|
+| `health_check` | 5 min | Tests all integration channel connectivity |
+| `cache_cleanup` | 15 min | Evicts stale cache entries |
+| `handoff_reminder` | 15 min | Sends reminders for pending handoffs |
+| `check_credit_expiry` | 24 h | Expires stale credit balances |
+| `process_campaigns_start` | 24 h | Activates scheduled broadcast campaigns |
+| `db_cleanup_all` | 6 h | Runs all data retention cleanups |
+| `openwa_webhook_repair` | 30 min | Repairs OpenWA webhook URLs |
+| `free_weekly_reset` | 7 d | Resets free plan weekly usage counters |
+
+### 4. Real-Time WebSocket Hub
+
+- **Connection Management**: Single hub instance, client map keyed by remote address.
+- **Keepalive**: Ping messages every 30 seconds.
+- **Broadcast**: Channel with 256-buffer, drops messages when full (non-blocking).
+- **Reconnection**: Frontend uses exponential backoff starting at 1s, doubling per attempt, capped at 30s, reset on successful connect.
+
+### 5. Plan Gating & Credit System
+
+| Plan | Price | Inventory Limit | Team Seats | Channels |
+|---|---|---|---|---|
+| Free | ₦0 | 10 items | 1 (owner only) | Web Widget |
+| Pulse | Via Polar | 50 items | Up to 3 | Web + Telegram |
+| Pro | Via Polar | 500 items | Up to 10 | All channels |
+| Enterprise | Via Polar | Unlimited | Unlimited | All channels + custom |
+
+- Limits enforced at API layer; frontend shows upgrade modal on quota exceeded.
+- Credit packs purchasable for per-message AI usage.
+- Polar webhooks verified via HMAC-SHA256 signatures.
+
+### 6. Data Retention & Cleanup
+
+Automatic cleanup schedules (configurable via environment variables):
+
+| Entity | Retention | Action |
+|---|---|---|
+| Resolved conversations | 90 days | Soft-delete |
+| Abandoned conversations | 30 days | Soft-delete |
+| Orphaned messages | Immediate | Delete when parent conversation is removed |
+| Unknown questions | 30 days | Delete |
+| Expired handoffs | 7 days | Close |
+| Audit logs | 90 days | Archive/delete |
+| Notifications | 30 days | Delete |
+| Inactive integrations | 30 days | Deactivate |
+| Expired trials | 14 days after expiry | Downgrade to free |
+| Expired credits | 365 days | Reset to zero |
+| Completed campaigns | 30 days after end | Archive |
+
+---
+
+## Configuration Reference
+
+All configuration is via environment variables. Copy `backend/.env.example` to `backend/.env`.
+
+### Server
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `8080` | HTTP server port |
+| `NODE_ENV` | `development` | `production` enables ReleaseMode |
+| `APP_URL` | `http://localhost:8080` | Public-facing URL |
+| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
+
+### Database (TiDB)
+
+| Variable | Default | Description |
+|---|---|---|
+| `DB_DSN` | — | TiDB connection string |
+| `DB_POOL_SIZE` | `20` | Max open connections |
+| `DB_MAX_IDLE` | `5` | Max idle connections |
+| `DB_CONN_MAX_LIFETIME` | `5m` | Connection max lifetime |
+
+### Redis
+
+| Variable | Default | Description |
+|---|---|---|
+| `REDIS_URL` | — | Redis connection URL |
+| `REDIS_SHORT_TTL` | `259200` | AI conversation history TTL (seconds, default 3 days) |
+| `CACHE_TTL` | `300` | Generic cache TTL (seconds) |
+
+### Authentication
+
+| Variable | Default | Description |
+|---|---|---|
+| `JWT_SECRET` | — | HMAC signing key (min 32 chars) |
+| `JWT_ACCESS_TTL` | `24h` | Access token TTL |
+| `JWT_REFRESH_TTL` | `168h` | Refresh token TTL (7 days) |
+
+### AI / Groq
+
+| Variable | Default | Description |
+|---|---|---|
+| `GROQ_API_KEY` | — | Groq API key (comma-separated for round-robin) |
+| `GROQ_MODEL` | `llama3-70b-8192` | Model identifier |
+
+### Integrations
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENWA_BASE_URL` | — | OpenWA self-hosted server URL |
+| `OPENWA_API_KEY` | — | OpenWA API authentication key |
+| `OPENWA_WEBOOK_SECRET` | — | OpenWA webhook verification secret |
+| `TELEGRAM_BOT_TOKEN` | — | Telegram bot token |
+| `FACEBOOK_ACCESS_TOKEN` | — | Facebook Graph API token |
+| `INSTAGRAM_ACCESS_TOKEN` | — | Instagram Graph API token |
+
+### Email
+
+| Variable | Default | Description |
+|---|---|---|
+| `EMAIL_PROVIDER` | `resend` | `resend` or `smtp` |
+| `RESEND_API_KEY` | — | Resend.com API key |
+| `SMTP_HOST` | — | SMTP server host |
+| `SMTP_PORT` | `587` | SMTP server port |
+| `SMTP_USER` | — | SMTP username |
+| `SMTP_PASS` | — | SMTP password |
+| `FROM_EMAIL` | — | Sender email address |
+
+### Payments
+
+| Variable | Default | Description |
+|---|---|---|
+| `POLAR_ACCESS_TOKEN` | — | Polar API authentication token |
+| `POLAL_WEBHOOK_SECRET` | — | Polar webhook signing secret |
+| `POLAR_ORGANIZATION_ID` | — | Polar organization identifier |
+
+---
+
+## Installation & Deployment
+
+### Prerequisites
+
+- Go 1.22+
+- Node.js 18+ (with npm)
+- MySQL client or TiDB Cloud access
+- Redis (Upstash or self-hosted)
+
+### Local Development
+
+**Backend:**
+
+```bash
+cd backend
+cp .env.example .env
+# Edit .env with your credentials
+go mod download
+go run main.go
+```
+
+**Frontend:**
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+**Run all migrations:**
+
+```bash
+for f in backend/migrations/*.sql; do
+  mysql -h your-tidb-host -P 4000 -u your-user -p noant < "$f"
+done
+```
+
+### Production Build (Unified Server)
+
+```bash
+cd frontend && npm install && npm run build
+cd ../backend && mkdir -p static && cp -r ../frontend/dist/* ./static/
+go build -o bin/main main.go
+./bin/main
+```
+
+The backend serves the compiled React SPA from `./static/` on the same port — no separate frontend hosting needed.
+
+### Docker
+
+```bash
+# Build
+docker build -f backend/Dockerfile -t noant-backend .
+docker build -f frontend/Dockerfile -t noant-frontend .
+
+# Or use docker-compose (if available)
+docker compose up -d
+```
+
+---
+
+## Testing
+
+```bash
+# All backend tests
+cd backend && go test -count=1 ./...
+
+# Specific packages
+go test -count=1 ./internal/infrastructure/...
+go test -count=1 ./internal/middleware/...
+go test -count=1 ./internal/service/...
+go test -count=1 ./internal/utils/...
+
+# Frontend type check
+cd frontend && npx tsc --noEmit
+
+# Frontend tests (if configured)
+npm test
+```
+
+### Test Coverage Areas
+
+| Package | Tests | What's Covered |
+|---|---|---|
+| `infrastructure` | Rate limiter, blacklist | Allow/deny logic, window reset, key isolation, cleanup, TTL expiry |
+| `middleware` | Body limit | Safe method pass-through, oversized rejection, streaming truncation |
+| `service` | AI sales, duplicate reply, WhatsApp identity, Polar | Business logic correctness |
+| `utils` | Sanitization | XSS stripping, control char removal, struct traversal, validation regexes |
+
+---
+
+## API Directory
+
+All endpoints are prefixed with `/api/v1` and return JSON. Authentication via `Authorization: Bearer <token>` header or `noant_access` cookie.
+
+### Authentication
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `POST` | `/auth/register` | Create tenant account | No |
+| `POST` | `/auth/login` | Log in (supports `remember_me`) | No |
+| `POST` | `/auth/refresh` | Refresh session token | Yes |
+| `POST` | `/auth/logout` | Revoke tokens (Redis + in-memory blacklist) | Yes |
+| `POST` | `/auth/change-password` | Change password (clears must_change_password flag) | Yes |
+| `POST` | `/auth/forgot-password` | Request password reset (rate-limited 3/hour) | No |
+| `POST` | `/auth/reset-password` | Complete password reset with token | No |
+| `POST` | `/auth/verify-email` | Verify email with code | No |
+| `GET` | `/auth/me` | Get current user profile | Yes |
+| `PUT` | `/auth/profile` | Update profile | Yes |
+
+### Chats & Conversations
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/chats/conversations` | List conversations (paginated, `page`/`limit`) | Yes |
+| `GET` | `/chats/conversations/:id` | Get conversation with messages (paginated) | Yes |
+| `POST` | `/chats/conversations/:id/messages` | Send message | Yes |
+| `PUT` | `/chats/conversations/:id/takeover` | Human takeover from AI | Yes |
+| `POST` | `/chats/conversations/:id/escalate` | Escalate conversation | Yes |
+| `POST` | `/chats/direct-chat` | Start test chat with AI | Yes |
+| `DELETE` | `/chats/clear` | Clear all conversations | Yes |
+| `POST` | `/chats/typing` | Broadcast typing indicator via WebSocket | Yes |
+
+### Training
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/training/categories` | List QA categories | Yes |
+| `POST` | `/training/categories` | Create category | Yes |
+| `PUT` | `/training/categories/:id` | Update category | Yes |
+| `DELETE` | `/training/categories/:id` | Delete category | Yes |
+| `GET` | `/training/qa` | List QA pairs (filterable by category) | Yes |
+| `POST` | `/training/qa` | Create QA pair | Yes |
+| `PUT` | `/training/qa/:id` | Update QA pair | Yes |
+| `DELETE` | `/training/qa/:id` | Delete QA pair | Yes |
+| `POST` | `/training/bulk-qa` | Bulk import QA pairs | Yes |
+| `POST` | `/training/csv-upload` | Upload CSV with questions/answers | Yes |
+| `GET` | `/training/search` | Search QA pairs | Yes |
+| `GET` | `/training/unknown-questions` | List knowledge gaps | Yes |
+| `POST` | `/training/unknown-questions/:id/train` | Train & resolve unknown question | Yes |
+
+### Integrations
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/integrations/list` | List all channel integrations | Yes |
+| `POST` | `/integrations/connect` | Connect a channel | Yes |
+| `POST` | `/integrations/disconnect/:channel` | Disconnect a channel | Yes |
+| `PUT` | `/integrations/:id` | Update integration config | Yes |
+| `DELETE` | `/integrations/:id` | Remove integration | Yes |
+
+### Widget Config
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/widget/config` | Get widget configuration | Yes |
+| `POST` | `/widget/config` | Update widget configuration | Yes |
+| `GET` | `/widget/public/:id` | Public widget config (no auth) | No |
+
+### Payments & Billing
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/payments/plans` | List subscription plans | No |
+| `POST` | `/payments/subscribe` | Initiate subscription checkout | Yes |
+| `POST` | `/payments/webhook` | Polar webhook receiver | No (HMAC verified) |
+| `GET` | `/payments/status` | Current subscription status | Yes |
+
+### Inventory
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/inventory` | List inventory items | Yes |
+| `POST` | `/inventory` | Create inventory item | Yes |
+| `GET` | `/inventory/search` | Search inventory | Yes |
+| `GET` | `/inventory/:id` | Get item details | Yes |
+| `PUT` | `/inventory/:id` | Update item | Yes |
+| `DELETE` | `/inventory/:id` | Delete item | Yes |
+
+### Handoffs & Leads
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/handoffs` | List handoffs/leads | Yes |
+| `GET` | `/handoffs/:id` | Get handoff details | Yes |
+| `PUT` | `/handoffs/status` | Update handoff status | Yes |
+
+### Credits
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/credits/balance` | Get credit balance | Yes |
+| `GET` | `/credits/limits` | Get plan limits | Yes |
+| `POST` | `/credits/purchase` | Purchase credit pack | Yes |
+| `GET` | `/credits/history` | Credit transaction history | Yes |
+
+### Analytics
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/analytics/overview` | Dashboard overview stats | Yes |
+| `GET` | `/analytics/insights` | AI-generated business insights | Yes |
+
+### Campaigns
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/campaigns` | List campaigns | Yes |
+| `POST` | `/campaigns` | Schedule campaign | Yes |
+| `DELETE` | `/campaigns/:id` | Cancel campaign | Yes |
+
+### Teams
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/teams/members` | List team members | Yes |
+| `POST` | `/teams/invite` | Invite team member | Yes |
+| `DELETE` | `/teams/members/:id` | Remove team member | Yes |
+
+### API Keys
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/api-keys` | List API keys | Yes |
+| `POST` | `/api-keys` | Generate API key | Yes |
+| `DELETE` | `/api-keys/:id` | Revoke API key | Yes |
+
+### Notifications
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/notifications` | List notifications | Yes |
+| `PUT` | `/notifications/:id/read` | Mark as read | Yes |
+
+### WhatsApp (OpenWA)
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/channels/whatsapp/health` | WhatsApp connection health | Yes |
+| `POST` | `/channels/whatsapp/verify` | Verify WhatsApp number | Yes |
+| `POST` | `/channels/whatsapp/send-test` | Send test WhatsApp message | Yes |
+
+### System
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/health` | Health check (DB, Redis, Groq keys) | No |
+| `GET` | `/ping` | Liveness probe | No |
+| `GET` | `/metrics` | Prometheus metrics | No |
+
+---
+
+## Operations
+
+### Health Checks
+
+| Component | Check | Frequency |
+|---|---|---|
+| Database | `PingContext()` | On-demand via `/health` |
+| Redis | `Ping()` | On-demand via `/health` |
+| Groq API | Key format validation | On-demand via `/health` |
+| Integrations (Telegram, WhatsApp, FB, IG) | API connectivity test | Every 5 min (background goroutine + job queue) |
+
+### Redis Key Lifecycle
+
+| Key Pattern | TTL | Created By |
+|---|---|---|
+| `refresh:<token>` | 7 days | Login, token refresh |
+| `blacklist:<token>` | 24 hours | Logout, token revocation |
+| `reset:<token>` | 1 hour | Forgot password |
+| `conv:<id>:history` | 3 days | AI conversation turn storage |
+| `cache:<key>` | 5 minutes | Generic cache |
+| `ratelimit:*` | Window duration | Rate limit middleware |
+| `user:<id>` | 5 minutes | User cache |
+| `job:<id>` | 24 hours | Background job queue |
+| `free_weekly:<uid>` | Until Monday midnight | Free plan counter |
+
+### Circuit Breaker (AI API Calls)
+
+- **Threshold**: 3 consecutive failures
+- **State**: `closed` → `open` → `half-open` → `closed`
+- **Recovery**: 60-second wait before transitioning to half-open on next request
+- **Scope**: Per-instance, in-memory (not shared across replicas)
+
+### WebSocket Reconnection
+
+The frontend WebSocket client uses exponential backoff:
+
+```
+Attempt 1: 1s
+Attempt 2: 2s
+Attempt 3: 4s
+Attempt 4: 8s
+...
+Cap: 30s
+Reset: On successful connection
+```
+
+---
+
+## Database Schema
+
+### Entity Relationship
+
 ```
 ┌─────────────────────────────────┐       ┌─────────────────────────────────┐
 │          users                  │       │          conversations          │
@@ -229,199 +785,94 @@ Our migrations are built for **TiDB Cloud** (distributed SQL clustering), optimi
 │ id (PK)         VARCHAR(36)     │◄──┐   │ id (PK)         VARCHAR(36)     │◄──┐
 │ email           VARCHAR(255)    │   │   │ user_id (FK)    VARCHAR(36)     │   │
 │ password_hash   VARCHAR(255)    │   │   │ customer_name   VARCHAR(100)    │   │
-│ first_name      VARCHAR(100)    │   │   │ channel         ENUM            │   │
-│ last_name       VARCHAR(100)    │   │   │ status          ENUM            │   │
-│ role            ENUM            │   │   │ intent          ENUM            │   │
-│ plan_id         VARCHAR(50)     │   │   │ updated_at      TIMESTAMP       │   │
-└─────────────────────────────────┘   │   └─────────────────────────────────┘   │
-                                      │                                         │
-┌─────────────────────────────────┐   │   ┌─────────────────────────────────┐   │
-│          integrations           │   │   │          messages               │   │
-├─────────────────────────────────┤   │   ├─────────────────────────────────┤   │
-│ id (PK)         VARCHAR(36)     │   │   │ id (PK)         VARCHAR(36)     │   │
-│ user_id (FK)    VARCHAR(36)     ├───┘   │ conversation_id VARCHAR(36)     ├───┘
-│ channel         VARCHAR(50)     │       │ sender_type     ENUM            │
-│ status          ENUM            │       │ content         TEXT            │
-│ config          JSON            │       │ is_read         BOOLEAN         │
-└─────────────────────────────────┘       └─────────────────────────────────┘
+│ first_name      VARCHAR(100)    │   │   │ customer_phone  VARCHAR(20)     │   │
+│ last_name       VARCHAR(100)    │   │   │ customer_email  VARCHAR(255)    │   │
+│ role            ENUM            │   │   │ channel         VARCHAR(50)     │   │
+│ plan_id         VARCHAR(50)     │   │   │ status          ENUM            │   │
+│ is_active       BOOLEAN         │   │   │ intent          VARCHAR(50)     │   │
+│ is_verified     BOOLEAN         │   │   │ priority        ENUM            │   │
+│ trial_expires_at TIMESTAMP      │   │   │ is_ai_transferred BOOLEAN       │   │
+│ created_at      TIMESTAMP       │   │   │ taken_over_by   VARCHAR(36)    │   │
+└─────────────────────────────────┘   │   │ folder_id       VARCHAR(36)     │   │
+                                      │   │ created_at      TIMESTAMP       │   │
+┌─────────────────────────────────┐   │   │ updated_at      TIMESTAMP       │   │
+│          integrations           │   │   └─────────────────────────────────┘   │
+├─────────────────────────────────┤   │                                         │
+│ id (PK)         VARCHAR(36)     │   │   ┌─────────────────────────────────┐   │
+│ user_id (FK)    VARCHAR(36)     ├───┘   │          messages               │   │
+│ channel         VARCHAR(50)     │       ├─────────────────────────────────┤   │
+│ status          ENUM            │       │ id (PK)         VARCHAR(36)     │   │
+│ config          JSON            │       │ conversation_id VARCHAR(36)     ├───┘
+│ created_at      TIMESTAMP       │       │ sender_type     ENUM            │
+│ updated_at      TIMESTAMP       │       │ content         TEXT            │
+└─────────────────────────────────┘       │ is_read         BOOLEAN         │
+                                          │ confidence      DECIMAL         │
+┌─────────────────────────────────┐       │ source          VARCHAR(50)     │
+│          qa_pairs              │       │ created_at      TIMESTAMP       │
+├─────────────────────────────────┤       └─────────────────────────────────┘
+│ id (PK)         VARCHAR(36)     │
+│ category_id (FK) VARCHAR(36)   │       ┌─────────────────────────────────┐
+│ question        TEXT            │       │       categories               │
+│ answer          TEXT            │       ├─────────────────────────────────┤
+│ variations      JSON            │       │ id (PK)         VARCHAR(36)     │
+│ is_active       BOOLEAN         │       │ user_id (FK)    VARCHAR(36)     │
+│ usage_count     INT             │       │ name            VARCHAR(100)    │
+│ created_at      TIMESTAMP       │       │ description     TEXT            │
+└─────────────────────────────────┘       │ color           VARCHAR(7)      │
+                                          │ created_at      TIMESTAMP       │
+┌─────────────────────────────────┐       └─────────────────────────────────┘
+│     unknown_questions          │
+├─────────────────────────────────┤       ┌─────────────────────────────────┐
+│ id (PK)         VARCHAR(36)     │       │          handoffs              │
+│ user_id (FK)    VARCHAR(36)     │       ├─────────────────────────────────┤
+│ question        TEXT            │       │ id (PK)         VARCHAR(36)     │
+│ conversation_id VARCHAR(36)     │       │ conversation_id VARCHAR(36)     │
+│ channel         VARCHAR(50)     │       │ customer_phone  VARCHAR(20)     │
+│ status          ENUM            │       │ product_name    VARCHAR(255)    │
+│ suggested_answer TEXT           │       │ original_price  DECIMAL         │
+│ created_at      TIMESTAMP       │       │ agreed_price    DECIMAL         │
+└─────────────────────────────────┘       │ status          ENUM            │
+                                          │ created_at      TIMESTAMP       │
+┌─────────────────────────────────┐       └─────────────────────────────────┘
+│      inventory_items           │
+├─────────────────────────────────┤       ┌─────────────────────────────────┐
+│ id (PK)         VARCHAR(36)     │       │       widget_configs           │
+│ user_id (FK)    VARCHAR(36)     │       ├─────────────────────────────────┤
+│ type            ENUM            │       │ id (PK)         VARCHAR(36)     │
+│ name            VARCHAR(255)    │       │ user_id (FK)    VARCHAR(36)     │
+│ description     TEXT            │       │ config          JSON            │
+│ price           DECIMAL         │       │ is_active       BOOLEAN         │
+│ min_price       DECIMAL         │       │ created_at      TIMESTAMP       │
+│ stock_quantity  INT             │       └─────────────────────────────────┘
+│ is_active       BOOLEAN         │
+│ created_at      TIMESTAMP       │       ┌─────────────────────────────────┐
+└─────────────────────────────────┘       │       audit_logs               │
+                                          ├─────────────────────────────────┤
+┌─────────────────────────────────┐       │ id (PK)         VARCHAR(36)     │
+│       credit_balances          │       │ user_id (FK)    VARCHAR(36)     │
+├─────────────────────────────────┤       │ action          VARCHAR(100)    │
+│ id (PK)         VARCHAR(36)     │       │ resource_type   VARCHAR(50)     │
+│ user_id (FK)    VARCHAR(36)     │       │ resource_id     VARCHAR(36)     │
+│ balance         DECIMAL         │       │ details         JSON            │
+│ expires_at      TIMESTAMP       │       │ created_at      TIMESTAMP       │
+│ last_updated_at TIMESTAMP       │       └─────────────────────────────────┘
+└─────────────────────────────────┘
 ```
 
----
+### Additional Tables
 
-## ✨ Premium Accomplishments & Enhancements
-
-During this upgrade phase, we implemented outstanding visual and structural adjustments:
-
-### 1. dynamic Favicon Package
-* **Generator Script**: Designed a custom Python script using `Pillow` to extract the high-resolution circle-and-three-dots JPG branding logo.
-* **Compatibility Package**: Layer-packed a transparent `favicon.ico` (resolutions `16x16`, `32x32`, `48x48`, `64x64`), `favicon-32x32.png`, `favicon-16x16.png`, and a 180px `apple-touch-icon.png` in the public assets.
-* **Linked Assembly**: Configured `index.html` header structure for robust loading across modern and legacy web browsers.
-
-### 2. Sliding Network Banner System
-* **Offline Banner Component**: Completely rewrote the connection visual indicator in `src/components/OfflineBanner.tsx`.
-* **Transitions**: Leveraged custom `@keyframes slideDownBanner` and `slideUpBanner` in `src/index.css` to slide down smoothly when connection drops.
-* **Auto-Fade**: When back online, a gorgeous green banner appears, flashes for 2.2 seconds, fades out over 300ms (`transition: opacity 0.3s`), and automatically unmounts, satisfying the 2.5-second online visual timer.
-
-### 3. Polish Connected Channels Table
-* **Connected Only Filter**: Refactored the dashboard's summary table to iterate exclusively on active integrations (`status === 'connected'`).
-* **Interactive Empty State**: Designed a beautiful glass-morphic visual empty state containing floating illustrations and a CTA button prompting connection whenever no active channels exist.
-
-### 4. Direct Overview Landing Page
-* **Routing Redirection**: Updated the successful authentication block inside `login/page.tsx`.
-* **Overview First**: Instead of directing to configuration wizard overlays, users landing on the platform are immediately welcomed by the visual metrics and charts of the **Overview** dashboard (`/`).
-
-### 5. Multi-Modal Widget State Sync
-* **Context State Hub**: Deployed a React context (`WidgetConfigContext`) wrapping the entire application router tree.
-* **Widget-to-Channel Sync**: The widget customizer panel (**Web Widget** tab) and the channels connector popup (**Channels** tab) are bidirectionally wired into this context. 
-* **Database Cohesion**: Toggling features, customizing bot names, positions, greetings, or changing brand color schemes updates both the React context states and backend `widget_configs` & `integrations` databases instantly—with absolutely zero page reloads.
+- `team_members` — Team invitations and role assignments
+- `api_keys` — Programmatic API access keys
+- `archived_conversations` — Soft-deleted conversation archive
+- `subscriptions` — Polar subscription lifecycle records
+- `credit_purchases` — Credit pack purchase history
+- `campaign_schedules` — Broadcast campaign scheduling
+- `notifications` — In-app notification center
+- `fcm_tokens` — Firebase Cloud Messaging push tokens
+- `fcm_preferences` — Per-user notification preferences
 
 ---
 
-## ⚙️ Installation & Local Deployment Guide
+## License
 
-### Prerequisites
-* Go 1.22 or higher
-* Node.js v18 or higher (with npm)
-* Python (with Pillow installed for favicon transformations)
-* MySQL client or access to a TiDB Cloud database
-
----
-
-### Step 1: Clone & Configure the Backend
-
-1. Navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
-2. Create your `.env` configuration file:
-   ```bash
-   cp .env.example .env
-   ```
-3. Update `.env` with your active database connection strings and AI credentials:
-   ```env
-   PORT=8080
-   DB_DSN="user:password@tcp(tidb-host:4000)/noant?tls=true&parseTime=true"
-   REDIS_URL="redis://default:token@redis-host:6379"
-   GROQ_API_KEY="gsk_..."
-   JWT_SECRET="super-secure-key"
-   ```
-4. Run database migrations:
-   ```bash
-   mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/001_init.sql
-   mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/005_user_isolation.sql
-   mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/006_notifications_widget.sql
-   mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/007_message_source.sql
-   mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/008_inventory_leads.sql
-   mysql -h your-tidb-host -P 4000 -u your-user -p noant < migrations/009_inventory_leads_fix.sql
-   ```
-5. Install Go dependencies and launch:
-   ```bash
-   go mod download
-   go run main.go
-   ```
-
----
-
-### Step 2: Configure & Run the React Frontend
-
-1. Open a new terminal and navigate to the frontend directory:
-   ```bash
-   cd frontend
-   ```
-2. Install npm dependencies:
-   ```bash
-   npm install
-   ```
-3. Generate high-quality assets using the Python script:
-   ```bash
-   python -c "
-   from PIL import Image
-   import os
-   rgba = Image.open(r'../brain/d5e6425a-d5b3-48c4-b03c-36f16dbfa6fc/media__1779803513026.jpg').convert('RGBA')
-   datas = rgba.getdata()
-   newData = [(255,255,255,0) if item[0]>240 and item[1]>240 and item[2]>240 else item for item in datas]
-   rgba.putdata(newData)
-   sizes = {'logo.png': (192, 192), 'favicon-32x32.png': (32, 32), 'favicon-16x16.png': (16, 16), 'apple-touch-icon.png': (180, 180)}
-   for name, size in sizes.items():
-       rgba.resize(size, Image.Resampling.LANCZOS).save(os.path.join('public', name), 'PNG')
-   rgba.save(os.path.join('public', 'favicon.ico'), format='ICO', sizes=[(16, 16), (32, 32), (48, 48)])
-   print('Assets compiled!')
-   "
-   ```
-4. Run the Vite development server:
-   ```bash
-   npm run dev
-   ```
-
----
-
-### Step 3: Production Build (Unified Static + API Server)
-To compile the React frontend and bundle it directly into the Go backend for production deployment:
-1. Run the following command from the project root:
-   ```bash
-   cd frontend && npm install && npm run build && cd ../backend && mkdir -p static && cp -r ../frontend/dist/* ./static/ && go build -o bin/main main.go
-   ```
-2. Start the unified server:
-   ```bash
-   cd backend && ./bin/main
-   ```
-   The backend will detect the `./static` directory and serve the React app on the configured `PORT` (e.g. `http://localhost:8080`).
-
----
-
-## 📑 Comprehensive API Directory
-
-All backend endpoints are standardized with versioning prefix `/api/v1` and return JSON payloads.
-
-| Category | Method | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :--- | :--- |
-| **Authentication** | `POST` | `/auth/register` | Create a new tenant account | No |
-| | `POST` | `/auth/login` | Log in and return JWT token | No |
-| | `POST` | `/auth/refresh` | Refresh an expiring session token | Yes |
-| | `POST` | `/auth/change-password` | Change user password | Yes |
-| **Chats & Inbox** | `GET` | `/chats/conversations` | List conversations (paginated) | Yes |
-| | `GET` | `/chats/conversations/:id` | Fetch specific conversation thread | Yes |
-| | `POST` | `/chats/conversations/:id/messages` | Send an outbound message | Yes |
-| | `PUT` | `/chats/conversations/:id/takeover` | Human takes over control from AI | Yes |
-| | `POST` | `/chats/direct-chat` | Start interactive test with AI | Yes |
-| **Training Engine**| `GET` | `/training/categories` | List Q&A categories | Yes |
-| | `POST` | `/training/categories` | Create Q&A category | Yes |
-| | `POST` | `/training/bulk-qa` | Bulk import trained QA pairs | Yes |
-| | `POST` | `/training/csv-upload` | Upload and auto-parse CSV | Yes |
-| | `GET` | `/training/unknown-questions` | List logged knowledge gaps | Yes |
-| | `POST` | `/training/unknown-questions/:id/train` | Train and resolve unknown question | Yes |
-| **Integrations** | `GET` | `/integrations/list` | Fetch active/inactive channel list | Yes |
-| | `POST` | `/integrations/connect` | Connect channel configurations | Yes |
-| | `POST` | `/integrations/disconnect/:channel`| Disconnect an integration channel | Yes |
-| **Widget Config**  | `GET` | `/widget/config` | Load custom web widget config | Yes |
-| | `POST` | `/widget/config` | Update custom web widget settings | Yes |
-| **Analytics** | `GET` | `/analytics/overview` | Fetch primary stats and trends | Yes |
-| | `GET` | `/analytics/insights` | Fetch custom AI business insights | Yes |
-| **Billing & Payments**| `GET` | `/payments/plans` | List available subscription plans | No |
-| | `POST` | `/payments/subscribe` | Initiate subscription upgrade checkout | Yes |
-| | `POST` | `/payments/webhook` | Process incoming Polar webhook events | No |
-| | `GET` | `/payments/status` | Fetch current organization subscription status | Yes |
-| **Inventory** | `GET` | `/inventory` | List user inventory items | Yes |
-| | `POST` | `/inventory` | Create a new inventory item | Yes |
-| | `GET` | `/inventory/search` | Search inventory items | Yes |
-| | `GET` | `/inventory/:id` | Fetch specific inventory item details | Yes |
-| | `PUT` | `/inventory/:id` | Update specific inventory item | Yes |
-| | `DELETE`| `/inventory/:id` | Delete specific inventory item | Yes |
-| **Handoffs & Leads**  | `GET` | `/handoffs` | List sales handoffs and customer leads | Yes |
-| | `GET` | `/handoffs/:id` | Fetch detailed sales handoff report | Yes |
-| | `PUT` | `/handoffs/status` | Update a sales handoff lead status | Yes |
-| **Credits & Limits**  | `GET` | `/credits/balance` | Fetch current user credit balance | Yes |
-| | `GET` | `/credits/limits` | Fetch current user workspace plan limits | Yes |
-| | `POST` | `/credits/purchase` | Initiate credit pack purchase checkout | Yes |
-| | `GET` | `/credits/history` | List purchase and utilization history | Yes |
-| **Campaigns** | `GET` | `/campaigns` | List active message broadcast campaigns | Yes |
-| | `POST` | `/campaigns` | Schedule a new broadcast campaign | Yes |
-| | `DELETE`| `/campaigns/:id` | Cancel/stop a scheduled campaign | Yes |
-
----
-
-## 🛡️ License & Development Credits
-
-* **Engineered by**: Advanced Agentic Coding Team — Google DeepMind.
-* **Designed for**: Dynamic local and international enterprise systems.
-* **License**: MIT License. Built with ❤️ for African businesses.
+MIT License. Built for African businesses.

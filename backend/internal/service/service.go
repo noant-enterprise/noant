@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -522,33 +523,13 @@ func (b *AIBrain) localPlatformAnswer(userID, query string, qaPairs []domain.QAP
 }
 
 // validateResponse checks if the AI response hallucinates prices or products
-func (b *AIBrain) validateResponse(ctx context.Context, userID string, response string, qaPairs []domain.QAPair, inventory []domain.InventoryItem) (string, float64) {
+func (b *AIBrain) validateResponse(ctx context.Context, _ string, response string, _ []domain.QAPair, inventory []domain.InventoryItem) (string, float64) {
 	if response == "" {
 		return response, 0
 	}
 
 	lower := strings.ToLower(response)
 	confidence := 0.95
-
-	// Check if response mentions prices not in our inventory
-	pricePatterns := []string{"₦", "naira", "ngn"}
-	for _, pattern := range pricePatterns {
-		if strings.Contains(lower, pattern) && len(inventory) > 0 {
-			// Extract prices from response and verify they exist in inventory
-			for _, item := range inventory {
-				priceStr := fmt.Sprintf("%.0f", item.Price)
-				if strings.Contains(response, priceStr) || strings.Contains(response, fmt.Sprintf("₦%s", priceStr)) {
-					// Price matches inventory — good
-					break
-				}
-			}
-		}
-	}
-
-	// If response is too long, it might be hallucinating
-	if len(response) > 500 {
-		confidence *= 0.8
-	}
 
 	// If response contains phrases that suggest hallucination
 	hallucinationSignals := []string{"according to my training", "based on my knowledge", "generally speaking", "typically"}
@@ -557,6 +538,39 @@ func (b *AIBrain) validateResponse(ctx context.Context, userID string, response 
 			confidence *= 0.7
 			break
 		}
+	}
+
+	// If response is too long, it might be hallucinating
+	if len(response) > 500 {
+		confidence *= 0.8
+	}
+
+	// Extract price claims (e.g. "₦1,500", "₦50000") and validate against inventory
+	if len(inventory) > 0 {
+		re := regexp.MustCompile(`₦\s*([0-9,]+(?:\.[0-9]{1,2})?)`)
+		matches := re.FindAllStringSubmatch(response, -1)
+		for _, match := range matches {
+			priceStr := strings.ReplaceAll(match[1], ",", "")
+			claimedPrice, err := strconv.ParseFloat(priceStr, 64)
+			if err != nil {
+				continue
+			}
+			found := false
+			for _, item := range inventory {
+				if item.Price == claimedPrice || (item.MinPrice != nil && *item.MinPrice <= claimedPrice && claimedPrice <= item.Price) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				b.logger.Warn("AI hallucinated price", "claimedPrice", claimedPrice, "inventoryItems", len(inventory))
+				return "I'm sorry, I don't have accurate pricing information for that. Please contact our sales team for exact prices.", 0.1
+			}
+		}
+	}
+
+	if confidence < 0.5 {
+		return "I'm not confident about the answer to that. Let me transfer you to a human agent.", confidence
 	}
 
 	return response, confidence

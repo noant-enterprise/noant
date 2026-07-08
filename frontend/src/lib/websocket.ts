@@ -8,6 +8,9 @@ class WebSocketManager {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private url = ''
   private shouldReconnect = false
+  private retryCount = 0
+  private maxRetryDelay = 30000
+  private initialRetryDelay = 1000
 
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
@@ -50,6 +53,7 @@ class WebSocketManager {
 
       this.ws.onopen = () => {
         console.log('WebSocket connected to', this.url)
+        this.retryCount = 0
       }
 
       this.ws.onmessage = (event) => {
@@ -72,9 +76,14 @@ class WebSocketManager {
       this.ws.onclose = () => {
         this.ws = null
         if (this.shouldReconnect) {
+          const delay = Math.min(
+            this.initialRetryDelay * Math.pow(2, this.retryCount),
+            this.maxRetryDelay
+          )
+          this.retryCount++
           this.reconnectTimer = setTimeout(() => {
             this.connect()
-          }, 3000)
+          }, delay)
         }
       }
 
@@ -84,7 +93,12 @@ class WebSocketManager {
       }
     } catch (err) {
       if (this.shouldReconnect) {
-        this.reconnectTimer = setTimeout(() => this.connect(), 5000)
+        const delay = Math.min(
+          this.initialRetryDelay * Math.pow(2, this.retryCount),
+          this.maxRetryDelay
+        )
+        this.retryCount++
+        this.reconnectTimer = setTimeout(() => this.connect(), delay)
       }
     }
   }
@@ -96,6 +110,7 @@ class WebSocketManager {
 
   disconnect(): void {
     this.shouldReconnect = false
+    this.retryCount = 0
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null

@@ -161,12 +161,8 @@ func main() {
 		logger.Warn("Failed to sync Telegram webhooks", "error", err)
 	}
 
-	// Initialize layers: Cache, Bottleneck, JobQueue
+	// Initialize layers: Cache, JobQueue
 	cacheStore := infrastructure.NewCache(cfg, redisClient)
-	bottleneck := infrastructure.NewBottleneck(
-		infrastructure.WithMaxConcurrent(200),
-		infrastructure.WithMaxQueue(1000),
-	)
 	jobQueue := infrastructure.NewJobQueue(logger, redisClient, 10)
 
 	// Register background job handlers
@@ -273,9 +269,8 @@ func main() {
 	// Pass wsHub to handlers
 	handlers := handler.NewHandlers(cfg, services, logger, wsHub)
 	healthHandler := handler.NewHealthHandler(db, redisClient, cfg.GroqAPIKeys, logger)
-	_ = cacheStore
-	_ = bottleneck
-	_ = jobQueue
+
+	startHealthChecks(services.Integration, logger)
 
 	if cfg.NodeEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
