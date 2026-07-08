@@ -394,7 +394,100 @@ Automatic cleanup schedules (configurable via environment variables):
 | Expired credits | 365 days | Reset to zero |
 | Completed campaigns | 30 days after end | Archive |
 
----
+### 7. OpenWA Messaging Pipeline
+
+The OpenWA (self-hosted WhatsApp API) subsystem is a production-grade messaging pipeline with six integrated layers:
+
+```mermaid
+graph TD
+    subgraph Inbound ["Webhook Intake"]
+        WH[WhatsApp Webhook<br/>POST /api/v1/openwa/webhook]
+        HMAC[HMAC-SHA256<br/>Signature Verification]
+    end
+
+    subgraph Core ["Messaging Core"]
+        CB[Circuit Breaker<br/>5 failures → 60s block]
+        RL[Rate Limiter<br/>Sliding Window / session]
+        SQ[Send Queue<br/>Redis FIFO + Priority]
+        DLQ[Dead-Letter Queue<br/>Max 5 retries]
+        WK[Session Worker<br/>Poll: 200ms]
+    end
+
+    subgraph Session ["Session Layer"]
+        SM[Session Manager<br/>Health Check: 30s interval]
+        AR[Auto-Reconnect<br/>Backoff: 30s→30m max]
+        QR[QR Code Store<br/>Redis TTL: 5 min]
+    end
+
+    subgraph Media ["Media Pipeline"]
+        MH[Media Handler<br/>Download + MIME Detect]
+        FS[File System Store<br/>Configurable Retention]
+        TH[Thumbnail Gen<br/>Nearest-neighbor, ≤400px]
+    end
+
+    subgraph Templates ["Template Engine"]
+        TS[Template Service<br/>CRUD + Variable Substitution]
+        IM[Interactive Messages<br/>List / Buttons / Catalog]
+        CL[Common Template Library<br/>6 built-in templates]
+    end
+
+    subgraph Campaign ["Campaign Broadcast"]
+        CM[Campaign Bridge<br/>Batch: 50 msg / 2s spread]
+        OT[Opt-Out Tracker<br/>STOP keyword detection]
+        AN[Delivery Analytics<br/>Read rate, failure rate]
+    end
+
+    WH --> HMAC
+    HMAC --> CB
+    CB -->|enqueue| SQ
+    SQ -->|dequeue| WK
+    WK -->|send| OWA[OpenWA Server]
+    WK -->|download| MH
+
+    SM -->|health poll| OWA
+    SM -->|failure| AR
+    AR -->|reconnect| OWA
+
+    RL -.->|per-session limits| WK
+    TS -->|render template| WK
+    CM -->|batch enqueue| SQ
+    CM -->|check opt-out| OT
+```
+
+#### Layer Details
+
+| Layer | Files | Persistence | Key Features |
+|---|---|---|---|
+| **Rate Limiter** | `openwa_queue.go` | In-memory sliding window | 20 text/min, 10 media/min, 30 template/min, burst 5 |
+| **Send Queue** | `openwa_queue.go` | Redis (FIFO) | Priority levels, exponential backoff (max 5), dead-letter |
+| **Session Manager** | `openwa_session.go` | Redis (status) | 30s health poll, auto-reconnect after 3 failures |
+| **Media Handler** | `openwa_media.go` | File system | MIME detection, thumbnail generation, 90d cleanup |
+| **Template Service** | `openwa_templates.go` | DB (repository) | CRUD, variable substitution, interactive messages |
+| **Campaign Bridge** | `openwa_campaign.go` | DB (repository) | 50 msg/batch, 2s spread, 20% failure threshold |
+| **Circuit Breaker** | `openwa.go` | In-memory | 5 consecutive failures → 60s open state |
+
+#### Message Flow (Outbound)
+
+```
+Client Request → EnqueueMessage()
+  → RateLimiter.Allow()          # sliding window check
+  → Queue.Push()                 # Redis FIFO with priority
+  → SessionWorker.process()      # polling every 200ms
+    → CircuitBreaker.Call()      # wraps HTTP call
+      → HTTP POST to OpenWA      # connection pooled, 30s timeout
+        → RateLimit header parse # tracks X-RateLimit-Remaining
+```
+
+#### Redis Key Layout
+
+| Key Pattern | TTL | Purpose |
+|---|---|---|
+| `queue:<sessionID>` | Persistent | FIFO message queue per session |
+| `ratelimit:<sessionID>:<type>` | 1 min | Sliding window counters |
+| `session:state:<sessionID>` | Persistent | Connection state & metrics |
+| `session:qr:<sessionID>` | 5 min | QR code for reconnection |
+| `retry:<msgID>` | 24 h | Retry attempt counter |
+| `deadletter:<sessionID>` | 7 d | Failed messages |---
 
 ## Configuration Reference
 
@@ -448,6 +541,18 @@ All configuration is via environment variables. Copy `backend/.env.example` to `
 | `OPENWA_BASE_URL` | — | OpenWA self-hosted server URL |
 | `OPENWA_API_KEY` | — | OpenWA API authentication key |
 | `OPENWA_WEBOOK_SECRET` | — | OpenWA webhook verification secret |
+| `OPENWA_RATE_LIMIT_TEXT` | `20` | Text messages per minute per session |
+| `OPENWA_RATE_LIMIT_MEDIA` | `10` | Media messages per minute per session |
+| `OPENWA_RATE_LIMIT_TEMPLATE` | `30` | Template messages per minute per session |
+| `OPENWA_RATE_LIMIT_BURST` | `5` | Burst allowance over sliding window |
+| `OPENWA_QUEUE_MAX_DEPTH` | `10000` | Max queued messages per session |
+| `OPENWA_MEDIA_DIR` | `./media` | File system path for media storage |
+| `OPENWA_MEDIA_RETENTION_DAYS` | `90` | Media file retention period |
+| `OPENWA_SESSION_HEALTH_INTERVAL` | `30` | Session health poll interval (seconds) |
+| `OPENWA_MAX_RECONNECT_ATTEMPTS` | `10` | Max reconnection attempts before giving up |
+| `OPENWA_CONNECTION_POOL_SIZE` | `10` | Max idle HTTP connections to OpenWA |
+| `OPENWA_CONNECTION_TIMEOUT` | `30` | TCP connection timeout (seconds) |
+| `OPENWA_REQUEST_TIMEOUT` | `60` | HTTP request timeout (seconds) |
 | `TELEGRAM_BOT_TOKEN` | — | Telegram bot token |
 | `FACEBOOK_ACCESS_TOKEN` | — | Facebook Graph API token |
 | `INSTAGRAM_ACCESS_TOKEN` | — | Instagram Graph API token |
@@ -715,6 +820,54 @@ All endpoints are prefixed with `/api/v1` and return JSON. Authentication via `A
 | `GET` | `/channels/whatsapp/health` | WhatsApp connection health | Yes |
 | `POST` | `/channels/whatsapp/verify` | Verify WhatsApp number | Yes |
 | `POST` | `/channels/whatsapp/send-test` | Send test WhatsApp message | Yes |
+| `POST` | `/openwa/webhook` | Inbound message webhook | No (HMAC) |
+| `GET` | `/openwa/status` | Session connection status | Yes |
+| `POST` | `/openwa/restart` | Force session restart | Yes |
+
+### WhatsApp Templates
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/templates` | List message templates | Yes |
+| `POST` | `/templates` | Create template | Yes |
+| `GET` | `/templates/:id` | Get template by ID | Yes |
+| `PUT` | `/templates/:id` | Update template | Yes |
+| `DELETE` | `/templates/:id` | Delete template | Yes |
+| `POST` | `/templates/:id/submit` | Submit for approval | Yes |
+| `POST` | `/templates/send` | Send templated message | Yes |
+| `GET` | `/templates/common` | List common templates | Yes |
+
+### WhatsApp Campaigns
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `POST` | `/whatsapp/campaigns/broadcast` | Broadcast campaign | Yes |
+| `GET` | `/whatsapp/campaigns/:id/analytics` | Campaign delivery analytics | Yes |
+
+### WhatsApp Media
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `POST` | `/chats/conversations/:id/media` | Upload media to conversation | Yes |
+| `GET` | `/chats/conversations/:id/media` | List conversation media | Yes |
+| `GET` | `/chats/conversations/media/:mediaID` | Download media file | Yes |
+| `GET` | `/chats/conversations/media/:mediaID/thumbnail` | Get media thumbnail | Yes |
+
+### WhatsApp Admin
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `GET` | `/whatsapp/admin/queue/stats` | Queue depth & processed stats | Yes |
+| `GET` | `/whatsapp/admin/sessions` | List managed sessions | Yes |
+| `GET` | `/whatsapp/admin/sessions/:id/metrics` | Per-session metrics | Yes |
+| `POST` | `/whatsapp/admin/sessions/:id/reconnect` | Force reconnection | Yes |
+
+### WhatsApp Interactive
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `POST` | `/whatsapp/interactive/list` | Send interactive list message | Yes |
+| `POST` | `/whatsapp/interactive/buttons` | Send interactive buttons message | Yes |
 
 ### System
 
@@ -750,6 +903,12 @@ All endpoints are prefixed with `/api/v1` and return JSON. Authentication via `A
 | `user:<id>` | 5 minutes | User cache |
 | `job:<id>` | 24 hours | Background job queue |
 | `free_weekly:<uid>` | Until Monday midnight | Free plan counter |
+| `queue:<sessionID>` | Persistent | OpenWA message queue (FIFO) |
+| `ratelimit:<sessionID>:<type>` | 1 min | OpenWA sliding window counters |
+| `session:state:<sessionID>` | Persistent | OpenWA connection state & metrics |
+| `session:qr:<sessionID>` | 5 min | OpenWA QR code for reconnection |
+| `retry:<msgID>` | 24 h | OpenWA retry attempt counter |
+| `deadletter:<sessionID>` | 7 d | OpenWA failed messages |
 
 ### Circuit Breaker (AI API Calls)
 
