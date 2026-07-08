@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
@@ -1041,10 +1042,11 @@ type AuthService struct {
 	redis    *infrastructure.RedisClient
 	logger   *infrastructure.Logger
 	email    *EmailService
+	memRL    *infrastructure.MemoryRateLimiter
 }
 
 func NewAuthService(cfg *config.Config, userRepo *repository.UserRepository, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *AuthService {
-	return &AuthService{cfg: cfg, userRepo: userRepo, redis: redis, logger: logger, email: email}
+	return &AuthService{cfg: cfg, userRepo: userRepo, redis: redis, logger: logger, email: email, memRL: infrastructure.NewMemoryRateLimiter(5 * time.Minute)}
 }
 
 func generateVerificationCode() string {
@@ -1096,7 +1098,9 @@ func (s *AuthService) Register(ctx context.Context, email, password, firstName, 
 		IsVerified:         false,
 		VerificationCode:   &code,
 	}
-	if err := s.userRepo.Create(ctx, user); err != nil {
+	if err := s.userRepo.RunInTx(ctx, func(tx *sql.Tx) error {
+		return s.userRepo.CreateTx(ctx, tx, user)
+	}); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
@@ -1279,8 +1283,8 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 }
 
 func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
+	key := "forgot-password:" + email
 	if s.redis != nil {
-		key := fmt.Sprintf("ratelimit:forgot-password:%s", email)
 		countStr, err := s.redis.Get(ctx, key)
 		var count int
 		if err == nil {
@@ -1290,7 +1294,14 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 			s.logger.Warn("Forgot password request rate limited", "email", email)
 			return fmt.Errorf("too many forgot password requests, please try again in an hour")
 		}
+	} else {
+		if !s.memRL.Allow(key, 3, time.Hour) {
+			s.logger.Warn("Forgot password request rate limited (memory)", "email", email)
+			return fmt.Errorf("too many forgot password requests, please try again in an hour")
+		}
+	}
 
+	if s.redis != nil {
 		newVal, err := s.redis.Incr(ctx, key)
 		if err == nil && newVal == 1 {
 			_ = s.redis.Expire(ctx, key, time.Hour)

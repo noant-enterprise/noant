@@ -52,8 +52,8 @@ func RespondConflict(c *gin.Context, message string) {
 	RespondError(c, http.StatusConflict, "CONFLICT", message, false)
 }
 
-func RespondInternalError(c *gin.Context, message string) {
-	RespondError(c, http.StatusInternalServerError, "INTERNAL_ERROR", message, true)
+func RespondInternalError(c *gin.Context, _ string) {
+	RespondError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred. Please try again later.", true)
 }
 
 func RespondRateLimit(c *gin.Context, retryAfter float64) {

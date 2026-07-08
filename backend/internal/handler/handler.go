@@ -243,7 +243,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 	token, newRefreshToken, err := h.service.RefreshToken(c.Request.Context(), refreshToken)
 	if err != nil {
-		utils.RespondUnauthorized(c, err.Error())
+		utils.RespondUnauthorized(c, "Invalid or expired session")
 		return
 	}
 
@@ -258,6 +258,9 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	if err := h.service.Logout(c.Request.Context(), token, refreshToken); err != nil {
 		utils.RespondInternalError(c, "Failed to log out")
 		return
+	}
+	if token != "" {
+		middleware.BlacklistAccessToken(token)
 	}
 	middleware.ClearAuthCookies(c)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
@@ -277,7 +280,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	userID, _ := c.Get("userID")
 	if err := h.service.ChangePassword(c.Request.Context(), userID.(string), req.CurrentPassword, req.NewPassword); err != nil {
-		utils.RespondValidationError(c, err.Error())
+		utils.RespondValidationError(c, "Failed to change password")
 		return
 	}
 

@@ -36,6 +36,10 @@ func AuthMiddleware(jwtSecret string, redis *infrastructure.RedisClient) gin.Han
 				c.Abort()
 				return
 			}
+		} else if defaultMemoryBlacklist.Exists(tokenString) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "token revoked"})
+			c.Abort()
+			return
 		}
 
 		claims := jwt.MapClaims{}
@@ -166,14 +170,33 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' fonts.googleapis.com cdn.jsdelivr.net; font-src 'self' fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' api.groq.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self';")
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' api.groq.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self';")
 		c.Next()
+	}
+}
+
+var (
+	defaultMemoryRateLimiter = infrastructure.NewMemoryRateLimiter(5 * time.Minute)
+	defaultMemoryBlacklist   = infrastructure.NewMemoryBlacklist()
+)
+
+func BlacklistAccessToken(token string) {
+	if token != "" {
+		defaultMemoryBlacklist.Add(token, 24*time.Hour)
 	}
 }
 
 func RateLimitMiddleware(redis *infrastructure.RedisClient, requests int, window time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if redis == nil {
+			if !defaultMemoryRateLimiter.Allow(c.ClientIP()+":"+c.Request.URL.Path, requests, window) {
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":       "rate limit exceeded",
+					"retry_after": window.Seconds(),
+				})
+				c.Abort()
+				return
+			}
 			c.Next()
 			return
 		}
@@ -207,6 +230,19 @@ func RateLimitMiddleware(redis *infrastructure.RedisClient, requests int, window
 func RateLimitByUserMiddleware(redis *infrastructure.RedisClient, requests int, window time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if redis == nil {
+			userID, exists := c.Get("userID")
+			if !exists {
+				c.Next()
+				return
+			}
+			if !defaultMemoryRateLimiter.Allow(fmt.Sprintf("user:%s:%s", userID, c.Request.URL.Path), requests, window) {
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":       "rate limit exceeded",
+					"retry_after": window.Seconds(),
+				})
+				c.Abort()
+				return
+			}
 			c.Next()
 			return
 		}

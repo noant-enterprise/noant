@@ -100,6 +100,31 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 	return nil
 }
 
+func (r *UserRepository) RunInTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *UserRepository) CreateTx(ctx context.Context, tx *sql.Tx, user *domain.User) error {
+	if user.ID == "" {
+		user.ID = generateUUID()
+	}
+	query := `INSERT INTO users (id, email, password_hash, first_name, last_name, role, company_name, phone, plan_id, is_active, must_change_password, is_verified, verification_code, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	_, err := tx.ExecContext(ctx, query, user.ID, user.Email, user.Password, user.FirstName, user.LastName, user.Role, user.CompanyName, user.Phone, user.PlanID, user.IsActive, user.MustChangePassword, user.IsVerified, user.VerificationCode)
+	if err != nil {
+		return fmt.Errorf("failed to create user: %w", err)
+	}
+	return nil
+}
+
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	query := `SELECT id, email, password_hash, first_name, last_name, role, company_name, phone, avatar, plan_id, is_active, must_change_password, last_login_at, is_verified, verification_code, created_at, updated_at FROM users WHERE email = ?`
 	row := r.db.QueryRowContext(ctx, query, email)
