@@ -289,6 +289,81 @@ type CreditPurchase struct {
 	ExpiresAt    time.Time `json:"expires_at" db:"expires_at"`
 }
 
+// MediaMessage represents a media file attached to a WhatsApp message
+type MediaMessage struct {
+	ID           string    `json:"id" db:"id"`
+	UserID       string    `json:"user_id" db:"user_id"`
+	ConversationID string  `json:"conversation_id" db:"conversation_id"`
+	MessageID    string    `json:"message_id" db:"message_id"`
+	SessionID    string    `json:"session_id" db:"session_id"`
+	MediaType    string    `json:"media_type" db:"media_type"` // image, document, audio, video, sticker, location, contact
+	MimeType     string    `json:"mime_type" db:"mime_type"`
+	FileSize     int64     `json:"file_size" db:"file_size"`
+	FileName     string    `json:"file_name" db:"file_name"`
+	FilePath     string    `json:"file_path" db:"file_path"`
+	ThumbPath    string    `json:"thumb_path" db:"thumb_path"`
+	Width        int       `json:"width" db:"width"`
+	Height       int       `json:"height" db:"height"`
+	Duration     int       `json:"duration" db:"duration"` // seconds for audio/video
+	Caption      string    `json:"caption" db:"caption"`
+	RemoteURL    string    `json:"remote_url" db:"remote_url"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	ExpiresAt    time.Time `json:"expires_at" db:"expires_at"`
+}
+
+// WhatsAppTemplate represents a message template for WhatsApp
+type WhatsAppTemplate struct {
+	ID           string    `json:"id" db:"id"`
+	UserID       string    `json:"user_id" db:"user_id"`
+	Name         string    `json:"name" db:"name"`
+	Language     string    `json:"language" db:"language"`
+	Category     string    `json:"category" db:"category"` // marketing, utility, authentication
+	Status       string    `json:"status" db:"status"`     // draft, pending, approved, rejected, disabled
+	HeaderType   string    `json:"header_type" db:"header_type"` // text, image, video, document, none
+	HeaderValue  string    `json:"header_value" db:"header_value"`
+	BodyText     string    `json:"body_text" db:"body_text"` // with {{1}}, {{2}} placeholders
+	FooterText   string    `json:"footer_text" db:"footer_text"`
+	Buttons      string    `json:"buttons" db:"buttons"` // JSON array of button configs
+	Namespace    string    `json:"namespace" db:"namespace"`
+	RejectionReason string `json:"rejection_reason" db:"rejection_reason"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// QueueMessage represents a message in the outbound queue
+type QueueMessage struct {
+	ID         string    `json:"id" db:"id"`
+	SessionID  string    `json:"session_id" db:"session_id"`
+	UserID     string    `json:"user_id" db:"user_id"`
+	ChatID     string    `json:"chat_id" db:"chat_id"`
+	MsgType    string    `json:"msg_type" db:"msg_type"` // text, media, template
+	Content    string    `json:"content" db:"content"`   // text body or JSON payload
+	Priority   int       `json:"priority" db:"priority"` // 0=urgent, 1=normal, 2=bulk
+	Status     string    `json:"status" db:"status"`     // queued, sending, sent, failed, dead_letter
+	RetryCount int       `json:"retry_count" db:"retry_count"`
+	MaxRetries int       `json:"max_retries" db:"max_retries"`
+	LastError  string    `json:"last_error" db:"last_error"`
+	ScheduledAt *time.Time `json:"scheduled_at" db:"scheduled_at"`
+	SentAt     *time.Time `json:"sent_at" db:"sent_at"`
+	CreatedAt  time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// CampaignRecipient represents a contact in a campaign broadcast
+type CampaignRecipient struct {
+	ID             string    `json:"id" db:"id"`
+	CampaignID     string    `json:"campaign_id" db:"campaign_id"`
+	UserID         string    `json:"user_id" db:"user_id"`
+	Phone          string    `json:"phone" db:"phone"`
+	Name           string    `json:"name" db:"name"`
+	Status         string    `json:"status" db:"status"` // pending, sent, delivered, read, failed, blocked, opted_out
+	Error          string    `json:"error" db:"error"`
+	SentAt         *time.Time `json:"sent_at" db:"sent_at"`
+	DeliveredAt    *time.Time `json:"delivered_at" db:"delivered_at"`
+	ReadAt         *time.Time `json:"read_at" db:"read_at"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+}
+
 // CampaignSchedule represents a campaign mode schedule
 type CampaignSchedule struct {
 	ID          string    `json:"id" db:"id"`

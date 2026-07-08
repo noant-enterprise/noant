@@ -161,6 +161,12 @@ func main() {
 		logger.Warn("Failed to sync Telegram webhooks", "error", err)
 	}
 
+	// Inject Redis into OpenWA subsystems (Redis may be nil)
+	services.OpenWA.InjectDependencies(redisClient)
+
+	// Start the session health monitor for OpenWA
+	services.OpenWA.StartSessionManager()
+
 	// Initialize layers: Cache, JobQueue
 	cacheStore := infrastructure.NewCache(cfg, redisClient)
 	jobQueue := infrastructure.NewJobQueue(logger, redisClient, 10)
@@ -536,6 +542,59 @@ func main() {
 		background.GET("/stats", handlers.Background.WorkerStats)
 	}
 	}
+
+	// WhatsApp Template endpoints (30 req/min per user)
+	templates := api.Group("/templates")
+	templates.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	templates.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
+	{
+		templates.GET("", handlers.Template.List)
+		templates.POST("", handlers.Template.Create)
+		templates.GET("/:id", handlers.Template.GetByID)
+		templates.PUT("/:id", handlers.Template.Update)
+		templates.DELETE("/:id", handlers.Template.Delete)
+		templates.POST("/:id/submit", handlers.Template.SubmitForApproval)
+		templates.POST("/send", handlers.Template.Send)
+		templates.GET("/common", handlers.Template.GetCommon)
+	}
+
+	// WhatsApp Campaign endpoints (30 req/min per user)
+	whatsappCampaign := api.Group("/whatsapp/campaigns")
+	whatsappCampaign.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	whatsappCampaign.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
+	{
+		whatsappCampaign.POST("/broadcast", handlers.OpenWA.BroadcastCampaign)
+		whatsappCampaign.GET("/:campaignID/analytics", handlers.OpenWA.CampaignAnalytics)
+	}
+
+	// WhatsApp Media endpoints
+	media := api.Group("/chats/conversations")
+	media.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	{
+		media.POST("/:id/media", handlers.OpenWA.UploadMedia)
+		media.GET("/:id/media", handlers.OpenWA.ListMedia)
+		media.GET("/media/:mediaID", handlers.OpenWA.GetMedia)
+		media.GET("/media/:mediaID/thumbnail", handlers.OpenWA.GetMediaThumbnail)
+	}
+
+	// WhatsApp Queue & Session management endpoints
+	whatsappAdmin := api.Group("/whatsapp/admin")
+	whatsappAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	{
+		whatsappAdmin.GET("/queue/stats", handlers.OpenWA.QueueStats)
+		whatsappAdmin.GET("/sessions", handlers.OpenWA.ListManagedSessions)
+		whatsappAdmin.GET("/sessions/:sessionID/metrics", handlers.OpenWA.SessionMetrics)
+		whatsappAdmin.POST("/sessions/:sessionID/reconnect", handlers.OpenWA.ForceReconnect)
+	}
+
+	// Interactive message endpoints
+	interactive := api.Group("/whatsapp/interactive")
+	interactive.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	{
+		interactive.POST("/list", handlers.OpenWA.SendListMessage)
+		interactive.POST("/buttons", handlers.OpenWA.SendButtonsMessage)
+	}
+
 	// Serve frontend static files if the static directory exists
 	if _, err := os.Stat("./static"); err == nil {
 		logger.Info("Serving static frontend files from ./static")

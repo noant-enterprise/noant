@@ -14,46 +14,52 @@ import (
 )
 
 type Repositories struct {
-	User         *UserRepository
-	Conversation *ConversationRepository
-	Message      *MessageRepository
-	QAPair       *QAPairRepository
-	Category     *CategoryRepository
-	UnknownQ     *UnknownQuestionRepository
-	Integration  *IntegrationRepository
-	Team         *TeamRepository
-	APIKey       *APIKeyRepository
-	Archive      *ArchiveRepository
-	Subscription *SubscriptionRepository
-	Audit        *AuditRepository
-	Notification *NotificationRepository
-	WidgetConfig *WidgetConfigRepository
-	Inventory    *InventoryRepository
-	Handoff      *HandoffRepository
-	Credit       *CreditRepository
-	Campaign     *CampaignRepository
+	User              *UserRepository
+	Conversation      *ConversationRepository
+	Message           *MessageRepository
+	QAPair            *QAPairRepository
+	Category          *CategoryRepository
+	UnknownQ          *UnknownQuestionRepository
+	Integration       *IntegrationRepository
+	Team              *TeamRepository
+	APIKey            *APIKeyRepository
+	Archive           *ArchiveRepository
+	Subscription      *SubscriptionRepository
+	Audit             *AuditRepository
+	Notification      *NotificationRepository
+	WidgetConfig      *WidgetConfigRepository
+	Inventory         *InventoryRepository
+	Handoff           *HandoffRepository
+	Credit            *CreditRepository
+	Campaign          *CampaignRepository
+	WhatsAppTemplate  *WhatsAppTemplateRepository
+	CampaignRecipient *CampaignRecipientRepository
+	MediaMessage      *MediaMessageRepository
 }
 
 func NewRepositories(db *sql.DB, redis *infrastructure.RedisClient) *Repositories {
 	return &Repositories{
-		User:         NewUserRepository(db, redis),
-		Conversation: NewConversationRepository(db, redis),
-		Message:      NewMessageRepository(db, redis),
-		QAPair:       NewQAPairRepository(db, redis),
-		Category:     NewCategoryRepository(db, redis),
-		UnknownQ:     NewUnknownQuestionRepository(db, redis),
-		Integration:  NewIntegrationRepository(db, redis),
-		Team:         NewTeamRepository(db, redis),
-		APIKey:       NewAPIKeyRepository(db, redis),
-		Archive:      NewArchiveRepository(db, redis),
-		Subscription: NewSubscriptionRepository(db, redis),
-		Audit:        NewAuditRepository(db, redis),
-		Notification: NewNotificationRepository(db, redis),
-		WidgetConfig: NewWidgetConfigRepository(db, redis),
-		Inventory:    NewInventoryRepository(db, redis),
-		Handoff:      NewHandoffRepository(db, redis),
-		Credit:       NewCreditRepository(db, redis),
-		Campaign:     NewCampaignRepository(db, redis),
+		User:              NewUserRepository(db, redis),
+		Conversation:      NewConversationRepository(db, redis),
+		Message:           NewMessageRepository(db, redis),
+		QAPair:            NewQAPairRepository(db, redis),
+		Category:          NewCategoryRepository(db, redis),
+		UnknownQ:          NewUnknownQuestionRepository(db, redis),
+		Integration:       NewIntegrationRepository(db, redis),
+		Team:              NewTeamRepository(db, redis),
+		APIKey:            NewAPIKeyRepository(db, redis),
+		Archive:           NewArchiveRepository(db, redis),
+		Subscription:      NewSubscriptionRepository(db, redis),
+		Audit:             NewAuditRepository(db, redis),
+		Notification:      NewNotificationRepository(db, redis),
+		WidgetConfig:      NewWidgetConfigRepository(db, redis),
+		Inventory:         NewInventoryRepository(db, redis),
+		Handoff:           NewHandoffRepository(db, redis),
+		Credit:            NewCreditRepository(db, redis),
+		Campaign:          NewCampaignRepository(db, redis),
+		WhatsAppTemplate:  NewWhatsAppTemplateRepository(db, redis),
+		CampaignRecipient: NewCampaignRecipientRepository(db, redis),
+		MediaMessage:      NewMediaMessageRepository(db, redis),
 	}
 }
 
@@ -1934,6 +1940,217 @@ func (r *CreditRepository) CleanupExpired(ctx context.Context) (int64, error) {
 func (r *CreditRepository) CleanupStalePurchases(ctx context.Context, days int) (int64, error) {
 	result, err := r.db.ExecContext(ctx,
 		`DELETE FROM credit_purchases WHERE created_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// ========== WHATSAPP TEMPLATE REPOSITORY ==========
+
+type WhatsAppTemplateRepository struct {
+	db *sql.DB
+}
+
+func NewWhatsAppTemplateRepository(db *sql.DB, redis *infrastructure.RedisClient) *WhatsAppTemplateRepository {
+	return &WhatsAppTemplateRepository{db: db}
+}
+
+func (r *WhatsAppTemplateRepository) Create(ctx context.Context, tpl *domain.WhatsAppTemplate) error {
+	if tpl.ID == "" {
+		tpl.ID = generateUUID()
+	}
+	query := `INSERT INTO whatsapp_templates (id, user_id, name, language, category, status, header_type, header_value, body_text, footer_text, buttons, namespace, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	_, err := r.db.ExecContext(ctx, query, tpl.ID, tpl.UserID, tpl.Name, tpl.Language, tpl.Category, tpl.Status, tpl.HeaderType, tpl.HeaderValue, tpl.BodyText, tpl.FooterText, tpl.Buttons, tpl.Namespace)
+	return err
+}
+
+func (r *WhatsAppTemplateRepository) ListByUser(ctx context.Context, userID string) ([]domain.WhatsAppTemplate, error) {
+	var templates []domain.WhatsAppTemplate
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, user_id, name, language, category, status, header_type, header_value, body_text, footer_text, buttons, namespace, rejection_reason, created_at, updated_at
+		FROM whatsapp_templates WHERE user_id = ? ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t domain.WhatsAppTemplate
+		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Language, &t.Category, &t.Status, &t.HeaderType, &t.HeaderValue, &t.BodyText, &t.FooterText, &t.Buttons, &t.Namespace, &t.RejectionReason, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			continue
+		}
+		templates = append(templates, t)
+	}
+	return templates, nil
+}
+
+func (r *WhatsAppTemplateRepository) GetByID(ctx context.Context, id, userID string) (*domain.WhatsAppTemplate, error) {
+	query := `SELECT id, user_id, name, language, category, status, header_type, header_value, body_text, footer_text, buttons, namespace, rejection_reason, created_at, updated_at
+	FROM whatsapp_templates WHERE id = ?`
+	args := []interface{}{id}
+	if userID != "" {
+		query += " AND user_id = ?"
+		args = append(args, userID)
+	}
+	var t domain.WhatsAppTemplate
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(&t.ID, &t.UserID, &t.Name, &t.Language, &t.Category, &t.Status, &t.HeaderType, &t.HeaderValue, &t.BodyText, &t.FooterText, &t.Buttons, &t.Namespace, &t.RejectionReason, &t.CreatedAt, &t.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (r *WhatsAppTemplateRepository) Update(ctx context.Context, tpl *domain.WhatsAppTemplate) error {
+	query := `UPDATE whatsapp_templates SET name = ?, language = ?, category = ?, status = ?, header_type = ?, header_value = ?, body_text = ?, footer_text = ?, buttons = ?, namespace = ?, rejection_reason = ?, updated_at = NOW() WHERE id = ? AND user_id = ?`
+	_, err := r.db.ExecContext(ctx, query, tpl.Name, tpl.Language, tpl.Category, tpl.Status, tpl.HeaderType, tpl.HeaderValue, tpl.BodyText, tpl.FooterText, tpl.Buttons, tpl.Namespace, tpl.RejectionReason, tpl.ID, tpl.UserID)
+	return err
+}
+
+func (r *WhatsAppTemplateRepository) Delete(ctx context.Context, id, userID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM whatsapp_templates WHERE id = ? AND user_id = ?`, id, userID)
+	return err
+}
+
+func (r *WhatsAppTemplateRepository) GetByStatus(ctx context.Context, status string) ([]domain.WhatsAppTemplate, error) {
+	var templates []domain.WhatsAppTemplate
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, user_id, name, language, category, status, header_type, header_value, body_text, footer_text, buttons, namespace, rejection_reason, created_at, updated_at
+		FROM whatsapp_templates WHERE status = ?`, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t domain.WhatsAppTemplate
+		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Language, &t.Category, &t.Status, &t.HeaderType, &t.HeaderValue, &t.BodyText, &t.FooterText, &t.Buttons, &t.Namespace, &t.RejectionReason, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			continue
+		}
+		templates = append(templates, t)
+	}
+	return templates, nil
+}
+
+// ========== CAMPAIGN RECIPIENT REPOSITORY ==========
+
+type CampaignRecipientRepository struct {
+	db *sql.DB
+}
+
+func NewCampaignRecipientRepository(db *sql.DB, redis *infrastructure.RedisClient) *CampaignRecipientRepository {
+	return &CampaignRecipientRepository{db: db}
+}
+
+func (r *CampaignRecipientRepository) Create(ctx context.Context, cr *domain.CampaignRecipient) error {
+	if cr.ID == "" {
+		cr.ID = generateUUID()
+	}
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO campaign_recipients (id, campaign_id, user_id, phone, name, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+		cr.ID, cr.CampaignID, cr.UserID, cr.Phone, cr.Name, cr.Status)
+	return err
+}
+
+func (r *CampaignRecipientRepository) ListByCampaign(ctx context.Context, campaignID string) ([]domain.CampaignRecipient, error) {
+	var recipients []domain.CampaignRecipient
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, campaign_id, user_id, phone, name, status, error, sent_at, delivered_at, read_at, created_at
+		FROM campaign_recipients WHERE campaign_id = ? ORDER BY created_at`, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cr domain.CampaignRecipient
+		if err := rows.Scan(&cr.ID, &cr.CampaignID, &cr.UserID, &cr.Phone, &cr.Name, &cr.Status, &cr.Error, &cr.SentAt, &cr.DeliveredAt, &cr.ReadAt, &cr.CreatedAt); err != nil {
+			continue
+		}
+		recipients = append(recipients, cr)
+	}
+	return recipients, nil
+}
+
+func (r *CampaignRecipientRepository) UpdateStatus(ctx context.Context, id, status string, errInfo *string) error {
+	query := `UPDATE campaign_recipients SET status = ?, error = ?`
+	args := []interface{}{status, errInfo}
+	if status == "sent" {
+		query += ", sent_at = NOW()"
+	} else if status == "delivered" {
+		query += ", delivered_at = NOW()"
+	} else if status == "read" {
+		query += ", read_at = NOW()"
+	}
+	query += " WHERE id = ?"
+	args = append(args, id)
+	_, err := r.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (r *CampaignRecipientRepository) MarkOptedOut(ctx context.Context, userID, phone string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE campaign_recipients SET status = 'opted_out' WHERE user_id = ? AND phone = ? AND status IN ('pending', 'sent')`,
+		userID, phone)
+	return err
+}
+
+func (r *CampaignRecipientRepository) IsOptedOut(ctx context.Context, userID, phone string) (bool, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM campaign_recipients WHERE user_id = ? AND phone = ? AND status = 'opted_out'`,
+		userID, phone).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// ========== MEDIA MESSAGE REPOSITORY ==========
+
+type MediaMessageRepository struct {
+	db *sql.DB
+}
+
+func NewMediaMessageRepository(db *sql.DB, redis *infrastructure.RedisClient) *MediaMessageRepository {
+	return &MediaMessageRepository{db: db}
+}
+
+func (r *MediaMessageRepository) Create(ctx context.Context, m *domain.MediaMessage) error {
+	if m.ID == "" {
+		m.ID = generateUUID()
+	}
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO media_messages (id, user_id, conversation_id, message_id, session_id, media_type, mime_type, file_size, file_name, file_path, thumb_path, width, height, duration, caption, remote_url, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+		m.ID, m.UserID, m.ConversationID, m.MessageID, m.SessionID, m.MediaType, m.MimeType, m.FileSize, m.FileName, m.FilePath, m.ThumbPath, m.Width, m.Height, m.Duration, m.Caption, m.RemoteURL, m.ExpiresAt)
+	return err
+}
+
+func (r *MediaMessageRepository) GetByConversation(ctx context.Context, conversationID string) ([]domain.MediaMessage, error) {
+	var media []domain.MediaMessage
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, user_id, conversation_id, message_id, session_id, media_type, mime_type, file_size, file_name, file_path, thumb_path, width, height, duration, caption, remote_url, created_at, expires_at
+		FROM media_messages WHERE conversation_id = ? ORDER BY created_at`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m domain.MediaMessage
+		if err := rows.Scan(&m.ID, &m.UserID, &m.ConversationID, &m.MessageID, &m.SessionID, &m.MediaType, &m.MimeType, &m.FileSize, &m.FileName, &m.FilePath, &m.ThumbPath, &m.Width, &m.Height, &m.Duration, &m.Caption, &m.RemoteURL, &m.CreatedAt, &m.ExpiresAt); err != nil {
+			continue
+		}
+		media = append(media, m)
+	}
+	return media, nil
+}
+
+func (r *MediaMessageRepository) CleanupExpired(ctx context.Context) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM media_messages WHERE expires_at < NOW()`)
 	if err != nil {
 		return 0, err
 	}

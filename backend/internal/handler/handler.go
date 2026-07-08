@@ -39,6 +39,7 @@ type Handlers struct {
 	Campaign     *CampaignHandler
 	DBManager    *DBManagerHandler
 	Background   *BackgroundHandler
+	Template     *TemplateHandler
 }
 
 func NewHandlers(cfg *config.Config, services *service.Services, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
@@ -62,6 +63,7 @@ func NewHandlers(cfg *config.Config, services *service.Services, logger *infrast
 		Campaign:     NewCampaignHandler(services.Campaign, logger),
 		DBManager:    NewDBManagerHandler(services.DBManager, logger),
 		Background:   NewBackgroundHandler(services.Background, logger),
+		Template:     NewTemplateHandler(services.Template, logger),
 	}
 }
 

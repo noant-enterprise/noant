@@ -84,11 +84,23 @@ type Config struct {
 	MetaVerifyToken    string
 
 	// OpenWA (self-hosted WhatsApp API)
-	OpenWAEnabled       bool
-	OpenWABaseURL       string
-	OpenWAApiKey        string
-	OpenWASessionID     string
-	OpenWAWebhookSecret string
+	OpenWAEnabled          bool
+	OpenWABaseURL          string
+	OpenWAApiKey           string
+	OpenWASessionID        string
+	OpenWAWebhookSecret    string
+	OpenWARateLimitText    int
+	OpenWARateLimitMedia   int
+	OpenWARateLimitTemplate int
+	OpenWARateLimitBurst   int
+	OpenWAQueueDepth       int
+	OpenWAMediaDir         string
+	OpenWAMediaRetention   time.Duration
+	OpenWASessionHealthInterval time.Duration
+	OpenWAMaxReconnectAttempts   int
+	OpenWAConnPoolSize     int
+	OpenWAConnTimeout      time.Duration
+	OpenWAReqTimeout       time.Duration
 }
 
 func Load() *Config {
@@ -189,11 +201,23 @@ func Load() *Config {
 		InstagramAccountID: getEnv("INSTAGRAM_ACCOUNT_ID", ""),
 		MetaVerifyToken:    getEnv("META_VERIFY_TOKEN", ""),
 
-		OpenWAEnabled:       getEnv("OPENWA_ENABLED", "true") == "true",
-		OpenWABaseURL:       getEnv("OPENWA_BASE_URL", "http://localhost:2785"),
-		OpenWAApiKey:        getEnv("OPENWA_API_KEY", ""),
-		OpenWASessionID:     getEnv("OPENWA_SESSION_ID", "noant-business"),
-		OpenWAWebhookSecret: getEnv("OPENWA_WEBHOOK_SECRET", ""),
+		OpenWAEnabled:              getEnv("OPENWA_ENABLED", "true") == "true",
+		OpenWABaseURL:              getEnv("OPENWA_BASE_URL", "http://localhost:2785"),
+		OpenWAApiKey:               getEnv("OPENWA_API_KEY", ""),
+		OpenWASessionID:            getEnv("OPENWA_SESSION_ID", "noant-business"),
+		OpenWAWebhookSecret:        getEnv("OPENWA_WEBHOOK_SECRET", ""),
+		OpenWARateLimitText:        atoiDefault(getEnv("OPENWA_RATE_LIMIT_TEXT", "20")),
+		OpenWARateLimitMedia:       atoiDefault(getEnv("OPENWA_RATE_LIMIT_MEDIA", "10")),
+		OpenWARateLimitTemplate:    atoiDefault(getEnv("OPENWA_RATE_LIMIT_TEMPLATE", "30")),
+		OpenWARateLimitBurst:       atoiDefault(getEnv("OPENWA_RATE_LIMIT_BURST", "5")),
+		OpenWAQueueDepth:           atoiDefault(getEnv("OPENWA_QUEUE_DEPTH", "10000")),
+		OpenWAMediaDir:             getEnv("OPENWA_MEDIA_DIR", "./media"),
+		OpenWAMediaRetention:       time.Duration(atoiDefault(getEnv("OPENWA_MEDIA_RETENTION_DAYS", "90"))) * 24 * time.Hour,
+		OpenWASessionHealthInterval: time.Duration(atoiDefault(getEnv("OPENWA_SESSION_HEALTH_INTERVAL", "30"))) * time.Second,
+		OpenWAMaxReconnectAttempts: atoiDefault(getEnv("OPENWA_MAX_RECONNECT_ATTEMPTS", "10")),
+		OpenWAConnPoolSize:         atoiDefault(getEnv("OPENWA_CONN_POOL_SIZE", "10")),
+		OpenWAConnTimeout:          time.Duration(atoiDefault(getEnv("OPENWA_CONN_TIMEOUT", "30"))) * time.Second,
+		OpenWAReqTimeout:           time.Duration(atoiDefault(getEnv("OPENWA_REQ_TIMEOUT", "60"))) * time.Second,
 	}
 
 	cfg.CORSOrigins = parseCSVEnv("CORS_ORIGINS", cfg.APIURL)
@@ -222,6 +246,11 @@ func getEnv(key, defaultVal string) string {
 		return val
 	}
 	return defaultVal
+}
+
+func atoiDefault(s string) int {
+	v, _ := strconv.Atoi(s)
+	return v
 }
 
 func parseCSVEnv(key string, fallback string) []string {

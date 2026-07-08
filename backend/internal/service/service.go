@@ -51,6 +51,7 @@ type Services struct {
 	Campaign     *CampaignService
 	DBManager    *DBManagerService
 	Background   *BackgroundWorker
+	Template     *TemplateService
 }
 
 func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService, polarSvc *PolarService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
@@ -65,6 +66,7 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 	campaignSvc := NewCampaignService(cfg, repos, redis, logger, creditSvc)
 	dbManagerSvc := NewDBManagerService(repos, logger)
 	bgWorker := NewBackgroundWorker(logger, dbManagerSvc, 3)
+	templateSvc := NewTemplateService(cfg, openwaSvc, redis, logger, repos)
 	return &Services{
 		Auth:         NewAuthService(cfg, repos.User, redis, logger, email),
 		Chat:         chatSvc,
@@ -86,6 +88,7 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 		Campaign:     campaignSvc,
 		DBManager:    dbManagerSvc,
 		Background:   bgWorker,
+		Template:     templateSvc,
 	}
 }
 
@@ -2047,6 +2050,17 @@ func (s *ChatService) DisconnectWhatsAppSession(ctx context.Context, userID stri
 // RemoveWhatsAppIntegration removes the WhatsApp integration
 func (s *ChatService) RemoveWhatsAppIntegration(ctx context.Context, userID string) {
 	_ = s.repos.Integration.Disconnect(ctx, userID, "whatsapp")
+}
+
+func (s *ChatService) GetMediaByConversation(ctx context.Context, convID, userID string) ([]domain.MediaMessage, error) {
+	conv, err := s.repos.Conversation.GetByID(ctx, convID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil || conv.UserID != userID {
+		return nil, fmt.Errorf("conversation not found")
+	}
+	return s.repos.MediaMessage.GetByConversation(ctx, convID)
 }
 
 func (s *ChatService) ClearChats(ctx context.Context, userID string) error {

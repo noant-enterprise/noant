@@ -141,5 +141,23 @@ func (r *RedisClient) SetEx(ctx context.Context, key string, value interface{}, 
 	return r.client.SetEx(ctx, key, value, expiration).Err()
 }
 
+// Scan iterates over keys matching a pattern using Redis SCAN command
+type ScanIterator struct {
+	iter *redis.ScanIterator
+}
+
+func (si *ScanIterator) Next(ctx context.Context) bool {
+	return si.iter.Next(ctx)
+}
+
+func (si *ScanIterator) Val() string {
+	return si.iter.Val()
+}
+
+func (r *RedisClient) Scan(ctx context.Context, pattern string, count int64) *ScanIterator {
+	iter := r.client.Scan(ctx, 0, pattern, count).Iterator()
+	return &ScanIterator{iter: iter}
+}
+
 // ErrRedisNil is returned when a key does not exist
 var ErrRedisNil = redis.Nil
