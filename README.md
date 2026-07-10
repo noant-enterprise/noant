@@ -88,12 +88,18 @@ noant/
 │   │   ├── service/
 │   │   │   ├── service.go         # Auth, Chat, AI Brain, Integration services
 │   │   │   ├── ai_sales.go        # Sales mode AI logic
+│   │   │   ├── assistant.go       # Floating assistant chat service
 │   │   │   ├── embedding.go       # Vector search & QA matching
 │   │   │   ├── email.go           # Email sending (SMTP, Resend)
 │   │   │   ├── plan.go            # Plan gating & enforcement
 │   │   │   ├── credit.go          # Credit balance management
 │   │   │   ├── campaign.go        # Broadcast campaign scheduling
 │   │   │   ├── openwa.go          # Open WhatsApp API integration
+│   │   │   ├── openwa_queue.go    # Redis FIFO queue + rate limiter
+│   │   │   ├── openwa_session.go  # Session health monitor + auto-reconnect
+│   │   │   ├── openwa_media.go    # Media download, storage, thumbnails
+│   │   │   ├── openwa_templates.go# HSM templates + interactive messages
+│   │   │   ├── openwa_campaign.go # Campaign broadcast + analytics
 │   │   │   ├── telegram.go        # Telegram bot integration
 │   │   │   ├── dbmanager.go       # Data retention cleanup jobs
 │   │   │   └── notifications.go   # Notification service
@@ -229,46 +235,75 @@ sequenceDiagram
     participant Client as React Dashboard (Agent View)
     actor Agent as Support Agent
 
-    Customer->>WH: Sends message (e.g. "Do you ship to Lagos?")
+    Customer->>WH: Sends message (e.g. "Where are you located?")
     WH->>DB: Logs incoming message as unread
     WH->>WS: Broadcasts `new_message` event
     WS->>Client: Triggers real-time conversation list refresh
 
     WH->>AI: Prompts AI Brain with Query & Context
     activate AI
-    AI->>DB: Semantic database search matching QA pairs
-    DB-->>AI: Returns closest matching candidate (Confidence score)
 
-    alt Confidence Score >= 0.70 (High Confidence Answering)
-        AI-->>WH: Generates high-confidence response
-        WH->>VAL: Validate response for hallucinated prices
-        VAL-->>WH: Passes validation (confidence preserved)
-        WH->>DB: Inserts AI message into `messages`
-        WH->>WS: Broadcasts `new_message` to websocket
-        WS->>Client: Automatically displays AI's answer
-        WH->>Customer: Delivers reply back to customer chat
-    else Confidence Score < 0.70 (Anti-Hallucination Guardrail)
-        AI-->>WH: Flags Query as Ambiguous / Unknown
-        deactivate AI
-        WH->>DB: Updates Conversation Status to 'escalated'
-        WH->>DB: Inserts task in `unknown_questions` queue
-        WH->>DB: Inserts fallback warning text
-        WH->>WS: Broadcasts `unknown_question` & `integration_update`
-        WS->>Client: Visual pulse alert, escalated badge
-        WH->>Customer: "I'm passing you to a human agent..."
+    AI->>AI: classifyIntent (LLM + keyword fast-path)
+    Note over AI: Returns "sales", "support", or "handoff"
 
-        Agent->>Client: Selects conversation thread
-        Client->>WH: GET /chats/conversations/:id
-        WH->>DB: Calls MarkRead, updates unread to 0
-        DB-->>Client: Returns conversation thread & messages
-        Agent->>WH: Clicks 'Takeover' conversation
-        WH->>DB: Sets `taken_over_by` as Agent ID
+    alt Sales Intent
+        AI->>DB: Search inventory (semantic + keyword)
+        DB-->>AI: Inventory matches
+        AI->>AI: handleSalesMode with Groq + inventory context
+        AI-->>WH: Sales-oriented response with product info
+    else Handoff Intent
+        AI->>DB: Create handoff record, notify owner
+        DB-->>AI: Handoff created
+        AI-->>WH: "I'll connect you with the owner..."
+    else Support Intent (default)
 
-        Agent->>Client: Resolves ticket & submits corrected answer
-        Client->>WH: POST /training/unknown-questions/:id/train
-        WH->>DB: Inserts new QA pair, updates status to 'trained'
-        WH-->>Agent: Training complete! Knowledge Base updated.
+        AI->>DB: Tier 1: Semantic search QA pairs (threshold 0.65)
+        DB-->>AI: QA match found (score >= 0.65)
+
+        alt Tier 1 Hit
+            AI->>AI: humanizeResponse via Groq
+            Note over AI: Rephrase training data naturally
+            AI-->>WH: Humanized, high-confidence answer
+        else Tier 1 Miss → Tier 2: Intent-Category Fallback
+            AI->>DB: Fetch user's categories
+            DB-->>AI: Category list
+            AI->>AI: LLM classifies query into one category
+            AI->>DB: Fetch QA pairs from matched category
+            DB-->>AI: Category QA pairs
+            alt Tier 2 Hit
+                AI->>AI: humanizeResponse via Groq
+                AI-->>WH: Intent-matched answer (confidence 0.75)
+            else Tier 2 Miss → Tier 3: Lowered Semantic (threshold 0.4)
+                AI->>DB: Semantic search with lower threshold
+                DB-->>AI: Low-confidence QA match
+                alt Tier 3 Hit
+                    AI->>AI: humanizeResponse via Groq
+                    AI-->>WH: Low-confidence answer (confidence 0.65)
+                else All Tiers Miss → Escalate
+                    deactivate AI
+                    WH->>DB: Insert UnknownQuestion record
+                    WH->>DB: Insert notification
+                    WH->>WS: Broadcast `unknown_question` event
+                    WS->>Client: Training gap alert badge
+                    WH->>Customer: "I'll escalate this to a human agent..."
+                    Agent->>Client: Selects conversation
+                    Client->>WH: GET /chats/conversations/:id
+                    WH->>DB: MarkRead
+                    DB-->>Client: Returns thread
+                    Agent->>WH: Trains answer
+                    Client->>WH: POST /training/unknown-questions/:id/train
+                    WH->>DB: Insert QA pair, update status
+                end
+            end
+        end
     end
+
+    WH->>VAL: Validate response
+    VAL-->>WH: Passes validation
+    WH->>DB: Inserts AI message
+    WH->>WS: Broadcasts `new_message`
+    WS->>Client: Displays AI answer
+    WH->>Customer: Delivers reply back to customer chat
 ```
 
 ---
@@ -279,10 +314,12 @@ sequenceDiagram
 
 | Feature | Implementation |
 |---|---|
-| **JWT-based auth** | Access tokens (24h default, 7d with remember-me) + refresh tokens (7d / 30d) |
-| **Cookie security** | `SameSite=LaxMode`, `Secure` in production, `HttpOnly` |
+| **JWT-based auth** | Access tokens (24h default, 7d with remember-me) + refresh tokens (7d / 30d). Includes `iss` (issuer) and `aud` (audience) claims |
+| **Cookie security** | `SameSite=LaxMode` → Strict for admin paths, `Secure` in production, `HttpOnly` |
 | **Token revocation** | Redis blacklist with in-memory fallback when Redis is unavailable |
 | **Password hashing** | bcrypt with cost factor 12 |
+| **Password validation** | Min 8 chars, requires uppercase, lowercase, digit, and special character |
+| **Account lockout** | 5 failed login attempts → 15-minute lockout (Redis-based) |
 | **Password reset** | Single-use tokens stored in Redis with 1-hour TTL; rate-limited to 3/hour per email |
 | **Force password change** | `must_change_password` flag enforced at login and route level |
 
@@ -290,19 +327,27 @@ sequenceDiagram
 
 | Feature | Implementation |
 |---|---|
-| **CSRF** | Origin/Referer header validation on all POST/PUT/PATCH/DELETE requests |
-| **Rate limiting** | Redis-based sliding window with in-memory fallback (3 req/hour for password reset, 500 req/min per user for chats) |
+| **CSRF** | Origin/Referer header validation on all POST/PUT/PATCH/DELETE requests. Rejects requests without `Origin` or `Referer` |
+| **Rate limiting** | Redis-based sliding window with in-memory fallback. Per-endpoint limits: 3/hr for password reset, 500/min per user for chats, 30/min per user for training, 60/min per user for analytics. Webhook endpoints rate-limited separately |
 | **Request body limit** | 1 MB cap enforced before any JSON parsing |
 | **XSS sanitization** | Reflection-based struct sanitizer strips HTML, event handlers, script tags from all input |
-| **File upload** | 2 MB limit, `.csv` only, content sniffing (512 bytes), CSV data sanitized before persistence |
+| **File upload** | 10 MB max, MIME validation (sniff first 512 bytes), only allowed types (images, documents, CSV). CSV data sanitized before persistence |
 | **Error hardening** | All internal errors return generic `"An unexpected error occurred"` — no stack or detail leakage |
-| **CORS** | Configurable allowlist, credentials enabled |
+| **CORS** | Configurable allowlist, credentials enabled. Stricter in production (origin exact match) |
+| **Server timeouts** | HTTP read/write timeouts (30s), AI goroutine timeout (60s with panic recovery) |
+| **Webhook protection** | HMAC-SHA256 signature verification on webhook endpoints. Rate-limited to prevent abuse |
+| **Admin middleware** | Role-based access: `admin` role required for sensitive operations (metrics, session management, system config) |
+| **Request ID logging** | Every request tagged with `X-Request-ID` for traceability across logs |
+| **AI panic recovery** | All background goroutines (AI calls, health checks, queue workers) have panic recovery to prevent crashes |
+| **Graceful shutdown** | SIGINT/SIGTERM handler drains connections before exit (30s timeout) |
 
 ### Content Security
 
 - **CSP**: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' api.groq.com; frame-ancestors 'none'`
 - **Headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`
+- **HSTS**: `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` (production only)
 - **Permissions**: `camera=(), microphone=(), geolocation=()`
+- **SameSite**: `Strict` for admin cookie paths, `Lax` for regular paths
 
 ### Redis Failure Resilience
 
@@ -319,15 +364,75 @@ When Redis is unavailable, the system degrades gracefully:
 
 ## Core Subsystems
 
-### 1. AI Brain & Anti-Hallucination Guardrail
+### 1. AI Brain — Conversational AI Engine
 
-The Go backend implements a LangChain-style orchestration layer:
+The Go backend implements a LangChain-style orchestration layer with zero-hallucination architecture:
 
-- **Semantic Search**: Queries `qa_pairs` using full-text search, returns closest match with confidence score.
-- **Confidence Threshold**: Strict boundary of **0.70**. Below it, the system rejects AI generation, logs the gap, and escalates.
-- **Response Validation**: Extracts price claims (e.g. `₦1,500`) from AI responses using regex and cross-references against the user's inventory. If a claimed price doesn't match any inventory item, the response is replaced with a safe fallback.
-- **Hallucination Signals**: Phrases like "according to my training", "based on my knowledge", "generally speaking" reduce confidence by 30%.
-- **Context Window**: Last 10 conversation turns stored in Redis (3-day TTL), falls back to MySQL.
+#### Orchestration Flow
+
+```
+Customer sends message
+  │
+  ▼
+1. Greeting check → "Hi!" → local reply, no AI call
+  │
+  ▼
+2. LLM Intent Classification (classifyIntent)
+   ├── "handoff" → handleHandoff (create handoff record, notify owner)
+   ├── "sales"   → handleSalesMode (search inventory, negotiate via Groq)
+   └── "support" → default path
+  │
+  ▼
+3. Support Mode — 3-tier fallback:
+   ├── Tier 1: Semantic + keyword search (threshold 0.65)
+   │   └── Found → humanize via Groq → return
+   ├── Tier 2: Intent-category match (LLM → user category → QA pair)
+   │   └── Found → humanize via Groq → return (confidence 0.75)
+   ├── Tier 3: Lowered semantic search (threshold 0.4)
+   │   └── Found → humanize via Groq → return (confidence 0.65)
+   └── All fail → escalate: UnknownQuestion + notification + broadcast
+  │
+  ▼
+4. Every response is parsed for metadata tags:
+   ├── [SENTIMENT:positive|negative|neutral|frustrated] → Prometheus metric
+   ├── [LANGUAGE:en|yo|ha|ig|pcm] → Prometheus metric
+   └── [SUGGESTIONS:chip1|chip2|chip3] → quick action chips in frontend
+```
+
+#### Key Features
+
+| Feature | Description |
+|---|---|
+| **Intent Classification** | LLM (Groq) classifies queries as `sales`, `support`, or `handoff`; keyword fast-path for clear signals. `"I want to buy"` → handoff, `"How much?"` → sales, `"Help me"` → support |
+| **Semantic Search** | Embeddings via Groq `text-embedding-3-small`, cosine similarity (threshold 0.65). Falls back to SQL LIKE + word-by-word keyword search |
+| **Intent-Category Fallback** | When semantic search misses, LLM classifies query into one of the user's training categories. If matched, fetches QA pairs from that category and answers |
+| **Groq Humanization** | Training data answers are rephrased by Groq to sound natural, empathetic, and human-like. Groq is NEVER used as a knowledge source — only as a rephrasing engine |
+| **Sentiment Analysis** | AI detects customer sentiment (positive/negative/neutral/frustrated) and adapts response tone. Tracked via `noant_ai_sentiment_total` Prometheus metric |
+| **Multi-Language** | Auto-detects and responds in English (en), Pidgin (pcm), Yoruba (yo), Hausa (ha), or Igbo (ig). Tracked via `noant_ai_language_total` Prometheus metric |
+| **Response Validation** | Extracts price claims (e.g. `₦1,500`) via regex and cross-references against inventory. Hallucinated prices trigger safe fallback |
+| **Hallucination Signals** | Phrases like "according to my training", "based on my knowledge" reduce confidence by 30% |
+| **Context Window** | Last 10 conversation turns stored in Redis (3-day TTL), falls back to MySQL |
+| **CSAT Ratings** | `POST /chats/conversations/:id/rate` stores thumbs up/down in Redis (90-day TTL). Tracked via `noant_csat_score` Prometheus metric |
+| **Conversation Summaries** | On handoff, LLM generates a concise conversation summary stored in `Handoff.Summary` and sent to the owner in the notification |
+| **Quick Action Chips** | AI generates suggested follow-up queries (up to 3) returned in response. Rendered as tappable chips in the frontend chat widget |
+| **Groq Circuit Breaker** | 3 consecutive failures → 60s open state → half-open → auto-recovery |
+| **Groq Key Rotation** | Round-robin across multiple API keys (comma-separated in config) |
+
+#### AI Response Metadata
+
+Every AI response can contain embedded metadata tags that are parsed and stripped before delivery:
+
+```
+[SENTIMENT:positive]
+[LANGUAGE:en]
+[SUGGESTIONS:Show me your products|What are your prices?|I want to buy something]
+```
+
+These tags enable:
+- Sentiment-adaptive response tone
+- Language-appropriate phrasing
+- Contextual quick action suggestions
+- Prometheus monitoring of sentiment and language distribution
 
 ### 2. Multi-Channel Integration Hub
 
@@ -376,7 +481,20 @@ Built-in job queue with Redis persistence handles recurring maintenance:
 - Credit packs purchasable for per-message AI usage.
 - Polar webhooks verified via HMAC-SHA256 signatures.
 
-### 6. Data Retention & Cleanup
+### 6. Frontend Chat Experience
+
+The frontend chat interface is designed for a natural, human-like conversation flow:
+
+| Feature | Description |
+|---|---|
+| **TypewriterText** | AI responses reveal word-by-word (not character-by-character) for a natural typing feel. Skips on fast-forward if user sends another message |
+| **Markdown Rendering** | AI responses support markdown: bold, italic, code blocks, headers (`###`), and bullet lists. Rendered inline within chat bubbles |
+| **Quick Action Chips** | AI-generated `[SUGGESTIONS:...]` tags render as tappable chips below the AI message. Clicking sends the suggested query instantly |
+| **CSAT Thumbs** | Thumbs up/down buttons appear below each AI response. Votes stored in Redis (90-day TTL), tracked via `noant_csat_score` Prometheus metric |
+| **Nunito Font** | Chat-only font changed to Nunito (rounded, friendly) with emoji system font fallback. Rest of app uses Inter |
+| **Tight Spacing** | WhatsApp/Telegram-like bubble spacing: 2px gap between messages, 6px bubble padding |
+
+### 7. Data Retention & Cleanup
 
 Automatic cleanup schedules (configurable via environment variables):
 
@@ -394,7 +512,7 @@ Automatic cleanup schedules (configurable via environment variables):
 | Expired credits | 365 days | Reset to zero |
 | Completed campaigns | 30 days after end | Archive |
 
-### 7. OpenWA Messaging Pipeline
+### 8. OpenWA Messaging Pipeline
 
 The OpenWA (self-hosted WhatsApp API) subsystem is a production-grade messaging pipeline with six integrated layers:
 
@@ -507,9 +625,10 @@ All configuration is via environment variables. Copy `backend/.env.example` to `
 | Variable | Default | Description |
 |---|---|---|
 | `DB_DSN` | — | TiDB connection string |
-| `DB_POOL_SIZE` | `20` | Max open connections |
-| `DB_MAX_IDLE` | `5` | Max idle connections |
-| `DB_CONN_MAX_LIFETIME` | `5m` | Connection max lifetime |
+| `DB_POOL_SIZE` | `200` | Max open connections |
+| `DB_MAX_IDLE` | `100` | Max idle connections |
+| `DB_CONN_MAX_LIFETIME` | `10m` | Connection max lifetime |
+| `DB_CONN_MAX_IDLE_TIME` | `5m` | Connection max idle time |
 
 ### Redis
 
@@ -698,6 +817,7 @@ All endpoints are prefixed with `/api/v1` and return JSON. Authentication via `A
 | `POST` | `/chats/conversations/:id/messages` | Send message | Yes |
 | `PUT` | `/chats/conversations/:id/takeover` | Human takeover from AI | Yes |
 | `POST` | `/chats/conversations/:id/escalate` | Escalate conversation | Yes |
+| `POST` | `/chats/conversations/:id/rate` | Rate conversation (CSAT: thumbs up/down) | Yes |
 | `POST` | `/chats/direct-chat` | Start test chat with AI | Yes |
 | `DELETE` | `/chats/clear` | Clear all conversations | Yes |
 | `POST` | `/chats/typing` | Broadcast typing indicator via WebSocket | Yes |
@@ -812,6 +932,13 @@ All endpoints are prefixed with `/api/v1` and return JSON. Authentication via `A
 |---|---|---|---|
 | `GET` | `/notifications` | List notifications | Yes |
 | `PUT` | `/notifications/:id/read` | Mark as read | Yes |
+
+### Assistant (Floating Chat)
+
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| `POST` | `/assistant/chat` | Send message to floating assistant AI | No (API key) |
+| `GET` | `/assistant/history` | Get assistant conversation history | No (API key) |
 
 ### WhatsApp (OpenWA)
 

@@ -316,30 +316,34 @@ Customer sends message
   ▼
 2. LLM Intent Classification (classifyIntent)
    ├── "handoff" → handleHandoff (create handoff record, notify owner)
-   ├── "sales"   → handleSalesMode (search inventory, negotiate)
+   ├── "sales"   → handleSalesMode (search inventory, negotiate via Groq)
    └── "support" → default path
   │
   ▼
-3. Support Mode:
-   ├── Semantic search training data (embeddings + cosine similarity)
-   │   └── Falls back to SQL LIKE if embeddings unavailable
-   ├── Semantic search inventory
-   ├── If training data match → return answer DIRECTLY (no Groq call)
-   ├── If inventory match → return product info DIRECTLY (no Groq call)
-   └── If nothing found → escalate + suggest similar Q&As
+3. Support Mode — 3-tier fallback:
+   ├── Tier 1: Semantic search QA (embeddings + cosine similarity, 0.65)
+   │   └── Found → humanizeResponse via Groq → return (confidence * 0.95)
+   ├── Tier 2: intentCategoryFallback — LLM classifies query into
+   │   user's training category → fetch QA from category → humanize → return
+   ├── Tier 3: semanticFallback — lowered threshold (0.4) semantic search
+   │   └── humanize → return
+   └── All fail → escalate: findSimilarForUnknown ("Did you mean?"),
+        create UnknownQuestion, notify owner, broadcast to dashboard
   │
   ▼
 4. Sales Mode:
-   ├── Search inventory (semantic search)
+   ├── Search inventory (semantic search + keyword)
    ├── Build prompt with inventory context + min_price guardrails
    ├── Call Groq with strict "ONLY show inventory items" prompt
+   ├── Parse [SENTIMENT], [LANGUAGE], [SUGGESTIONS] metadata tags
    ├── Validate response (no hallucinated prices/products)
    └── Local fallback if Groq fails (show inventory directly)
   │
   ▼
 5. Handoff Mode:
    ├── Search inventory for mentioned product
-   ├── Create handoff record in DB
+   ├── summarizeConversation() — LLM generates summary of the conversation
+   ├── Create handoff record in DB with summary
    ├── Notify owner via WebSocket + notification
    └── Return: "Message [owner] on WhatsApp: [number]"
 ```
@@ -351,6 +355,7 @@ Customer sends message
 - If training data contradicts general knowledge → training data wins
 - Negotiation: offer small discounts, never below min_price
 - Date/time aware for greetings and time-based context
+- Groq is a humanizer, NOT a knowledge source — unknown questions escalate immediately
 
 **CircuitBreaker** states:
 - `closed` → normal operation, allows requests
@@ -1388,23 +1393,33 @@ backend/
 │   │   └── audit.go            # AuditLog model
 │   ├── handler/
 │   │   ├── handler.go          # Handlers struct + Auth/Chat/Training/Analytics/Integration/Settings/Archive/Payment/Audit/Inventory/Handoff handlers
+│   │   ├── assistant.go        # Assistant chat handler (floating widget)
 │   │   ├── websocket.go        # WebSocketHub: register/unregister/broadcast + HandleWebSocket
 │   │   ├── health.go           # Health check handler
-│   │   └── notifications.go    # Notification + Widget + SettingsNotif handlers
+│   │   ├── notifications.go    # Notification + Widget + SettingsNotif handlers
+│   │   ├── background.go       # Background task endpoints
+│   │   └── openwa_handlers.go  # OpenWA template/media/campaign/interactive/admin handlers
 │   ├── service/
 │   │   ├── service.go          # Services struct + AIBrain (Groq) + Auth/Chat/Training/Analytics/Integration/Settings/Archive/Inventory/Handoff
+│   │   ├── assistant.go        # AssistantService: floating widget chat service
 │   │   ├── embedding.go        # EmbeddingService: semantic search via Groq embeddings + cosine similarity
 │   │   ├── notifications.go    # NotificationService + WidgetService
 │   │   ├── polar.go            # PolarService: Polar.sh payment integration
 │   │   ├── resend.go           # ResendService: email sending via Resend API
 │   │   ├── email.go            # EmailService: wraps Resend (primary) + SMTP (fallback)
 │   │   ├── openwa.go           # OpenWAService: self-hosted WhatsApp API integration
+│   │   ├── openwa_queue.go     # Rate limiter + Redis FIFO queue + worker pool + dead-letter
+│   │   ├── openwa_session.go   # Session health monitor + auto-reconnect + QR storage
+│   │   ├── openwa_media.go     # Media download/storage/thumbnail/MIME detection
+│   │   ├── openwa_templates.go # Template CRUD + interactive messages + common templates
+│   │   ├── openwa_campaign.go  # Campaign broadcast + opt-out + delivery analytics
 │   │   ├── telegram.go         # TelegramService: Telegram bot integration
 │   │   ├── credit.go           # CreditService: Pulse credit management
 │   │   ├── plan.go             # PlanService: plan limit enforcement
 │   │   ├── campaign.go         # CampaignService: Campaign Mode management
 │   │   ├── vector.go           # VectorSearch: keyword search with word-by-word fallback
 │   │   ├── retention.go        # RetentionService: data cleanup
+│   │   ├── dbmanager.go        # DBManager: data retention cleanup jobs
 │   │   └── 2fa.go              # TFAService: TOTP two-factor auth
 │   ├── repository/
 │   │   ├── repository.go       # All 16 repositories (User, Conversation, Message, QAPair, etc.)
