@@ -648,6 +648,75 @@ func (b *AIBrain) findSimilarForUnknown(ctx context.Context, userID string, quer
 	return similar
 }
 
+// intentCategoryFallback uses LLM to classify a query into one of the user's categories,
+// then returns the best QA pair from that category. Returns nil if no category matches.
+func (b *AIBrain) intentCategoryFallback(ctx context.Context, userID, userQuery string) *domain.QAPair {
+	categories, err := b.repos.Category.List(ctx, userID)
+	if err != nil || len(categories) == 0 {
+		return nil
+	}
+
+	catNames := make([]string, len(categories))
+	catMap := make(map[string]domain.Category)
+	for i, cat := range categories {
+		catNames[i] = cat.Name
+		catMap[strings.ToLower(strings.TrimSpace(cat.Name))] = cat
+	}
+
+	prompt := []MessageTurn{
+		{Role: "system", Content: fmt.Sprintf(`You are a strict query classifier. Your only job is to output the name of exactly one category from the list below, or the word NONE.
+
+Customer question: "%s"
+
+Categories:
+%s
+
+Rules:
+- The question MUST logically belong to the category based on what the customer is asking about
+- Do NOT guess. If no category clearly matches, output NONE
+- Output ONLY the exact category name or NONE
+- No punctuation, no explanation, no extra characters`, userQuery, strings.Join(catNames, ", "))},
+		{Role: "user", Content: userQuery},
+	}
+
+	response, _, err := b.callGroqWithFallback(ctx, prompt)
+	if err != nil {
+		return nil
+	}
+
+	classified := strings.TrimSpace(response)
+	classified = strings.TrimRight(classified, ".,;:!? \n\t")
+
+	cat, ok := catMap[strings.ToLower(classified)]
+	if !ok {
+		return nil
+	}
+
+	qas, err := b.repos.QAPair.ListByCategoryAndUser(ctx, cat.ID, userID)
+	if err != nil || len(qas) == 0 {
+		return nil
+	}
+
+	return &qas[0]
+}
+
+// semanticFallback searches QA pairs with a lowered embedding threshold (0.4) to catch
+// queries that are semantically related but didn't match the main search threshold.
+func (b *AIBrain) semanticFallback(ctx context.Context, userID, userQuery string) *domain.QAPair {
+	if b.embeddings == nil {
+		return nil
+	}
+	results, err := b.embeddings.SemanticSearchQAPairs(ctx, userID, userQuery, 1, 0.4)
+	if err != nil || len(results) == 0 {
+		return nil
+	}
+	qa, err := b.repos.QAPair.GetByID(ctx, results[0].ID)
+	if err != nil || qa == nil {
+		return nil
+	}
+	return qa
+}
+
 // handleSalesMode searches inventory and builds a sales-oriented response
 func (b *AIBrain) handleSalesMode(ctx context.Context, userID string, conversation *domain.Conversation, query string, language string, history []MessageTurn) (*AIResponse, error) {
 	inventory := b.searchInventoryContext(ctx, userID, query, 5)
@@ -1100,7 +1169,49 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		return finalize(local)
 	}
 
-	// No local answer — escalate to admin (do NOT let Groq answer from its own knowledge)
+	// No local answer — try intent-category fallback before escalating
+	if qa := b.intentCategoryFallback(ctx, userID, userQuery); qa != nil {
+		humanized, err := b.humanizeResponse(ctx, qa.Answer, userQuery, nil, nil, recentTurns)
+		if err == nil && humanized != "" {
+			cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(humanized)
+			confidence := 0.75
+			b.logger.Info("AI request completed (intent match)", "traceID", traceID, "duration", time.Since(startTime), "confidence", confidence, "sentiment", sentiment, "language", detectedLang, "categoryQA", qa.ID)
+			infrastructure.AISentimentTotal.WithLabelValues(sentiment).Inc()
+			infrastructure.AILanguageTotal.WithLabelValues(detectedLang).Inc()
+			return finalize(&AIResponse{
+				Content:     cleanContent,
+				Confidence:  confidence,
+				Source:      "intent_match",
+				Sentiment:   sentiment,
+				Language:    detectedLang,
+				Suggestions: suggestions,
+				MatchedQA:   &qa.ID,
+			})
+		}
+	}
+
+	// Try lowered semantic search as second fallback
+	if qa := b.semanticFallback(ctx, userID, userQuery); qa != nil {
+		humanized, err := b.humanizeResponse(ctx, qa.Answer, userQuery, nil, nil, recentTurns)
+		if err == nil && humanized != "" {
+			cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(humanized)
+			confidence := 0.65
+			b.logger.Info("AI request completed (semantic fallback)", "traceID", traceID, "duration", time.Since(startTime), "confidence", confidence, "sentiment", sentiment, "language", detectedLang, "matchedQA", qa.ID)
+			infrastructure.AISentimentTotal.WithLabelValues(sentiment).Inc()
+			infrastructure.AILanguageTotal.WithLabelValues(detectedLang).Inc()
+			return finalize(&AIResponse{
+				Content:     cleanContent,
+				Confidence:  confidence,
+				Source:      "semantic_fallback",
+				Sentiment:   sentiment,
+				Language:    detectedLang,
+				Suggestions: suggestions,
+				MatchedQA:   &qa.ID,
+			})
+		}
+	}
+
+	// Really no answer — escalate to admin (do NOT let Groq answer from its own knowledge)
 	similar := b.findSimilarForUnknown(ctx, userID, userQuery)
 	escChannel := ""
 	if conv != nil {
