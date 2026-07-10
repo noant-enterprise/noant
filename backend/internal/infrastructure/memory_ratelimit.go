@@ -48,6 +48,12 @@ func (rl *MemoryRateLimiter) Allow(key string, limit int, window time.Duration) 
 }
 
 func (rl *MemoryRateLimiter) cleanupLoop() {
+	defer func() {
+		if r := recover(); r != nil {
+			// restart cleanup on panic
+			go rl.cleanupLoop()
+		}
+	}()
 	ticker := time.NewTicker(rl.interval)
 	defer ticker.Stop()
 	for range ticker.C {

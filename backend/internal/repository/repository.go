@@ -353,16 +353,23 @@ func (r *MessageRepository) Create(ctx context.Context, msg *domain.Message) err
 			language = msg.Metadata.Language
 		}
 	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
 	query := `INSERT INTO messages (id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, created_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-	_, err := r.db.ExecContext(ctx, query, msg.ID, msg.ConversationID, msg.Role, msg.SenderID, msg.Content, msg.IsRead, msg.Confidence, matchedQA, escalationReason, language, msg.Source)
-	if err != nil {
-		return err
+	if _, err := tx.ExecContext(ctx, query, msg.ID, msg.ConversationID, msg.Role, msg.SenderID, msg.Content, msg.IsRead, msg.Confidence, matchedQA, escalationReason, language, msg.Source); err != nil {
+		return fmt.Errorf("insert message: %w", err)
 	}
 	// Update conversation's updated_at timestamp!
 	updateConvQuery := `UPDATE conversations SET updated_at = NOW() WHERE id = ?`
-	_, _ = r.db.ExecContext(ctx, updateConvQuery, msg.ConversationID)
-	return nil
+	if _, err := tx.ExecContext(ctx, updateConvQuery, msg.ConversationID); err != nil {
+		return fmt.Errorf("update conversation: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (r *MessageRepository) ListByConversation(ctx context.Context, conversationID string, limit int) ([]domain.Message, error) {
@@ -883,6 +890,15 @@ func (r *UnknownQuestionRepository) List(ctx context.Context, userID string, sta
 	return questions, nil
 }
 
+func (r *UnknownQuestionRepository) ExistsPending(ctx context.Context, userID string, question string) (bool, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM unknown_questions WHERE user_id = ? AND LOWER(question) = ? AND status = 'pending'`, userID, strings.ToLower(question)).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (r *UnknownQuestionRepository) UpdateStatus(ctx context.Context, id string, userID string, status string, answer *string, categoryID *string) error {
 	query := `UPDATE unknown_questions SET status = ?, suggested_answer = ?, category_id = ? WHERE id = ? AND user_id = ?`
 	_, err := r.db.ExecContext(ctx, query, status, answer, categoryID, id, userID)
@@ -1025,30 +1041,22 @@ func (r *IntegrationRepository) GetByUserAndChannel(ctx context.Context, userID,
 
 func (r *IntegrationRepository) GetByChannelAndSessionID(ctx context.Context, channel, sessionID string) (*domain.Integration, error) {
 	query := `SELECT id, user_id, channel, status, config, webhook_url, last_error, created_at, updated_at
-	FROM integrations WHERE channel = ?`
-	rows, err := r.db.QueryContext(ctx, query, channel)
+	FROM integrations WHERE channel = ? AND JSON_EXTRACT(config, '$.session_id') = ?`
+	var i domain.Integration
+	var configStr string
+	err := r.db.QueryRowContext(ctx, query, channel, sessionID).Scan(&i.ID, &i.UserID, &i.Channel, &i.Status, &configStr, &i.WebhookURL, &i.LastError, &i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var i domain.Integration
-		var configStr string
-		if err := rows.Scan(&i.ID, &i.UserID, &i.Channel, &i.Status, &configStr, &i.WebhookURL, &i.LastError, &i.CreatedAt, &i.UpdatedAt); err != nil {
-			continue
-		}
-		if configStr != "" && configStr != "{}" {
-			_ = json.Unmarshal([]byte(configStr), &i.Config)
-		} else {
-			i.Config = map[string]interface{}{}
-		}
-		if cfgSessionID, ok := i.Config["session_id"].(string); ok && cfgSessionID == sessionID {
-			return &i, nil
-		}
+	if configStr != "" && configStr != "{}" {
+		_ = json.Unmarshal([]byte(configStr), &i.Config)
+	} else {
+		i.Config = map[string]interface{}{}
 	}
-
-	return nil, nil
+	return &i, nil
 }
 
 func (r *IntegrationRepository) GetByChannelAndWebhookSecret(ctx context.Context, channel, secret string) (*domain.Integration, error) {
@@ -1537,14 +1545,18 @@ func (r *HandoffRepository) GetByID(ctx context.Context, id string, userID strin
 	return h, nil
 }
 
-func (r *HandoffRepository) List(ctx context.Context, userID string, status string) ([]domain.Handoff, error) {
+func (r *HandoffRepository) List(ctx context.Context, userID string, status string, limit int) ([]domain.Handoff, error) {
 	query := `SELECT id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, final_price, owner_notes, owner_notified_at, reminder_count, next_reminder_at, created_at, updated_at FROM handoffs WHERE user_id = ?`
 	args := []interface{}{userID}
 	if status != "" {
 		query += " AND status = ?"
 		args = append(args, status)
 	}
-	query += " ORDER BY created_at DESC"
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query += " ORDER BY created_at DESC LIMIT ?"
+	args = append(args, limit)
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -1568,7 +1580,7 @@ func (r *HandoffRepository) UpdateStatus(ctx context.Context, id string, userID 
 }
 
 func (r *HandoffRepository) GetPending(ctx context.Context, userID string) ([]domain.Handoff, error) {
-	return r.List(ctx, userID, "pending")
+	return r.List(ctx, userID, "pending", 100)
 }
 
 func (r *HandoffRepository) GetReadyForReminder(ctx context.Context) ([]domain.Handoff, error) {
@@ -1655,43 +1667,45 @@ func (r *CreditRepository) Upsert(ctx context.Context, credit *domain.UserCredit
 }
 
 func (r *CreditRepository) Deduct(ctx context.Context, userID string, amount int) error {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Get current credit record for update
-	var currentBalance int
-	var expiresAt *time.Time
-	err = tx.QueryRowContext(ctx, `SELECT balance, expires_at FROM user_credits WHERE user_id = ?`, userID).
-		Scan(&currentBalance, &expiresAt)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return fmt.Errorf("no credit balance found for user %s", userID)
+	return retryOnDeadlock(func() error {
+		tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+		if err != nil {
+			return fmt.Errorf("begin tx: %w", err)
 		}
-		return err
-	}
+		defer tx.Rollback()
 
-	// Check if expired
-	if expiresAt != nil && expiresAt.Before(time.Now()) {
-		return fmt.Errorf("credit balance has expired for user %s", userID)
-	}
+		// Get current credit record FOR UPDATE to prevent concurrent overspend
+		var currentBalance int
+		var expiresAt *time.Time
+		err = tx.QueryRowContext(ctx, `SELECT balance, expires_at FROM user_credits WHERE user_id = ? FOR UPDATE`, userID).
+			Scan(&currentBalance, &expiresAt)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("no credit balance found for user %s", userID)
+			}
+			return fmt.Errorf("select balance: %w", err)
+		}
 
-	// Check sufficient balance
-	if currentBalance < amount {
-		return fmt.Errorf("insufficient credit balance: have %d, need %d", currentBalance, amount)
-	}
+		// Check if expired
+		if expiresAt != nil && expiresAt.Before(time.Now()) {
+			return fmt.Errorf("credit balance has expired for user %s", userID)
+		}
 
-	// Deduct amount
-	newBalance := currentBalance - amount
-	_, err = tx.ExecContext(ctx, `UPDATE user_credits SET balance = ?, last_updated_at = NOW() WHERE user_id = ?`, 
-		newBalance, userID)
-	if err != nil {
-		return err
-	}
+		// Check sufficient balance
+		if currentBalance < amount {
+			return fmt.Errorf("insufficient credit balance: have %d, need %d", currentBalance, amount)
+		}
 
-	return tx.Commit()
+		// Deduct amount
+		newBalance := currentBalance - amount
+		_, err = tx.ExecContext(ctx, `UPDATE user_credits SET balance = ?, last_updated_at = NOW() WHERE user_id = ?`,
+			newBalance, userID)
+		if err != nil {
+			return fmt.Errorf("update balance: %w", err)
+		}
+
+		return tx.Commit()
+	})
 }
 
 func (r *CreditRepository) GetExpiring(ctx context.Context, days int) ([]domain.UserCredit, error) {

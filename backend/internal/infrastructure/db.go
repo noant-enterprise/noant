@@ -26,9 +26,9 @@ func NewTiDBConnection(cfg *config.Config) (*sql.DB, error) {
 	}
 
 	db.SetMaxOpenConns(cfg.DBPoolSize)
-	db.SetMaxIdleConns(cfg.DBPoolSize / 2)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetConnMaxIdleTime(2 * time.Minute)
+	db.SetMaxIdleConns(cfg.DBPoolSize / 4)
+	db.SetConnMaxLifetime(10 * time.Minute)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	// Test connection with retry
 	var pingErr error

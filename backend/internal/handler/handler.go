@@ -40,6 +40,7 @@ type Handlers struct {
 	DBManager    *DBManagerHandler
 	Background   *BackgroundHandler
 	Template     *TemplateHandler
+	Assistant    *AssistantHandler
 }
 
 func NewHandlers(cfg *config.Config, services *service.Services, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
@@ -64,6 +65,7 @@ func NewHandlers(cfg *config.Config, services *service.Services, logger *infrast
 		DBManager:    NewDBManagerHandler(services.DBManager, logger),
 		Background:   NewBackgroundHandler(services.Background, logger),
 		Template:     NewTemplateHandler(services.Template, logger),
+		Assistant:    NewAssistantHandler(services.Assistant, logger),
 	}
 }
 
@@ -104,7 +106,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	user, err := h.service.Register(c.Request.Context(), req.Email, req.Password, req.FirstName, req.LastName, req.CompanyName)
 	if err != nil {
 		h.logger.Error("Registration failed", "error", err)
-		utils.RespondConflict(c, err.Error())
+		utils.RespondConflict(c, "Registration failed")
 		return
 	}
 
@@ -128,11 +130,17 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	user, token, refreshToken, err := h.service.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
-		h.logger.Error("Login failed", "error", err)
 		if err.Error() == "email_not_verified" {
+			h.logger.Warn("Login failed: email not verified", "email", req.Email)
 			c.JSON(http.StatusForbidden, gin.H{"error": "email_not_verified"})
 			return
 		}
+		if err.Error() == "account_locked" {
+			h.logger.Warn("Login failed: account locked", "email", req.Email)
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "Account temporarily locked due to too many failed attempts. Try again in 15 minutes."})
+			return
+		}
+		h.logger.Warn("Login failed", "email", req.Email)
 		utils.RespondUnauthorized(c, "Invalid email or password")
 		return
 	}
@@ -177,12 +185,18 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 
 	user, token, refreshToken, err := h.service.VerifyEmail(c.Request.Context(), req.Email, req.Code)
 	if err != nil {
-		h.logger.Error("Email verification failed", "error", err)
 		if err.Error() == "invalid verification code" {
+			h.logger.Warn("Email verification: invalid code", "email", req.Email)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_code"})
 			return
 		}
-		utils.RespondInternalError(c, err.Error())
+		if err.Error() == "too many verification attempts" {
+			h.logger.Warn("Email verification rate limit hit", "email", req.Email)
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_attempts"})
+			return
+		}
+		h.logger.Error("Email verification failed", "error", err)
+		utils.RespondInternalError(c, "")
 		return
 	}
 
@@ -469,7 +483,8 @@ func (h *ChatHandler) GetConversation(c *gin.Context) {
 
 	conv, messages, total, err := h.service.GetConversationPaginated(c.Request.Context(), userID.(string), id, limit, offset)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		h.logger.Warn("Get conversation failed", "error", err, "conversation_id", id)
+		utils.RespondNotFound(c, "Conversation not found")
 		return
 	}
 
@@ -523,7 +538,14 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 
 	// Generate AI response asynchronously
 	go func() {
-		aiMsg, err := h.service.GenerateAIResponse(context.Background(), id, req.Content)
+		defer func() {
+			if r := recover(); r != nil {
+				h.logger.Error("Panic in AI response goroutine", "recover", r)
+			}
+		}()
+		aiCtx, aiCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer aiCancel()
+		aiMsg, err := h.service.GenerateAIResponse(aiCtx, id, req.Content)
 		if err != nil {
 			h.logger.Error("AI generation failed in goroutine", "error", err)
 			// Remove typing indicator on error
@@ -597,6 +619,33 @@ func (h *ChatHandler) HumanTakeover(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Conversation taken over by human agent"})
+}
+
+func (h *ChatHandler) RateConversation(c *gin.Context) {
+	id := c.Param("id")
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	var req struct {
+		Score    int    `json:"score" binding:"required"`
+		Feedback string `json:"feedback"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Score is required (1-5)")
+		return
+	}
+	if req.Score < 1 || req.Score > 5 {
+		utils.RespondValidationError(c, "Score must be between 1 and 5")
+		return
+	}
+	utils.SanitizeStruct(&req)
+	if err := h.service.RateConversation(c.Request.Context(), userID.(string), id, req.Score, req.Feedback); err != nil {
+		utils.RespondInternalError(c, "")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Rating submitted"})
 }
 
 func (h *ChatHandler) Escalate(c *gin.Context) {
@@ -1672,9 +1721,14 @@ func (h *OpenWAHandler) WhatsAppWebhook(c *gin.Context) {
 		return
 	}
 
-	// Verify HMAC signature if configured
+	// Verify HMAC signature — required when secret is configured
 	signature := c.GetHeader("X-Hub-Signature-256")
-	if signature != "" && !h.openwa.VerifyWebhookSignature(rawBody, signature) {
+	if signature == "" {
+		h.logger.Warn("OpenWA webhook missing signature header")
+		utils.RespondUnauthorized(c, "Missing signature")
+		return
+	}
+	if !h.openwa.VerifyWebhookSignature(rawBody, signature) {
 		h.logger.Warn("OpenWA webhook signature verification failed")
 		utils.RespondUnauthorized(c, "Invalid signature")
 		return

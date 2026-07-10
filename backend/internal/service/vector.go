@@ -24,28 +24,32 @@ func (v *VectorSearch) Search(ctx context.Context, userID string, query string, 
         return nil, err
     }
     
-    // If few results, try word-by-word matching
-    if len(results) < limit {
-        words := strings.Fields(query)
-        for _, word := range words {
-            if len(word) < 4 {
-                continue
-            }
-            more, _ := v.repos.QAPair.Search(ctx, userID, word)
-            for _, qa := range more {
-                exists := false
-                for _, existing := range results {
-                    if existing.ID == qa.ID {
-                        exists = true
-                        break
-                    }
-                }
-                if !exists {
-                    results = append(results, qa)
-                }
-            }
-        }
-    }
+	// If few results, try a combined word search (single query, not N+1)
+	if len(results) < limit {
+		words := strings.Fields(query)
+		var longWords []string
+		for _, w := range words {
+			if len(w) >= 4 {
+				longWords = append(longWords, w)
+			}
+		}
+		if len(longWords) > 0 {
+			combined := strings.Join(longWords, " ")
+			more, _ := v.repos.QAPair.Search(ctx, userID, combined)
+			for _, qa := range more {
+				exists := false
+				for _, existing := range results {
+					if existing.ID == qa.ID {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					results = append(results, qa)
+				}
+			}
+		}
+	}
     
     if len(results) > limit {
         results = results[:limit]

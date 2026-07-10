@@ -6,6 +6,7 @@ import { Header } from '@/components/layout/Header'
 import { BottomNav } from '@/components/layout/BottomNav'
 import { useOffline } from '@/hooks/useOffline'
 import { Wifi, WifiOff } from 'lucide-react'
+import { FloatingAssistant } from '@/components/assistant/FloatingAssistant'
 
 // Pages that need to fill the entire viewport without any padding wrapper
 // (they manage their own layout internally)
@@ -101,6 +102,7 @@ export function DashboardLayout() {
         </div>
       )}
 
+      <FloatingAssistant />
       <style>{`
         @keyframes noantSlideDown {
           from { transform: translate(-50%, -100%); opacity: 0; }

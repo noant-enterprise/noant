@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,12 +19,13 @@ func CSRFMiddleware(allowedOrigins []string) gin.HandlerFunc {
 		}
 
 		if origin == "" || origin == "null" {
-			c.Next()
+			// Require Origin or Referer for all mutating requests
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "CSRF check failed: missing origin"})
 			return
 		}
 
 		for _, allowed := range allowedOrigins {
-			if strings.HasPrefix(origin, allowed) {
+			if origin == allowed || origin == allowed+"/" {
 				c.Next()
 				return
 			}

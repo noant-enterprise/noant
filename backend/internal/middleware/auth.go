@@ -107,14 +107,16 @@ func GetRefreshTokenFromRequest(c *gin.Context) string {
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
-	_ = c.ShouldBindJSON(&req)
-	return strings.TrimSpace(req.RefreshToken)
+	if err := c.ShouldBindJSON(&req); err == nil {
+		return strings.TrimSpace(req.RefreshToken)
+	}
+	return ""
 }
 
 func SetAuthCookies(c *gin.Context, accessToken, refreshToken string, accessTTL, refreshTTL time.Duration) {
 	secure := isSecureRequest(c)
 
-	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(accessTokenCookieName, accessToken, int(accessTTL.Seconds()), "/", "", secure, true)
 	c.SetCookie(refreshTokenCookieName, refreshToken, int(refreshTTL.Seconds()), "/", "", secure, true)
 }
@@ -122,7 +124,7 @@ func SetAuthCookies(c *gin.Context, accessToken, refreshToken string, accessTTL,
 func ClearAuthCookies(c *gin.Context) {
 	secure := isSecureRequest(c)
 
-	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(accessTokenCookieName, "", -1, "/", "", secure, true)
 	c.SetCookie(refreshTokenCookieName, "", -1, "/", "", secure, true)
 }
@@ -154,12 +156,20 @@ func LoggerMiddleware(logger *infrastructure.Logger) gin.HandlerFunc {
 			path = path + "?" + raw
 		}
 
+		// Get request ID from context (set by RequestIDMiddleware)
+		reqID, _ := c.Get("requestID")
+		reqIDStr, _ := reqID.(string)
+
+		// Instrument Prometheus metrics
+		infrastructure.RequestsTotal.WithLabelValues(method, path, fmt.Sprintf("%d", statusCode)).Inc()
+		infrastructure.RequestDuration.WithLabelValues(method, path).Observe(latency.Seconds())
+
 		if statusCode >= 500 {
-			logger.Error("HTTP request", "method", method, "path", path, "status", statusCode, "latency_ms", latency.Milliseconds(), "ip", clientIP)
+			logger.Error("HTTP request", "method", method, "path", path, "status", statusCode, "latency_ms", latency.Milliseconds(), "ip", clientIP, "request_id", reqIDStr)
 		} else if statusCode >= 400 {
-			logger.Warn("HTTP request", "method", method, "path", path, "status", statusCode, "latency_ms", latency.Milliseconds(), "ip", clientIP)
+			logger.Warn("HTTP request", "method", method, "path", path, "status", statusCode, "latency_ms", latency.Milliseconds(), "ip", clientIP, "request_id", reqIDStr)
 		} else {
-			logger.Info("HTTP request", "method", method, "path", path, "status", statusCode, "latency_ms", latency.Milliseconds(), "ip", clientIP)
+			logger.Info("HTTP request", "method", method, "path", path, "status", statusCode, "latency_ms", latency.Milliseconds(), "ip", clientIP, "request_id", reqIDStr)
 		}
 	}
 }
@@ -168,9 +178,13 @@ func SecurityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-Frame-Options", "DENY")
+		c.Header("X-XSS-Protection", "0")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' api.groq.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self';")
+		if c.Request.TLS != nil {
+			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+		}
 		c.Next()
 	}
 }
@@ -339,6 +353,22 @@ func TrialExpirationMiddleware(userProvider func(ctx context.Context, userID str
 			return
 		}
 
+		c.Next()
+	}
+}
+
+func RequireAdminMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, exists := c.Get("userRole")
+		if !exists {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			return
+		}
+		roleStr, ok := role.(string)
+		if !ok || (roleStr != "owner" && roleStr != "admin") {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			return
+		}
 		c.Next()
 	}
 }

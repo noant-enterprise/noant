@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Link } from 'react-router-dom'
-import { ArrowRight, MessageCircle, Instagram, Globe } from 'lucide-react'
+import { ArrowRight, MessageCircle, Instagram, Globe, Inbox, Radio, GraduationCap, BarChart3 } from 'lucide-react'
 import { StatSkeleton } from '@/components/ui/Skeleton'
 import { Avatar } from '@/components/ui/Avatar'
 import { timeAgo } from '@/lib/utils'
@@ -58,10 +58,10 @@ export default function OverviewPage() {
       {/* Quick actions */}
       <div className="px-1">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <QuickAction to="/chats" icon={MessageCircle} label="Inbox" color="#0ea5e9" />
-          <QuickAction to="/channels" icon={MessageCircle} label="Channels" color="#25D366" />
-          <QuickAction to="/teach" icon={Globe} label="Teach" color="#E4405F" />
-          <QuickAction to="/insights" icon={Instagram} label="Insights" color="#5865F2" />
+          <QuickAction to="/chats" icon={Inbox} label="Inbox" color="#0ea5e9" />
+          <QuickAction to="/channels" icon={Radio} label="Channels" color="#25D366" />
+          <QuickAction to="/teach" icon={GraduationCap} label="Teach" color="#E4405F" />
+          <QuickAction to="/insights" icon={BarChart3} label="Insights" color="#5865F2" />
         </div>
       </div>
 
@@ -129,7 +129,7 @@ export default function OverviewPage() {
                   </table>
                 </div>
 
-                {/* Mobile — Instagram-style cards */}
+                {/* Mobile ï¿½ Instagram-style cards */}
                 <div className="lg:hidden divide-y divide-subtle">
                   {(conversations?.conversations || []).map((c: Conversation) => {
                     const ch = channelIcons[c.channel] || channelIcons.web

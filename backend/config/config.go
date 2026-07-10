@@ -118,7 +118,7 @@ func Load() *Config {
 	smtpPort, _ := strconv.Atoi(getEnv("SMTP_PORT", "587"))
 
 	tidbPort, _ := strconv.Atoi(getEnv("TIDB_PORT", "4000"))
-	dbPoolSize, _ := strconv.Atoi(getEnv("DB_POOL_SIZE", "20"))
+	dbPoolSize, _ := strconv.Atoi(getEnv("DB_POOL_SIZE", "200"))
 
 	redisPort, _ := strconv.Atoi(getEnv("REDIS_PORT", "6379"))
 	redisSSL, _ := strconv.ParseBool(getEnv("REDIS_SSL", "true"))
@@ -228,16 +228,20 @@ func Load() *Config {
 
 func (c *Config) Validate() {
 	if len(strings.TrimSpace(c.JWTSecret)) < 32 {
-		panic("FATAL: JWT_SECRET must be set and at least 32 characters long")
+		fmt.Fprintf(os.Stderr, "FATAL: JWT_SECRET must be set and at least 32 characters long\n")
+		os.Exit(1)
 	}
 	if len(strings.TrimSpace(c.SessionSecret)) < 32 {
-		panic("FATAL: SESSION_SECRET must be set and at least 32 characters long")
+		fmt.Fprintf(os.Stderr, "FATAL: SESSION_SECRET must be set and at least 32 characters long\n")
+		os.Exit(1)
 	}
 	if strings.TrimSpace(c.TiDBHost) == "" {
-		panic("FATAL: TIDB_HOST environment variable is required")
+		fmt.Fprintf(os.Stderr, "FATAL: TIDB_HOST environment variable is required\n")
+		os.Exit(1)
 	}
 	if strings.TrimSpace(c.RedisHost) == "" {
-		panic("FATAL: REDIS_HOST environment variable is required")
+		fmt.Fprintf(os.Stderr, "FATAL: REDIS_HOST environment variable is required\n")
+		os.Exit(1)
 	}
 }
 

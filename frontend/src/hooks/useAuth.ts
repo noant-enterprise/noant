@@ -30,8 +30,8 @@ export function useAuth() {
     try {
       const updated = await getCurrentUser()
       setUser(updated)
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('Failed to refresh user:', err)
     }
   }, [])
 

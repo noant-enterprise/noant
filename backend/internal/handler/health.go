@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"database/sql"
-	"strings"
 	"noant/internal/infrastructure"
 
 	"github.com/gin-gonic/gin"
@@ -31,7 +30,8 @@ func (h *HealthHandler) Check(c *gin.Context) {
 	// Check DB
 	if h.db != nil {
 		if err := h.db.PingContext(c.Request.Context()); err != nil {
-			checks["database"] = "unhealthy: " + err.Error()
+			h.logger.Error("Health check: DB ping failed", "error", err)
+			checks["database"] = "unhealthy"
 		} else {
 			checks["database"] = "healthy"
 		}
@@ -42,7 +42,8 @@ func (h *HealthHandler) Check(c *gin.Context) {
 	// Check Redis (optional - app works with in-memory fallback)
 	if h.redis != nil {
 		if err := h.redis.Ping(c.Request.Context()); err != nil {
-			checks["redis"] = "degraded: " + err.Error()
+			h.logger.Error("Health check: Redis ping failed", "error", err)
+			checks["redis"] = "degraded"
 		} else {
 			checks["redis"] = "healthy"
 		}
@@ -75,7 +76,7 @@ func (h *HealthHandler) Check(c *gin.Context) {
 		if k == "version" {
 			continue
 		}
-		if v != "healthy" && v != "not_configured" && !strings.HasPrefix(v, "degraded:") {
+		if v != "healthy" && v != "not_configured" && v != "degraded" {
 			// Only DB and API are critical; Redis/Groq degradation is tolerated
 			if k == "database" || k == "api" {
 				criticalFailed = true

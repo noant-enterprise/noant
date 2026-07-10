@@ -149,7 +149,9 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 		Content:        message,
 		IsRead:         false,
 	}
-	_ = s.repos.Message.Create(ctx, customerMsg)
+	if err := s.repos.Message.Create(ctx, customerMsg); err != nil {
+		s.logger.Error("Widget: failed to save customer message", "error", err, "conv_id", conv.ID)
+	}
 
 	// Generate response
 	aiResp, err := s.aiBrain.GenerateResponse(ctx, conv.ID, message, "en")
@@ -173,10 +175,14 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 			Language:   "en",
 		},
 	}
-	_ = s.repos.Message.Create(ctx, aiMsg)
+	if err := s.repos.Message.Create(ctx, aiMsg); err != nil {
+		s.logger.Error("Widget: failed to save AI message", "error", err, "conv_id", conv.ID)
+	}
 
 	if aiResp.Escalate {
-		_ = s.repos.Conversation.UpdateStatus(ctx, conv.ID, "escalated", userID)
+		if err := s.repos.Conversation.UpdateStatus(ctx, conv.ID, "escalated", userID); err != nil {
+			s.logger.Error("Widget: failed to escalate conversation", "error", err, "conv_id", conv.ID)
+		}
 		
 		// Send notification of escalation if preference is set
 		prefs, err := s.repos.User.GetNotifPrefs(ctx, userID)
@@ -192,7 +198,9 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 					Body:   fmt.Sprintf("A web chat with %s requires your attention.", conv.CustomerName),
 					Link:   fmt.Sprintf("/chats?id=%s", conv.ID),
 				}
-				_ = s.repos.Notification.Create(ctx, notif)
+				if err := s.repos.Notification.Create(ctx, notif); err != nil {
+					s.logger.Error("Widget: failed to create escalation notification", "error", err)
+				}
 				
 				// Send email if configured
 				if s.email != nil {

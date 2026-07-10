@@ -261,6 +261,7 @@ type Handoff struct {
 	Status           string     `json:"status" db:"status"` // pending, sold, lost, expired
 	FinalPrice       *float64   `json:"final_price" db:"final_price"`
 	OwnerNotes       string     `json:"owner_notes" db:"owner_notes"`
+	Summary          string     `json:"summary" db:"summary"`
 	OwnerNotifiedAt  *time.Time `json:"owner_notified_at" db:"owner_notified_at"`
 	ReminderCount    int        `json:"reminder_count" db:"reminder_count"`
 	NextReminderAt   *time.Time `json:"next_reminder_at" db:"next_reminder_at"`

@@ -3,8 +3,43 @@ package repository
 import (
     "context"
     "database/sql"
+    "errors"
     "fmt"
+    "strings"
+    "time"
 )
+
+var (
+    ErrDeadlock = errors.New("deadlock detected")
+)
+
+const maxDeadlockRetries = 3
+
+func isDeadlock(err error) bool {
+    if err == nil {
+        return false
+    }
+    // MySQL/TiDB deadlock error code 1213
+    return strings.Contains(err.Error(), "deadlock") ||
+        strings.Contains(err.Error(), "Error 1213") ||
+        strings.Contains(err.Error(), "Deadlock found")
+}
+
+func retryOnDeadlock(fn func() error) error {
+    var lastErr error
+    for i := 0; i < maxDeadlockRetries; i++ {
+        lastErr = fn()
+        if lastErr == nil {
+            return nil
+        }
+        if !isDeadlock(lastErr) {
+            return lastErr
+        }
+        backoff := time.Duration(100*(i+1)) * time.Millisecond
+        time.Sleep(backoff)
+    }
+    return fmt.Errorf("deadlock retry exhausted: %w", lastErr)
+}
 
 type UnitOfWork struct {
     db *sql.DB

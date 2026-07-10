@@ -26,9 +26,12 @@ func (h *NotificationHandler) List(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	limit := 50
 	if lStr := c.Query("limit"); lStr != "" {
-		if l, err := strconv.Atoi(lStr); err == nil {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
 			limit = l
 		}
+	}
+	if limit > 200 {
+		limit = 200
 	}
 
 	notifs, err := h.service.List(c.Request.Context(), userID.(string), limit)

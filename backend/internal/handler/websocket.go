@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -12,8 +13,10 @@ import (
 )
 
 type wsClient struct {
-	conn *websocket.Conn
-	mu   sync.Mutex
+	conn   *websocket.Conn
+	mu     sync.Mutex
+	send   chan []byte
+	closeOnce sync.Once
 }
 
 func (c *wsClient) writeMessage(messageType int, data []byte) error {
@@ -26,6 +29,17 @@ func (c *wsClient) writeJSON(v interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.conn.WriteJSON(v)
+}
+
+func (c *wsClient) writeLoop() {
+	for data := range c.send {
+		c.mu.Lock()
+		err := c.conn.WriteMessage(websocket.TextMessage, data)
+		c.mu.Unlock()
+		if err != nil {
+			return
+		}
+	}
 }
 
 func (c *wsClient) close() error {
@@ -74,9 +88,17 @@ func (h *WebSocketHub) isOriginAllowed(origin string) bool {
 }
 
 func (h *WebSocketHub) Run() {
+	defer func() {
+		if r := recover(); r != nil {
+			h.logger.Error("Panic in WebSocket hub", "recover", r)
+			// restart the hub on panic
+			go h.Run()
+		}
+	}()
 	for {
 		select {
 		case client := <-h.register:
+			go client.writeLoop()
 			h.mutex.Lock()
 			h.clients[client.conn.RemoteAddr().String()] = client
 			h.mutex.Unlock()
@@ -86,14 +108,16 @@ func (h *WebSocketHub) Run() {
 			h.mutex.Lock()
 			delete(h.clients, client.conn.RemoteAddr().String())
 			h.mutex.Unlock()
-			client.close()
+			client.closeOnce.Do(func() { close(client.send); client.close() })
 			h.logger.Info("WebSocket client disconnected", "addr", client.conn.RemoteAddr().String())
 
 		case msg := <-h.broadcast:
+			data, _ := json.Marshal(msg)
 			h.mutex.RLock()
-			for addr, client := range h.clients {
-				if err := client.writeJSON(msg); err != nil {
-					h.logger.Warn("Failed to send WebSocket message", "addr", addr, "error", err)
+			for _, client := range h.clients {
+				select {
+				case client.send <- data:
+				default:
 				}
 			}
 			h.mutex.RUnlock()
@@ -119,7 +143,7 @@ func (h *WebSocketHub) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	client := &wsClient{conn: conn}
+	client := &wsClient{conn: conn, send: make(chan []byte, 64)}
 	h.register <- client
 
 	go func() {

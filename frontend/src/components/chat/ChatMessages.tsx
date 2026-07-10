@@ -136,11 +136,11 @@ export function ChatMessages({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto overscroll-contain flex flex-col gap-1.5 bg-base"
+      className="flex-1 overflow-y-auto overscroll-contain flex flex-col gap-0.5 bg-base" style={{ fontFamily: "'Nunito', 'Inter', system-ui, -apple-system, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji'" }}
     >
       {/* Sentinel loader for older messages */}
       {hasMore && (
-        <div ref={setSentinel} className="py-2.5 flex justify-center w-full shrink-0 px-3 lg:px-4">
+        <div ref={setSentinel} className="py-1.5 flex justify-center w-full shrink-0 px-3 lg:px-4">
           {loadingMore ? (
             <span className="inline-block w-4 h-4 border-2 border-noant-sky border-t-transparent rounded-full animate-spin" />
           ) : (
@@ -169,9 +169,9 @@ export function ChatMessages({
 
         if (isPlanLimit) {
           return (
-            <div key={m.id} className="flex flex-col gap-1 w-full shrink-0 items-center my-3 px-3 lg:px-4">
+            <div key={m.id} className="flex flex-col gap-0.5 w-full shrink-0 items-center my-1.5 px-3 lg:px-4">
               {dateHeader && (
-                <div className="self-center my-3 bg-surface border border-default text-secondary text-[11px] lg:text-[10px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm select-none">
+                <div className="self-center my-1.5 bg-surface border border-default text-secondary text-[11px] lg:text-[10px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm select-none">
                   {dateHeader}
                 </div>
               )}
@@ -194,29 +194,29 @@ export function ChatMessages({
         }
 
         return (
-          <div key={m.id} className="flex flex-col gap-1 w-full shrink-0 px-3 lg:px-4">
+          <div key={m.id} className="flex flex-col gap-0.5 w-full shrink-0 px-3 lg:px-4">
             {dateHeader && (
-              <div className="self-center my-3 bg-surface border border-default text-secondary text-[11px] lg:text-[10px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm select-none">
+              <div className="self-center my-1 bg-surface border border-default text-secondary text-[11px] lg:text-[10px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm select-none">
                 {dateHeader}
               </div>
             )}
             <div
               className={cn(
-                'max-w-[85%] lg:max-w-[75%] px-4 py-2.5 rounded-2xl text-sm lg:text-xs leading-relaxed transition-all duration-300',
+                'max-w-[85%] lg:max-w-[75%] px-4 py-1.5 rounded-2xl text-sm lg:text-xs leading-relaxed transition-all duration-300',
                 isCustomer
                   ? 'self-end bg-noant-black dark:bg-[#262626] text-white rounded-br-md'
                   : isSystem
-                    ? 'self-center bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[11px] lg:text-[10px] font-semibold uppercase tracking-wider px-4 py-2 rounded-xl border border-amber-200/50'
+                    ? 'self-center bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[11px] lg:text-[10px] font-semibold uppercase tracking-wider px-3 py-1 rounded-xl border border-amber-200/50'
                     : 'self-start bg-surface border border-default text-primary rounded-bl-md',
                 isOptimistic && 'opacity-60',
                 isFailed && 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
               )}
             >
               {!isCustomer && !isSystem && <SourceBadge message={m} />}
-              <p className="whitespace-pre-wrap" style={{ fontFamily: "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', sans-serif" }}>{m.content}</p>
+              <p className="whitespace-pre-wrap">{m.content}</p>
               <div
                 className={cn(
-                  'text-[11px] lg:text-[10px] mt-1.5 flex items-center gap-1.5',
+                  'text-[11px] lg:text-[10px] mt-0.5 flex items-center gap-1',
                   isCustomer ? 'text-white/50' : 'text-tertiary'
                 )}
               >
@@ -241,7 +241,7 @@ export function ChatMessages({
         )
       })}
       {conversationId && (
-        <div className="flex flex-col gap-1 w-full shrink-0 px-3 lg:px-4">
+        <div className="flex flex-col gap-0.5 w-full shrink-0 px-3 lg:px-4">
           <TypingIndicator conversationId={conversationId} />
         </div>
       )}

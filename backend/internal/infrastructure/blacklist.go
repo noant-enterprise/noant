@@ -13,6 +13,12 @@ type MemoryBlacklist struct {
 func NewMemoryBlacklist() *MemoryBlacklist {
 	b := &MemoryBlacklist{entries: make(map[string]time.Time)}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// panic in cleanup goroutine - restart it
+				go NewMemoryBlacklist()
+			}
+		}()
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {

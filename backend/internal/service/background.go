@@ -73,7 +73,14 @@ func (bw *BackgroundWorker) worker(id int) {
 			bw.logger.Info("Background worker stopped", "worker_id", id)
 			return
 		case taskFn := <-bw.taskCh:
-			taskFn()
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						bw.logger.Error("Panic in background task", "worker_id", id, "recover", r)
+					}
+				}()
+				taskFn()
+			}()
 		}
 	}
 }

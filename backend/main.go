@@ -131,12 +131,15 @@ func main() {
 	auditRepo := repository.NewAuditRepository(db, redisClient)
 
 	// CORS: allow common local dev origins + any configured origins
-	corsOrigins := append(cfg.CORSOrigins,
-		"http://localhost:3000",
-		"http://127.0.0.1:3000",
-		"http://localhost:5173",
-		"http://127.0.0.1:5173",
-	)
+	corsOrigins := cfg.CORSOrigins
+	if cfg.NodeEnv != "production" {
+		corsOrigins = append(corsOrigins,
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+		)
+	}
 
 	// Create WebSocket hub with origin enforcement
 	wsHub := handler.NewWebSocketHub(logger, corsOrigins)
@@ -297,13 +300,15 @@ func main() {
 		AllowOrigins:     corsOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
-		ExposeHeaders:    []string{"Content-Length"},
+		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
 
-	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	router.GET("/metrics", middleware.RequireAdminMiddleware(), gin.WrapH(promhttp.Handler()))
 	router.GET("/health", healthHandler.Check)
+	router.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
+	router.GET("/readyz", healthHandler.Check)
 
 	// WebSocket endpoint — secured with JWT auth and origin validation
 	router.GET("/ws", middleware.WebSocketAuth(cfg.JWTSecret, redisClient), wsHub.HandleWebSocket)
@@ -344,6 +349,7 @@ func main() {
 			chats.POST("/conversations/:id/messages", handlers.Chat.SendMessage)
 			chats.PUT("/conversations/:id/takeover", handlers.Chat.HumanTakeover)
 			chats.POST("/conversations/:id/escalate", handlers.Chat.Escalate)
+			chats.POST("/conversations/:id/rate", handlers.Chat.RateConversation)
 			chats.DELETE("/clear", handlers.Chat.ClearChats)
 		}
 
@@ -447,7 +453,7 @@ func main() {
 		{
 			payments.GET("/plans", handlers.Payment.ListPlans)
 			payments.POST("/subscribe", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), middleware.AuditMiddleware(auditRepo, logger), handlers.Payment.Subscribe)
-			payments.POST("/webhook", handlers.Payment.Webhook)
+			payments.POST("/webhook", middleware.RateLimitMiddleware(redisClient, 500, time.Minute), handlers.Payment.Webhook)
 			payments.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Payment.Status)
 		}
 
@@ -476,8 +482,8 @@ func main() {
 
 		openwa := api.Group("/openwa")
 		{
-			// Webhook endpoint — no auth (verified by HMAC signature)
-			openwa.POST("/webhook", handlers.OpenWA.WhatsAppWebhook)
+			// Webhook endpoint — no auth (verified by HMAC signature), rate-limited
+			openwa.POST("/webhook", middleware.RateLimitMiddleware(redisClient, 1000, time.Minute), handlers.OpenWA.WhatsAppWebhook)
 			// Session management — auth required
 			openwa.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.OpenWA.GetSessionStatus)
 			openwa.POST("/restart", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.OpenWA.RestartSession)
@@ -486,7 +492,7 @@ func main() {
 		// Simplified WhatsApp channel endpoints
 		telegram := api.Group("/telegram")
 		{
-			telegram.POST("/webhook", handlers.Telegram.Webhook)
+			telegram.POST("/webhook", middleware.RateLimitMiddleware(redisClient, 1000, time.Minute), handlers.Telegram.Webhook)
 		}
 
 	channels := api.Group("/channels")
@@ -525,6 +531,7 @@ func main() {
 	// DB Manager endpoints (admin/owner only)
 	dbManager := api.Group("/db-manager")
 	dbManager.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	dbManager.Use(middleware.RequireAdminMiddleware())
 	{
 		dbManager.GET("/tasks", handlers.DBManager.ListCleanupTasks)
 		dbManager.GET("/config", handlers.DBManager.GetCleanupConfig)
@@ -535,6 +542,7 @@ func main() {
 	// Background Worker endpoints (admin/owner only)
 	background := api.Group("/background")
 	background.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	background.Use(middleware.RequireAdminMiddleware())
 	{
 		background.POST("/submit", handlers.Background.SubmitTask)
 		background.GET("/tasks", handlers.Background.ListTasks)
@@ -595,6 +603,14 @@ func main() {
 		interactive.POST("/buttons", handlers.OpenWA.SendButtonsMessage)
 	}
 
+	// Onboarding Assistant endpoints
+	assistant := api.Group("/assistant")
+	assistant.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	assistant.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
+	{
+		assistant.POST("/chat", handlers.Assistant.Chat)
+	}
+
 	// Serve frontend static files if the static directory exists
 	if _, err := os.Stat("./static"); err == nil {
 		logger.Info("Serving static frontend files from ./static")
@@ -635,8 +651,11 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: router,
+		Addr:         ":" + cfg.Port,
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {
@@ -653,6 +672,14 @@ func main() {
 
 	logger.Info("Shutting down server...")
 
+	// Gracefully stop background systems
+	services.OpenWA.StopSessionManager()
+	if pool := services.OpenWA.GetWorkerPool(); pool != nil {
+		pool.StopAll()
+	}
+	services.Background.Shutdown()
+	jobQueue.Shutdown()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -668,6 +695,11 @@ func startHealthChecks(integrationSvc *service.IntegrationService, logger *infra
 	channels := []string{"telegram", "whatsapp", "facebook", "instagram"}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("Panic in health check goroutine", "recover", r)
+			}
+		}()
 		for range ticker.C {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			logger.Info("Running periodic channel health checks")

@@ -52,6 +52,7 @@ type Services struct {
 	DBManager    *DBManagerService
 	Background   *BackgroundWorker
 	Template     *TemplateService
+	Assistant    *AssistantService
 }
 
 func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService, polarSvc *PolarService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
@@ -89,6 +90,7 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 		DBManager:    dbManagerSvc,
 		Background:   bgWorker,
 		Template:     templateSvc,
+		Assistant:    NewAssistantService(aiBrain, logger),
 	}
 }
 
@@ -147,9 +149,15 @@ type AIBrain struct {
 	broadcastFn func(convID string, msgType string, data interface{})
 	embeddings  *EmbeddingService
 	planSvc     *PlanService
+	httpClient  *http.Client
 }
 
 func NewAIBrain(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, broadcastFn func(convID string, msgType string, data interface{})) *AIBrain {
+	transport := &http.Transport{
+		MaxIdleConns:        20,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	}
 	return &AIBrain{
 		cfg:         cfg,
 		repos:       repos,
@@ -160,6 +168,7 @@ func NewAIBrain(cfg *config.Config, repos *repository.Repositories, redis *infra
 		broadcastFn: broadcastFn,
 		embeddings:  NewEmbeddingService(cfg, repos, redis, logger),
 		planSvc:     NewPlanService(cfg, repos, redis, logger, NewCreditService(cfg, repos, redis, logger)),
+		httpClient:  &http.Client{Transport: transport, Timeout: 30 * time.Second},
 	}
 }
 
@@ -193,21 +202,72 @@ func (b *AIBrain) BuildPrompt(template PromptTemplate) []MessageTurn {
 	systemContent := template.SystemPrompt
 	if systemContent == "" {
 		now := time.Now()
-		systemContent = fmt.Sprintf(`You are a friendly sales and support assistant for a real business. You speak naturally, like a real shop assistant would.
+		systemContent = fmt.Sprintf(`You are a world-class customer service and sales assistant for a real business. You speak naturally, with emotional intelligence, adapting to the customer's tone and language.
 
 DATE/TIME: %s
 
-CRITICAL RULES — YOU MUST FOLLOW THESE:
-1. You are a REAL shop assistant. You sell products and answer questions about the business.
-2. You MUST answer ONLY from the "Relevant training data entries" and "Relevant inventory items" provided below.
-3. If the training data or inventory has an answer, use it. Be natural and helpful.
-4. If the customer asks about something NOT in the training data or inventory, say: "Let me check with my manager on that" or "I'll find out for you" — then escalate.
-5. NEVER say "I'm an AI" or "I'm a bot" or "Noant" or mention any platform name. You are a shop assistant.
-6. NEVER say "based on my training" or "generally" or "typically".
-7. For price negotiations: if the customer wants a lower price, you can offer a small discount or say "Let me check with my manager". Never go below min_price.
-8. Be warm, use the customer's name if known. Use Nigerian expressions when appropriate (Oga, o, abeg, etc).
-9. Keep responses short and natural — like a real person texting.
-10. You know the current date and time. Use this for greetings like "Good morning" or time-based context.`, now.Format("Monday, January 2, 2006 3:04 PM"))
+## CORE IDENTITY
+- You are a real shop/customer service representative. Not an AI, not a bot.
+- You represent the business with professionalism and warmth.
+- You speak Nigerian English, Pidgin, Yoruba, Igbo, or Hausa naturally — matching the customer's language.
+
+## EMOTIONAL INTELLIGENCE & SENTIMENT
+Read the customer's sentiment and adapt your tone:
+- 😊 **Positive/Neutral**: Warm, helpful, professional. Reinforce their good mood.
+- 😟 **Negative/Frustrated**: Empathetic first ("I understand how you feel"), apologetic if needed, then solution-oriented. NEVER dismiss their concern.
+- 😠 **Angry**: Stay calm. Acknowledge their frustration. Offer a concrete solution or escalate immediately.
+- ❓ **Confused**: Patient, clear, step-by-step guidance. Ask clarifying questions.
+- 🛒 **Buying-ready**: Enthusiastic, confirm details, guide to checkout/payment quickly.
+
+## LANGUAGE AUTO-DETECTION
+- Detect the customer's language from their message. Respond in the SAME language.
+- Supported: English, Nigerian Pidgin ("How you dey?", "Wetin dey happen?"), Yoruba ("Bawo ni?", "E kaaro"), Igbo ("Kedu?", "Ndewo"), Hausa ("Sannu?", "Yaya kake?").
+- Mix languages naturally the way real Nigerians speak (e.g., "Oya let's do business").
+- Use Naira (₦) always.
+
+## CONVERSATIONAL EXCELLENCE
+1. **Listen first**: Understand before answering. Ask one question at a time.
+2. **Be concise**: Like a real person texting — 2-3 sentences max per turn.
+3. **Show personality**: Use "o", "o ya", "abi", "shebi", "na", "o ga" naturally.
+4. **Use customer's name** if known.
+5. **Never be robotic**: No numbered lists, no bullet points in casual chat.
+6. **Proactive suggestions**: If customer seems interested in a product, offer relevant alternatives or upsells.
+7. **Objection handling**: Price too high? Offer value. Need time? "No wahala, take your time o."
+8. **Close naturally**: When they want to buy, guide them to the owner's WhatsApp.
+
+## PRODUCT & INVENTORY RULES
+- ONLY sell products from the "Available products/services" context below. NEVER invent products or prices.
+- If no products match, say "Let me check with Oga" and escalate.
+- Never quote below the listed Min price.
+- Know stock levels — if low stock, mention it ("Only 2 left o!").
+- For price negotiations, offer small discounts when possible, or say "Na the last price, I no fit go lower."
+
+## CRITICAL RULES — NEVER VIOLATE
+- NEVER say "I'm an AI", "as an AI", "I'm a bot", "Noant", or any platform name.
+- NEVER make up answers outside the provided training data and inventory.
+- NEVER hallucinate prices, product features, or policies.
+- NEVER send account numbers or handle payments directly.
+- NEVER say "based on my training data", "generally speaking", "typically".
+- NEVER escalate unnecessarily — try to resolve first.
+- If you cannot answer, say "Let me check with my manager" and escalate.
+
+## HANDOFF PROTOCOL
+When the customer wants to buy, escalate, or needs human help:
+- "Perfect! Let me connect you with Oga to finalize this."
+- "I don't have that info, but my manager can help you with that."
+- Generate a brief summary of the conversation for the human agent.
+
+## SENTIMENT ANALYSIS (for your response metadata)
+At the end of your response, include a sentiment tag on a new line like:
+[SENTIMENT:positive|negative|neutral|frustrated]
+[LANGUAGE:en|pcm|yo|ha|ig]
+[SUGGESTIONS:option 1|option 2|option 3]
+
+Example:
+"Good morning! How can I help you today?
+[SENTIMENT:neutral]
+[LANGUAGE:en]
+[SUGGESTIONS:I want to buy something|I need help with an order|Tell me about your products]"`, now.Format("Monday, January 2, 2006 3:04 PM"))
 	}
 	messages = append(messages, MessageTurn{Role: "system", Content: systemContent})
 	if len(template.Context) > 0 {
@@ -684,10 +744,16 @@ Be warm, short, and natural.`, user.CompanyName, ownerName, ownerName, ownerWhat
 			Source:     "fallback",
 		}, nil
 	}
+	cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(response)
+	infrastructure.AISentimentTotal.WithLabelValues(sentiment).Inc()
+	infrastructure.AILanguageTotal.WithLabelValues(detectedLang).Inc()
 	return &AIResponse{
-		Content:    response,
-		Confidence: confidence,
-		Source:     "groq",
+		Content:     cleanContent,
+		Confidence:  confidence,
+		Source:      "groq",
+		Sentiment:   sentiment,
+		Language:    detectedLang,
+		Suggestions: suggestions,
 	}, nil
 }
 
@@ -712,6 +778,13 @@ func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, user
 		// No inventory match — use generic product from query
 		productName = query
 	}
+	// Generate a summary from recent conversation turns
+	recentTurns := b.recentConversationTurns(ctx, conversationID, query, 8)
+	summary := b.summarizeConversation(ctx, query, recentTurns)
+	if summary == "" {
+		summary = fmt.Sprintf("Customer interested in: %s (₦%.0f)", productName, price)
+	}
+
 	handoff := &domain.Handoff{
 		UserID:         userID,
 		ConversationID: conversationID,
@@ -721,6 +794,7 @@ func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, user
 		OriginalPrice:  price,
 		AgreedPrice:    price,
 		Quantity:       1,
+		Summary:        summary,
 	}
 
 	// Check if this plan gets notifications
@@ -752,6 +826,7 @@ func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, user
 				"product_name":    productName,
 				"agreed_price":    price,
 				"conversation_id": conversationID,
+				"summary":         summary,
 			})
 		}
 
@@ -761,7 +836,7 @@ func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, user
 				UserID: userID,
 				Type:   "handoff",
 				Title:  "New Sale Handoff",
-				Body:   fmt.Sprintf("%s wants to buy %s for ₦%.0f", customerName, productName, price),
+				Body:   fmt.Sprintf("%s wants to buy %s for ₦%.0f. %s", customerName, productName, price, summary),
 				Link:   "/leads",
 				IsRead: false,
 			}
@@ -785,8 +860,140 @@ func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, user
 	}, nil
 }
 
-func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, userQuery string, language string) (*AIResponse, error) {
+// parseAIMetadata extracts [SENTIMENT], [LANGUAGE], [SUGGESTIONS] tags from AI response
+func parseAIMetadata(content string) (string, string, string, []string) {
+	clean := content
+	sentiment := "neutral"
+	language := "en"
+	var suggestions []string
+
+	re := regexp.MustCompile(`(?m)^\[SENTIMENT:([^\]]+)\]$`)
+	if m := re.FindStringSubmatch(clean); len(m) > 1 {
+		sentiment = strings.ToLower(strings.TrimSpace(m[1]))
+		clean = re.ReplaceAllString(clean, "")
+	}
+
+	re = regexp.MustCompile(`(?m)^\[LANGUAGE:([^\]]+)\]$`)
+	if m := re.FindStringSubmatch(clean); len(m) > 1 {
+		language = strings.ToLower(strings.TrimSpace(m[1]))
+		clean = re.ReplaceAllString(clean, "")
+	}
+
+	re = regexp.MustCompile(`(?m)^\[SUGGESTIONS:([^\]]+)\]$`)
+	if m := re.FindStringSubmatch(clean); len(m) > 1 {
+		for _, s := range strings.Split(m[1], "|") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				suggestions = append(suggestions, s)
+			}
+		}
+		clean = re.ReplaceAllString(clean, "")
+	}
+
+	clean = strings.TrimSpace(clean)
+	return clean, sentiment, language, suggestions
+}
+
+// summarizeConversation generates a brief summary of the conversation for handoff
+func (b *AIBrain) summarizeConversation(ctx context.Context, query string, turns []MessageTurn) string {
+	if len(turns) == 0 {
+		return ""
+	}
+	// Build conversation text
+	var parts []string
+	for _, t := range turns {
+		if t.Role == "user" {
+			parts = append(parts, "Customer: "+t.Content)
+		} else if t.Role == "assistant" {
+			parts = append(parts, "AI: "+t.Content)
+		}
+	}
+	convText := strings.Join(parts, "\n")
+	if len(convText) > 1500 {
+		convText = convText[len(convText)-1500:]
+	}
+
+	summaryPrompt := []MessageTurn{
+		{Role: "system", Content: "Summarize this customer service conversation in 1-2 sentences for a human agent taking over. Include: what the customer wants, any key details mentioned (product, price, issue), and the customer's sentiment."},
+		{Role: "user", Content: convText},
+	}
+	summary, _, err := b.callGroqWithFallback(ctx, summaryPrompt)
+	if err != nil || summary == "" {
+		// Simple fallback
+		return fmt.Sprintf("Customer query: %s. Conversation length: %d turns.", query, len(turns))
+	}
+	return strings.TrimSpace(summary)
+}
+
+// humanizeResponse uses Groq to rephrase a training-data answer to sound like a natural human,
+// without changing facts or adding new information. Falls back to original on error.
+func (b *AIBrain) humanizeResponse(ctx context.Context, answer, query string, qaPairs []domain.QAPair, inventory []domain.InventoryItem, history []MessageTurn) (string, error) {
+	if answer == "" {
+		return "", nil
+	}
+	// Short answers don't need humanizing
+	if len(strings.Fields(answer)) <= 5 {
+		return answer, nil
+	}
+	var contextItems []string
+	for i, qa := range qaPairs {
+		if i >= 3 {
+			break
+		}
+		contextItems = append(contextItems, fmt.Sprintf("Q: %s\nA: %s", qa.Question, qa.Answer))
+	}
+	var contextBuf string
+	if len(contextItems) > 0 {
+		contextBuf = "\nTraining data context:\n" + strings.Join(contextItems, "\n\n")
+	}
+	prompt := []MessageTurn{
+		{Role: "system", Content: fmt.Sprintf(`You are a humanizer. Your ONLY job is to rephrase the provided answer so it sounds like a warm, natural human — like a Nigerian shop assistant texting.
+
+RULES:
+1. Keep ALL facts, prices, and information EXACTLY as given. Never add or remove information.
+2. Make it sound natural — use Nigerian Pidgin/Yoruba/English expressions naturally (o, abeg, oya, na, shebi).
+3. Keep the same length and meaning. Just change the VOICE.
+4. NEVER say "I'm an AI" or "I'm a bot" or "according to my training".
+5. If the customer seems to say hi, respond naturally.
+6. Output ONLY the rephrased answer — no prefixes, no explanations.%s`, contextBuf)},
+	}
+	if len(history) > 0 {
+		cut := history
+		if len(cut) > 4 {
+			cut = cut[len(cut)-4:]
+		}
+		var historyLines []string
+		for _, t := range cut {
+			historyLines = append(historyLines, t.Role+": "+t.Content)
+		}
+		prompt = append(prompt, MessageTurn{Role: "system", Content: "Recent conversation:\n" + strings.Join(historyLines, "\n")})
+	}
+	prompt = append(prompt, MessageTurn{Role: "user", Content: fmt.Sprintf("Customer asked: %s\n\nAnswer to humanize: %s", query, answer)})
+
+	humanized, _, err := b.callGroqWithFallback(ctx, prompt)
+	if err != nil || humanized == "" {
+		return answer, err
+	}
+	return strings.TrimSpace(humanized), nil
+}
+
+func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, userQuery string, language string) (aiResp *AIResponse, aiErr error) {
 	startTime := time.Now()
+	var status string = "success"
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		if aiErr != nil {
+			status = "error"
+		} else if aiResp != nil && aiResp.Escalate {
+			status = "escalated"
+		} else if aiResp != nil && aiResp.Source == "plan_limit" {
+			status = "plan_limited"
+		} else if aiResp != nil && aiResp.Source == "greeting" {
+			status = "greeting"
+		}
+		infrastructure.AICallsTotal.WithLabelValues("llama-3.3-70b-versatile", status).Inc()
+		infrastructure.AIDuration.WithLabelValues("llama-3.3-70b-versatile").Observe(duration)
+	}()
 	conv, _ := b.repos.Conversation.GetByID(ctx, conversationID)
 	userID := ""
 	var user *domain.User
@@ -826,8 +1033,11 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	if b.isGreetingQuery(userQuery) {
 		b.logger.Info("AI request completed (greeting)", "traceID", traceID, "duration", time.Since(startTime))
 		return finalize(&AIResponse{
-			Content:    "Hi! How can I help you today?",
-			Confidence: 0.98,
+			Content:     "Hi! How can I help you today?",
+			Confidence:  0.98,
+			Sentiment:   "neutral",
+			Language:    "en",
+			Suggestions: []string{"I want to buy something", "I need help", "Tell me about your products"},
 		})
 	}
 
@@ -864,42 +1074,65 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	// Try local answer from training data / inventory first
 	local := b.localPlatformAnswer(userID, userQuery, qaPairs, inventory)
 	if local != nil {
-		// Validate the local response
+		// Humanize via Groq — make the training data answer sound natural, not bot-like
+		humanized, err := b.humanizeResponse(ctx, local.Content, userQuery, qaPairs, inventory, recentTurns)
+		if err == nil && humanized != "" {
+			cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(humanized)
+			confidence := local.Confidence * 0.95
+			b.logger.Info("AI request completed (humanized)", "traceID", traceID, "duration", time.Since(startTime), "confidence", confidence, "sentiment", sentiment, "language", detectedLang)
+			infrastructure.AISentimentTotal.WithLabelValues(sentiment).Inc()
+			infrastructure.AILanguageTotal.WithLabelValues(detectedLang).Inc()
+			return finalize(&AIResponse{
+				Content:     cleanContent,
+				Confidence:  confidence,
+				Source:      local.Source,
+				Sentiment:   sentiment,
+				Language:    detectedLang,
+				Suggestions: suggestions,
+				MatchedQA:   local.MatchedQA,
+			})
+		}
+		// Humanization failed — fall back to raw training data answer
 		validatedContent, validatedConf := b.validateResponse(ctx, userID, local.Content, qaPairs, inventory)
 		local.Content = validatedContent
 		local.Confidence = validatedConf
-		b.logger.Info("AI request completed (local)", "traceID", traceID, "duration", time.Since(startTime), "confidence", local.Confidence)
+		b.logger.Info("AI request completed (local fallback)", "traceID", traceID, "duration", time.Since(startTime), "confidence", local.Confidence)
 		return finalize(local)
 	}
 
-	// No training data or inventory match — escalate
+	// No local answer — escalate to admin (do NOT let Groq answer from its own knowledge)
 	similar := b.findSimilarForUnknown(ctx, userID, userQuery)
 	escChannel := ""
 	if conv != nil {
 		escChannel = conv.Channel
 	}
-	err := b.repos.UnknownQ.Create(ctx, &domain.UnknownQuestion{
-		UserID:         userID,
-		Question:       userQuery,
-		ConversationID: conversationID,
-		Channel:        escChannel,
-		Status:         "pending",
-	})
-	if err != nil {
-		b.logger.Error("Failed to create unknown question", "error", err, "conversationID", conversationID)
+	normalizedQuery := strings.ToLower(strings.TrimSpace(userQuery))
+	alreadyPending, checkErr := b.repos.UnknownQ.ExistsPending(ctx, userID, normalizedQuery)
+	if checkErr != nil {
+		b.logger.Error("Failed to check existing unknown question", "error", checkErr, "conversationID", conversationID)
+	}
+	if !alreadyPending {
+		err := b.repos.UnknownQ.Create(ctx, &domain.UnknownQuestion{
+			UserID:         userID,
+			Question:       normalizedQuery,
+			ConversationID: conversationID,
+			Channel:        escChannel,
+			Status:         "pending",
+		})
+		if err != nil {
+			b.logger.Error("Failed to create unknown question", "error", err, "conversationID", conversationID)
+		}
 	}
 
-	// Build escalation response with suggestions if available
 	escalationMsg := "I don't have that information yet, but I'll escalate this to a human agent who can help you."
 	if len(similar) > 0 {
-		suggestions := "\n\nDid you mean:\n"
+		escalationMsg += "\n\nDid you mean:"
 		for i, qa := range similar {
 			if i >= 3 {
 				break
 			}
-			suggestions += fmt.Sprintf("• %s\n", qa.Question)
+			escalationMsg += "\n• " + qa.Question
 		}
-		escalationMsg += suggestions
 	}
 
 	notif := &domain.Notification{
@@ -932,12 +1165,16 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 }
 
 type AIResponse struct {
-	Content    string  `json:"content"`
-	Confidence float64 `json:"confidence"`
-	Escalate   bool    `json:"escalate"`
-	Source     string  `json:"source,omitempty"`
-	Reason     string  `json:"reason,omitempty"`
-	MatchedQA  *string `json:"matched_qa,omitempty"`
+	Content     string            `json:"content"`
+	Confidence  float64           `json:"confidence"`
+	Escalate    bool              `json:"escalate"`
+	Source      string            `json:"source,omitempty"`
+	Reason      string            `json:"reason,omitempty"`
+	MatchedQA   *string           `json:"matched_qa,omitempty"`
+	Sentiment   string            `json:"sentiment,omitempty"`   // positive, negative, neutral, frustrated
+	Language    string            `json:"language,omitempty"`    // en, yo, ha, ig, pcm
+	Suggestions []string          `json:"suggestions,omitempty"` // quick action chips
+	Summary     string            `json:"summary,omitempty"`     // conversation summary (set on handoff)
 }
 
 func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTurn) (string, float64, error) {
@@ -963,8 +1200,7 @@ func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTu
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := b.httpClient.Do(req)
 	if err != nil {
 		b.cb.RecordFailure()
 		return "", 0, err
@@ -1054,16 +1290,39 @@ func min(a, b int) int {
 // ========== AUTH SERVICE ==========
 
 type AuthService struct {
-	cfg      *config.Config
-	userRepo *repository.UserRepository
-	redis    *infrastructure.RedisClient
-	logger   *infrastructure.Logger
-	email    *EmailService
-	memRL    *infrastructure.MemoryRateLimiter
+	cfg           *config.Config
+	userRepo      *repository.UserRepository
+	redis         *infrastructure.RedisClient
+	logger        *infrastructure.Logger
+	email         *EmailService
+	memRL         *infrastructure.MemoryRateLimiter
+	loginAttempts map[string]*loginAttempt
+	attemptMu     sync.Mutex
+}
+
+type loginAttempt struct {
+	count     int
+	lockedUntil time.Time
 }
 
 func NewAuthService(cfg *config.Config, userRepo *repository.UserRepository, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *AuthService {
-	return &AuthService{cfg: cfg, userRepo: userRepo, redis: redis, logger: logger, email: email, memRL: infrastructure.NewMemoryRateLimiter(5 * time.Minute)}
+	s := &AuthService{cfg: cfg, userRepo: userRepo, redis: redis, logger: logger, email: email, memRL: infrastructure.NewMemoryRateLimiter(5 * time.Minute), loginAttempts: make(map[string]*loginAttempt)}
+	// Periodic cleanup of expired lockouts
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.attemptMu.Lock()
+			now := time.Now()
+			for k, v := range s.loginAttempts {
+				if now.After(v.lockedUntil) {
+					delete(s.loginAttempts, k)
+				}
+			}
+			s.attemptMu.Unlock()
+		}
+	}()
+	return s
 }
 
 func generateVerificationCode() string {
@@ -1083,7 +1342,20 @@ func generateVerificationCode() string {
 	return string(b)
 }
 
+func validatePasswordStrength(password string) error {
+	if !regexp.MustCompile(`[A-Z]`).MatchString(password) ||
+		!regexp.MustCompile(`[a-z]`).MatchString(password) ||
+		!regexp.MustCompile(`[0-9]`).MatchString(password) ||
+		!regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{}|;':",./<>?]`).MatchString(password) {
+		return fmt.Errorf("password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
+	}
+	return nil
+}
+
 func (s *AuthService) Register(ctx context.Context, email, password, firstName, lastName, companyName string) (*domain.User, error) {
+	if err := validatePasswordStrength(password); err != nil {
+		return nil, err
+	}
 	existing, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
 		return nil, fmt.Errorf("database error: %w", err)
@@ -1145,9 +1417,35 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*domai
 	if err != nil {
 		return nil, "", "", fmt.Errorf("database error: %w", err)
 	}
+
+	// Check account lockout before password comparison
+	s.attemptMu.Lock()
+	attempt := s.loginAttempts[email]
+	if attempt != nil && time.Now().Before(attempt.lockedUntil) {
+		s.attemptMu.Unlock()
+		return nil, "", "", fmt.Errorf("account_locked")
+	}
+	s.attemptMu.Unlock()
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		s.attemptMu.Lock()
+		if s.loginAttempts[email] == nil {
+			s.loginAttempts[email] = &loginAttempt{}
+		}
+		s.loginAttempts[email].count++
+		if s.loginAttempts[email].count >= 5 {
+			s.loginAttempts[email].lockedUntil = time.Now().Add(15 * time.Minute)
+			s.logger.Warn("Account locked due to failed login attempts", "email", email, "lockout_minutes", 15)
+		}
+		s.attemptMu.Unlock()
 		return nil, "", "", fmt.Errorf("invalid credentials")
 	}
+
+	// Successful login: reset attempt counter
+	s.attemptMu.Lock()
+	delete(s.loginAttempts, email)
+	s.attemptMu.Unlock()
+
 	if !user.IsVerified {
 		return nil, "", "", fmt.Errorf("email_not_verified")
 	}
@@ -1166,6 +1464,10 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*domai
 }
 
 func (s *AuthService) VerifyEmail(ctx context.Context, email, code string) (*domain.User, string, string, error) {
+	if !s.memRL.Allow("verify:"+email, 5, time.Minute) {
+		return nil, "", "", fmt.Errorf("too many verification attempts")
+	}
+
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("database error: %w", err)
@@ -1242,6 +1544,8 @@ func (s *AuthService) generateToken(user *domain.User) (string, error) {
 		"type":    "access",
 		"exp":     time.Now().Add(24 * time.Hour).Unix(),
 		"iat":     time.Now().Unix(),
+		"iss":     "noant",
+		"aud":     "noant-api",
 	})
 	return token.SignedString([]byte(s.cfg.JWTSecret))
 }
@@ -1586,7 +1890,9 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, cust
 		Content:        message,
 		IsRead:         false,
 	}
-	_ = s.repos.Message.Create(ctx, customerMsg)
+	if err := s.repos.Message.Create(ctx, customerMsg); err != nil {
+		s.logger.Error("Failed to save customer message", "error", err, "conv_id", conv.ID)
+	}
 	aiMsg := &domain.Message{
 		ConversationID: conv.ID,
 		Role:           "ai",
@@ -1597,9 +1903,13 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, cust
 			Language:   "en",
 		},
 	}
-	_ = s.repos.Message.Create(ctx, aiMsg)
+	if err := s.repos.Message.Create(ctx, aiMsg); err != nil {
+		s.logger.Error("Failed to save AI message", "error", err, "conv_id", conv.ID)
+	}
 	if aiResp.Escalate {
-		_ = s.repos.Conversation.UpdateStatus(ctx, conv.ID, "escalated", userID)
+		if err := s.repos.Conversation.UpdateStatus(ctx, conv.ID, "escalated", userID); err != nil {
+			s.logger.Error("Failed to escalate conversation", "error", err, "conv_id", conv.ID)
+		}
 	}
 	s.completeAIReply(conv.ID, message)
 	return conv, aiMsg, nil
@@ -1862,6 +2172,29 @@ func (s *ChatService) Escalate(ctx context.Context, userID, conversationID, reas
 		IsRead:         false,
 	}
 	return s.repos.Message.Create(ctx, msg)
+}
+
+func (s *ChatService) RateConversation(ctx context.Context, userID, conversationID string, score int, feedback string) error {
+	if score < 1 || score > 5 {
+		return fmt.Errorf("score must be between 1 and 5")
+	}
+	conv, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
+	if err != nil || conv == nil {
+		return fmt.Errorf("conversation not found")
+	}
+	if s.redis == nil {
+		return nil
+	}
+	rating := map[string]interface{}{
+		"score":      score,
+		"feedback":   feedback,
+		"created_at": time.Now(),
+	}
+	data, _ := json.Marshal(rating)
+	infrastructure.CSATScore.Observe(float64(score))
+	s.logger.Info("CSAT rating recorded", "conversation_id", conversationID, "score", score, "feedback", feedback)
+	ttl := 90 * 24 * time.Hour
+	return s.redis.Set(ctx, fmt.Sprintf("conv:%s:rating", conversationID), string(data), ttl)
 }
 
 func (s *ChatService) SendMessage(ctx context.Context, userID, conversationID, senderType, content string) (*domain.Message, error) {
@@ -3772,7 +4105,7 @@ func (s *HandoffService) Create(ctx context.Context, h *domain.Handoff) error {
 }
 
 func (s *HandoffService) List(ctx context.Context, userID string, status string) ([]domain.Handoff, error) {
-	return s.repos.Handoff.List(ctx, userID, status)
+	return s.repos.Handoff.List(ctx, userID, status, 100)
 }
 
 func (s *HandoffService) GetByID(ctx context.Context, id string, userID string) (*domain.Handoff, error) {

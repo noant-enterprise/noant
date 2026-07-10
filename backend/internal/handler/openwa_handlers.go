@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"noant/internal/domain"
@@ -279,6 +282,53 @@ func (h *OpenWAHandler) UploadMedia(c *gin.Context) {
 	}
 	defer file.Close()
 
+	allowedMIMETypes := map[string]bool{
+		"image/jpeg":         true,
+		"image/png":          true,
+		"image/gif":          true,
+		"image/webp":         true,
+		"application/pdf":    true,
+		"audio/mpeg":         true,
+		"audio/ogg":          true,
+		"audio/wav":          true,
+		"video/mp4":          true,
+		"video/quicktime":    true,
+	}
+
+	allowedExtensions := map[string]bool{
+		".jpg":  true,
+		".jpeg": true,
+		".png":  true,
+		".gif":  true,
+		".webp": true,
+		".pdf":  true,
+		".mp3":  true,
+		".ogg":  true,
+		".wav":  true,
+		".mp4":  true,
+		".mov":  true,
+	}
+
+	if header.Size > 10485760 {
+		utils.RespondValidationError(c, "Invalid file: file too large (max 10MB)")
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if !allowedExtensions[ext] {
+		utils.RespondValidationError(c, "Invalid file: file extension not allowed")
+		return
+	}
+
+	contentType := header.Header.Get("Content-Type")
+	if contentType != "" {
+		mimeType, _, err := mime.ParseMediaType(contentType)
+		if err != nil || !allowedMIMETypes[mimeType] {
+			utils.RespondValidationError(c, "Invalid file: MIME type not allowed")
+			return
+		}
+	}
+
 	mediaDir := h.cfg.OpenWAMediaDir
 	if err := os.MkdirAll(mediaDir, 0750); err != nil {
 		utils.RespondInternalError(c, "Failed to create media directory")
@@ -334,6 +384,11 @@ func (h *OpenWAHandler) GetMedia(c *gin.Context) {
 		utils.RespondValidationError(c, "Media ID required")
 		return
 	}
+	// Prevent path traversal — allow only safe filename characters
+	if !regexp.MustCompile(`^[a-zA-Z0-9._-]+$`).MatchString(mediaID) {
+		utils.RespondValidationError(c, "Invalid media ID")
+		return
+	}
 	// Serve the file directly
 	mediaDir := h.cfg.OpenWAMediaDir
 	filePath := filepath.Join(mediaDir, mediaID)
@@ -348,6 +403,11 @@ func (h *OpenWAHandler) GetMediaThumbnail(c *gin.Context) {
 	mediaID := c.Param("mediaID")
 	if mediaID == "" {
 		utils.RespondValidationError(c, "Media ID required")
+		return
+	}
+	// Prevent path traversal — allow only safe filename characters
+	if !regexp.MustCompile(`^[a-zA-Z0-9._-]+$`).MatchString(mediaID) {
+		utils.RespondValidationError(c, "Invalid media ID")
 		return
 	}
 	mediaDir := h.cfg.OpenWAMediaDir

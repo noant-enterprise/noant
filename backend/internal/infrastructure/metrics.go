@@ -37,4 +37,20 @@ var (
 		Name: "noant_redis_connections",
 		Help: "Current Redis connections",
 	})
+
+	AISentimentTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "noant_ai_sentiment_total",
+		Help: "AI response sentiment distribution",
+	}, []string{"sentiment"})
+
+	AILanguageTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "noant_ai_language_total",
+		Help: "AI response language distribution",
+	}, []string{"language"})
+
+	CSATScore = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "noant_csat_score",
+		Help:    "CSAT rating distribution (1-5)",
+		Buckets: []float64{1, 2, 3, 4, 5},
+	})
 )
