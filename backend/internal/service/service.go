@@ -2581,7 +2581,7 @@ func (s *ChatService) GetTelegramIntegrationByWebhookSecret(ctx context.Context,
 	return s.repos.Integration.GetByChannelAndWebhookSecret(ctx, "telegram", secret)
 }
 
-// DisconnectWhatsAppSession completely logs out and deletes the WhatsApp session
+// DisconnectWhatsAppSession completely logs out, unregisters, and deletes the WhatsApp session
 func (s *ChatService) DisconnectWhatsAppSession(ctx context.Context, userID string) {
 	if s.openwa == nil {
 		return
@@ -2590,6 +2590,9 @@ func (s *ChatService) DisconnectWhatsAppSession(ctx context.Context, userID stri
 	if err == nil && integration != nil {
 		if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
 			s.logger.Info("Logging out and deleting WhatsApp session", "sessionID", sessionID)
+			if mgr := s.openwa.GetSessionManager(); mgr != nil {
+				mgr.UnregisterSession(sessionID)
+			}
 			_ = s.openwa.LogoutSession(sessionID)
 			_ = s.openwa.DeleteSession(sessionID)
 		}
