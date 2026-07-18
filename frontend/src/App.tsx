@@ -156,11 +156,14 @@ const router = createBrowserRouter([
 
 import { WidgetConfigProvider } from '@/contexts/WidgetConfigContext';
 import { SidebarAlertsProvider } from '@/contexts/SidebarAlertsContext';
+import { ModalProvider } from '@/contexts/ModalContext';
 
 export default function App() {
   return (
     <NetworkProvider>
-      <RouterProvider router={router} />
+      <ModalProvider>
+        <RouterProvider router={router} />
+      </ModalProvider>
     </NetworkProvider>
   );
 }

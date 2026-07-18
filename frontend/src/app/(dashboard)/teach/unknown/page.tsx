@@ -37,12 +37,13 @@ export default function UnknownQuestionsPage() {
       const res = await api.get<UnknownQuestionListResponse>(
         `/training/unknown-questions?status=${tab}&limit=${limit}&offset=${currentOffset}`
       )
+      const fetched = res.questions ?? []
       if (reset) {
-        setQuestions(res.questions)
+        setQuestions(fetched)
       } else {
-        setQuestions(prev => [...prev, ...res.questions])
+        setQuestions(prev => [...prev, ...fetched])
       }
-      setTotal(res.total)
+      setTotal(res.total ?? 0)
       setOffset(currentOffset + limit)
     } catch {
       toast('Failed to load questions', 'error')

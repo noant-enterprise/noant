@@ -3,6 +3,7 @@ import { UserPlus, Crown, Shield, User, MoreVertical, Trash2, Mail, X, ChevronDo
 import { api } from '../../../lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/hooks/useConfirm'
 import { UpgradeModal } from '@/components/ui'
 
 interface Member {
@@ -112,6 +113,7 @@ export default function TeamPage() {
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const { user } = useAuth()
   const { toast: showToast } = useToast()
+  const confirm = useConfirm()
 
   const handleInviteClick = () => {
     const currentPlan = user?.plan_id || user?.plan || 'free'
@@ -136,16 +138,23 @@ export default function TeamPage() {
 
   useEffect(() => { load() }, [load])
 
-  const handleRemove = async (memberId: string, memberEmail: string) => {
-    if (!confirm(`Remove ${memberEmail} from your team?`)) return
-    try {
-      await api.delete(`/settings/team/${memberId}`)
-      setMembers(prev => prev.filter(m => m.user_id !== memberId))
-      showToast('Team member removed', 'success')
-    } catch {
-      showToast('Failed to remove member', 'error')
-    }
-    setMenuOpen(null)
+  const handleRemove = (memberId: string, memberEmail: string) => {
+    confirm({
+      title: 'Remove team member?',
+      body: `Remove ${memberEmail} from your team? They will lose access to all shared resources.`,
+      variant: 'danger',
+      confirmText: 'Remove',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/settings/team/${memberId}`)
+          setMembers(prev => prev.filter(m => m.user_id !== memberId))
+          showToast('Team member removed', 'success')
+        } catch {
+          showToast('Failed to remove member', 'error')
+        }
+        setMenuOpen(null)
+      },
+    })
   }
 
   const isOwner = user?.role === 'owner'

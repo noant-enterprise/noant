@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { useModal } from '@/hooks/useModal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/hooks/useConfirm'
 import { api } from '../../../lib/api'
 import { useOffline } from '@/hooks/useOffline'
 import {
@@ -619,7 +620,7 @@ function QATableSheet({
               value={filter}
               onChange={e => setFilter(e.target.value)}
               placeholder="Search questions or answers in this folder…"
-              className="w-full pl-3 py-3 text-sm bg-transparent outline-none text-primary placeholder-tertiary"
+              className="w-full pl-3 py-3 text-sm bg-transparent outline-none text-primary placeholder:text-tertiary"
             />
             {filter && (
               <button onClick={() => setFilter('')} className="text-tertiary hover:text-primary shrink-0 cursor-pointer">
@@ -735,6 +736,7 @@ export default function TeachPage() {
   const [ignoreLoading, setIgnoreLoading] = useState(false)
   const [testAIOpen, setTestAIOpen] = useState(false)
   const { toast } = useToast()
+  const confirm = useConfirm()
 
   const [clearGapsConfirmOpen, setClearGapsConfirmOpen] = useState(false)
   const [clearGapsLoading, setClearGapsLoading] = useState(false)
@@ -925,14 +927,21 @@ export default function TeachPage() {
   }
 
   // Delete Q&A pair
-  const handleDeleteQAPair = async (qaId: string) => {
-    if (!confirm('Are you sure you want to delete this Q&A pair?')) return
-    try {
-      await api.delete(`/training/qa/${qaId}`)
-      toast('Q&A pair deleted!', 'success')
-      getCategories('/training/categories')
-      if (selectedCategory) loadCategoryQAs(selectedCategory.id)
-    } catch (err: any) { toast(err?.message || 'Failed to delete Q&A pair', 'error') }
+  const handleDeleteQAPair = (qaId: string) => {
+    confirm({
+      title: 'Delete Q&A pair?',
+      body: 'This training data will be permanently removed. Your AI will no longer use this Q&A to answer customer questions.',
+      variant: 'danger',
+      confirmText: 'Delete',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/training/qa/${qaId}`)
+          toast('Q&A pair deleted!', 'success')
+          getCategories('/training/categories')
+          if (selectedCategory) loadCategoryQAs(selectedCategory.id)
+        } catch (err: any) { toast(err?.message || 'Failed to delete Q&A pair', 'error') }
+      },
+    })
   }
 
   // Delete category
@@ -1001,7 +1010,7 @@ export default function TeachPage() {
             onChange={e => setSearchQuery(e.target.value)}
             placeholder={isOffline ? "Search is disabled while offline..." : "Search trained questions, keywords, or answers…"}
             disabled={isOffline}
-            className="w-full pl-3 pr-4 py-3.5 text-sm bg-transparent outline-none text-primary placeholder-tertiary rounded-2xl disabled:opacity-50"
+            className="w-full pl-3 pr-4 py-3.5 text-sm bg-transparent outline-none text-primary placeholder:text-tertiary rounded-2xl disabled:opacity-50"
           />
           {searchQuery && (
             <button

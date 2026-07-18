@@ -332,7 +332,7 @@ export function FloatingAssistant() {
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask me anything..."
-              className="flex-1 bg-transparent text-sm text-primary placeholder-tertiary outline-none min-w-0 py-1"
+              className="flex-1 bg-transparent text-sm text-primary placeholder:text-tertiary outline-none min-w-0 py-1"
             />
             <button
               onClick={() => handleSend()}

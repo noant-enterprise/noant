@@ -6,6 +6,8 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        primary: '#0ea5e9',
+        tertiary: '#94a3b8',
         noant: {
           black: '#0a0a0a',
           ink: '#171717',

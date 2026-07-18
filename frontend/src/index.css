@@ -184,7 +184,23 @@
   .border-subtle { border-color: var(--border-subtle); }
   .border-default { border-color: var(--border-default); }
   .border-strong { border-color: var(--border-strong); }
+  .bg-border { background: var(--border-default); }
+  .bg-border-strong { background: var(--border-strong); }
+  .bg-background { background: var(--bg-base); }
+  .text-border { color: var(--border-default); }
   .shadow-sky { box-shadow: var(--shadow-sky); }
+  .btn-primary {
+    background: var(--brand-sky);
+    color: white;
+    font-weight: 600;
+    transition: all 0.15s ease;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--brand-sky-deep);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: scale(0.98);
+  }
 
   .animate-fade-in {
     animation: fadeIn 0.35s var(--ease-out) forwards;

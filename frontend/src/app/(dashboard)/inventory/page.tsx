@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAPI } from '@/hooks/useAPI'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/hooks/useConfirm'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -34,6 +35,7 @@ const typeConfig: Record<string, { label: string; color: string }> = {
 export default function InventoryPage() {
   const { toast } = useToast()
   const { user } = useAuth()
+  const confirm = useConfirm()
   const apiHook = useAPI() as any
   const { data, get: getItems, loading } = apiHook
   const [showModal, setShowModal] = useState(false)
@@ -92,15 +94,22 @@ export default function InventoryPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this item?')) return
-    try {
-      await api.delete(`/inventory/${id}`)
-      toast('Item deleted', 'success')
-      loadItems()
-    } catch {
-      toast('Failed to delete item', 'error')
-    }
+  const handleDelete = (id: string) => {
+    confirm({
+      title: 'Delete item?',
+      body: 'This item will be permanently removed from your inventory. Customers will no longer see it in the catalog.',
+      variant: 'danger',
+      confirmText: 'Delete',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/inventory/${id}`)
+          toast('Item deleted', 'success')
+          loadItems()
+        } catch {
+          toast('Failed to delete item', 'error')
+        }
+      },
+    })
   }
 
   const totalItems = items.length

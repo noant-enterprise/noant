@@ -885,7 +885,7 @@ func (r *UnknownQuestionRepository) List(ctx context.Context, userID string, sta
 		return nil, err
 	}
 	defer rows.Close()
-	var questions []domain.UnknownQuestion
+	questions := make([]domain.UnknownQuestion, 0)
 	for rows.Next() {
 		var uq domain.UnknownQuestion
 		err := rows.Scan(&uq.ID, &uq.Question, &uq.ConversationID, &uq.Channel, &uq.Status, &uq.SuggestedAnswer, &uq.CategoryID, &uq.CreatedAt)

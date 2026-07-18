@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
-import { UpgradeModal } from '@/components/ui'
+import { UpgradeModal, EmptyState } from '@/components/ui'
 import { useAuth } from '@/hooks/useAuth'
 import { useModal } from '@/hooks/useModal'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -281,7 +281,7 @@ export default function ChannelsPage() {
       </div>
 
       {/* Connected Channels List */}
-      {connectedIntegrations.length > 0 && (
+      {connectedIntegrations.length > 0 ? (
         <div className="px-1 pb-4">
           <Card className="overflow-hidden">
             <CardHeader className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-start lg:justify-between lg:px-6 lg:py-5">
@@ -402,6 +402,17 @@ export default function ChannelsPage() {
                   )
                 })}
               </div>
+            </CardBody>
+          </Card>
+        </div>
+      ) : (
+        <div className="px-1 pb-4">
+          <Card>
+            <CardBody>
+              <EmptyState
+                title="No channels connected yet"
+                description="Connect a WhatsApp, Telegram, Gmail, or Web Widget channel to start receiving customer messages."
+              />
             </CardBody>
           </Card>
         </div>
