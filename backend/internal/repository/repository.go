@@ -359,9 +359,19 @@ func (r *MessageRepository) Create(ctx context.Context, msg *domain.Message) err
 	}
 	defer tx.Rollback()
 
-	query := `INSERT INTO messages (id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-	if _, err := tx.ExecContext(ctx, query, msg.ID, msg.ConversationID, msg.Role, msg.SenderID, msg.Content, msg.IsRead, msg.Confidence, matchedQA, escalationReason, language, msg.Source); err != nil {
+	// Get next sequence number for this conversation (atomic within transaction)
+	var maxSeq sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT MAX(sequence) FROM messages WHERE conversation_id = ? FOR UPDATE`, msg.ConversationID).Scan(&maxSeq); err != nil {
+		return fmt.Errorf("get max sequence: %w", err)
+	}
+	msg.Sequence = 1
+	if maxSeq.Valid {
+		msg.Sequence = int(maxSeq.Int64) + 1
+	}
+
+	query := `INSERT INTO messages (id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, sequence, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+	if _, err := tx.ExecContext(ctx, query, msg.ID, msg.ConversationID, msg.Role, msg.SenderID, msg.Content, msg.IsRead, msg.Confidence, matchedQA, escalationReason, language, msg.Source, msg.Sequence); err != nil {
 		return fmt.Errorf("insert message: %w", err)
 	}
 	// Update conversation's updated_at timestamp!
@@ -373,8 +383,8 @@ func (r *MessageRepository) Create(ctx context.Context, msg *domain.Message) err
 }
 
 func (r *MessageRepository) ListByConversation(ctx context.Context, conversationID string, limit int) ([]domain.Message, error) {
-	query := `SELECT id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, created_at
-	FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?`
+	query := `SELECT id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, sequence, created_at
+	FROM messages WHERE conversation_id = ? ORDER BY sequence ASC LIMIT ?`
 	rows, err := r.db.QueryContext(ctx, query, conversationID, limit)
 	if err != nil {
 		return nil, err
@@ -389,7 +399,7 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 		var escalationReason sql.NullString
 		var language sql.NullString
 		var source sql.NullString
-		err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.Role, &senderID, &msg.Content, &msg.IsRead, &confidence, &matchedQA, &escalationReason, &language, &source, &msg.CreatedAt)
+		err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.Role, &senderID, &msg.Content, &msg.IsRead, &confidence, &matchedQA, &escalationReason, &language, &source, &msg.Sequence, &msg.CreatedAt)
 		if err != nil {
 			continue
 		}
@@ -415,9 +425,6 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 		}
 		messages = append(messages, msg)
 	}
-	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
-		messages[i], messages[j] = messages[j], messages[i]
-	}
 	return messages, nil
 }
 
@@ -429,8 +436,8 @@ func (r *MessageRepository) ListByConversationPaginated(ctx context.Context, con
 		return nil, 0, err
 	}
 
-	query := `SELECT id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, created_at
-	FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	query := `SELECT id, conversation_id, sender_type, sender_id, content, is_read, confidence, matched_qa_id, escalation_reason, language, source, sequence, created_at
+	FROM messages WHERE conversation_id = ? ORDER BY sequence DESC LIMIT ? OFFSET ?`
 	rows, err := r.db.QueryContext(ctx, query, conversationID, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -445,7 +452,7 @@ func (r *MessageRepository) ListByConversationPaginated(ctx context.Context, con
 		var escalationReason sql.NullString
 		var language sql.NullString
 		var source sql.NullString
-		err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.Role, &senderID, &msg.Content, &msg.IsRead, &confidence, &matchedQA, &escalationReason, &language, &source, &msg.CreatedAt)
+		err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.Role, &senderID, &msg.Content, &msg.IsRead, &confidence, &matchedQA, &escalationReason, &language, &source, &msg.Sequence, &msg.CreatedAt)
 		if err != nil {
 			continue
 		}

@@ -68,6 +68,7 @@ type Message struct {
 	IsRead         bool      `json:"is_read" db:"is_read"`
 	Confidence     float64   `json:"confidence,omitempty" db:"confidence"`
 	Source         string    `json:"source,omitempty" db:"source"`
+	Sequence       int       `json:"sequence" db:"sequence"`
 	Metadata       *MessageMetadata `json:"metadata" db:"metadata"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }

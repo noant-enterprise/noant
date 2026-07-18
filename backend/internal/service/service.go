@@ -505,14 +505,42 @@ func (b *AIBrain) searchInventoryContext(ctx context.Context, userID, query stri
 	return merged
 }
 
+// qaWordOverlap checks whether meaningful words in the query appear in the QA question.
+// Returns 0.0-1.0 fraction of query words matched. Short queries (1-2 words) pass automatically.
+func qaWordOverlap(query, question string) float64 {
+	qWords := strings.Fields(strings.ToLower(query))
+	if len(qWords) <= 2 {
+		return 1.0 // short queries are direct intent signals
+	}
+	var meaningful []string
+	for _, w := range qWords {
+		w = strings.Trim(w, "?!.,;:")
+		if len(w) < 3 {
+			continue
+		}
+		meaningful = append(meaningful, w)
+	}
+	if len(meaningful) == 0 {
+		return 1.0
+	}
+	qLower := strings.ToLower(question)
+	matched := 0
+	for _, w := range meaningful {
+		if strings.Contains(qLower, w) {
+			matched++
+		}
+	}
+	return float64(matched) / float64(len(meaningful))
+}
+
 func (b *AIBrain) localPlatformAnswer(userID, query string, qaPairs []domain.QAPair, inventory []domain.InventoryItem) *AIResponse {
 	lower := strings.ToLower(query)
 
 	// Check if this is a negotiation follow-up (price-related short queries)
 	isNegotiation := len(strings.Fields(query)) <= 5 && (strings.Contains(lower, "price") || strings.Contains(lower, "cheap") || strings.Contains(lower, "discount") || strings.Contains(lower, "last") || strings.Contains(lower, "negotiate") || strings.Contains(lower, "lower") || strings.Contains(lower, "reduce") || strings.Contains(lower, "offer"))
 
-	// Training data always takes priority
-	if len(qaPairs) > 0 {
+	// Training data takes priority — but only if the match is relevant
+	if len(qaPairs) > 0 && qaWordOverlap(query, qaPairs[0].Question) >= 0.3 {
 		first := qaPairs[0]
 		content := strings.TrimSpace(first.Answer)
 		if content == "" {
@@ -646,6 +674,23 @@ func (b *AIBrain) findSimilarForUnknown(ctx context.Context, userID string, quer
 	}
 	similar, _ := b.embeddings.FindSimilarQA(ctx, userID, query, 3)
 	return similar
+}
+
+// allowGroqCall checks if the user has remaining Groq API calls in the current window.
+// Returns true if the call is allowed, false if rate limited.
+func (b *AIBrain) allowGroqCall(ctx context.Context, userID string) bool {
+	if b.redis == nil || userID == "" {
+		return true
+	}
+	allowed, err := b.redis.RateLimit(ctx, "groq_rate:"+userID, 20, time.Minute)
+	if err != nil {
+		b.logger.Warn("Groq rate limit check failed, allowing call", "error", err)
+		return true
+	}
+	if !allowed {
+		b.logger.Warn("Groq rate limit exceeded for user", "userID", userID)
+	}
+	return allowed
 }
 
 // intentCategoryFallback uses LLM to classify a query into one of the user's categories,
@@ -1098,6 +1143,12 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		}
 	}
 
+	// Per-user Groq rate limit check — if exceeded, skip Groq calls and use raw training data only
+	groqLimited := !b.allowGroqCall(ctx, userID)
+	if groqLimited {
+		b.logger.Warn("Groq rate limited for user, using local-only mode", "traceID", traceID, "userID", userID)
+	}
+
 	// Short greetings should get a local response instead of burning an AI call.
 	if b.isGreetingQuery(userQuery) {
 		b.logger.Info("AI request completed (greeting)", "traceID", traceID, "duration", time.Since(startTime))
@@ -1143,25 +1194,27 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	// Try local answer from training data / inventory first
 	local := b.localPlatformAnswer(userID, userQuery, qaPairs, inventory)
 	if local != nil {
-		// Humanize via Groq — make the training data answer sound natural, not bot-like
-		humanized, err := b.humanizeResponse(ctx, local.Content, userQuery, qaPairs, inventory, recentTurns)
-		if err == nil && humanized != "" {
-			cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(humanized)
-			confidence := local.Confidence * 0.95
-			b.logger.Info("AI request completed (humanized)", "traceID", traceID, "duration", time.Since(startTime), "confidence", confidence, "sentiment", sentiment, "language", detectedLang)
-			infrastructure.AISentimentTotal.WithLabelValues(sentiment).Inc()
-			infrastructure.AILanguageTotal.WithLabelValues(detectedLang).Inc()
-			return finalize(&AIResponse{
-				Content:     cleanContent,
-				Confidence:  confidence,
-				Source:      local.Source,
-				Sentiment:   sentiment,
-				Language:    detectedLang,
-				Suggestions: suggestions,
-				MatchedQA:   local.MatchedQA,
-			})
+		if !groqLimited {
+			// Humanize via Groq — make the training data answer sound natural, not bot-like
+			humanized, err := b.humanizeResponse(ctx, local.Content, userQuery, qaPairs, inventory, recentTurns)
+			if err == nil && humanized != "" {
+				cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(humanized)
+				confidence := local.Confidence * 0.95
+				b.logger.Info("AI request completed (humanized)", "traceID", traceID, "duration", time.Since(startTime), "confidence", confidence, "sentiment", sentiment, "language", detectedLang)
+				infrastructure.AISentimentTotal.WithLabelValues(sentiment).Inc()
+				infrastructure.AILanguageTotal.WithLabelValues(detectedLang).Inc()
+				return finalize(&AIResponse{
+					Content:     cleanContent,
+					Confidence:  confidence,
+					Source:      local.Source,
+					Sentiment:   sentiment,
+					Language:    detectedLang,
+					Suggestions: suggestions,
+					MatchedQA:   local.MatchedQA,
+				})
+			}
 		}
-		// Humanization failed — fall back to raw training data answer
+		// Humanization skipped or failed — fall back to raw training data answer
 		validatedContent, validatedConf := b.validateResponse(ctx, userID, local.Content, qaPairs, inventory)
 		local.Content = validatedContent
 		local.Confidence = validatedConf
@@ -1169,45 +1222,49 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		return finalize(local)
 	}
 
-	// No local answer — try intent-category fallback before escalating
-	if qa := b.intentCategoryFallback(ctx, userID, userQuery); qa != nil {
-		humanized, err := b.humanizeResponse(ctx, qa.Answer, userQuery, nil, nil, recentTurns)
-		if err == nil && humanized != "" {
-			cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(humanized)
-			confidence := 0.75
-			b.logger.Info("AI request completed (intent match)", "traceID", traceID, "duration", time.Since(startTime), "confidence", confidence, "sentiment", sentiment, "language", detectedLang, "categoryQA", qa.ID)
-			infrastructure.AISentimentTotal.WithLabelValues(sentiment).Inc()
-			infrastructure.AILanguageTotal.WithLabelValues(detectedLang).Inc()
-			return finalize(&AIResponse{
-				Content:     cleanContent,
-				Confidence:  confidence,
-				Source:      "intent_match",
-				Sentiment:   sentiment,
-				Language:    detectedLang,
-				Suggestions: suggestions,
-				MatchedQA:   &qa.ID,
-			})
+	// No local answer — try intent-category fallback before escalating (skip if Groq rate limited)
+	if !groqLimited {
+		if qa := b.intentCategoryFallback(ctx, userID, userQuery); qa != nil {
+			humanized, err := b.humanizeResponse(ctx, qa.Answer, userQuery, nil, nil, recentTurns)
+			if err == nil && humanized != "" {
+				cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(humanized)
+				confidence := 0.75
+				b.logger.Info("AI request completed (intent match)", "traceID", traceID, "duration", time.Since(startTime), "confidence", confidence, "sentiment", sentiment, "language", detectedLang, "categoryQA", qa.ID)
+				infrastructure.AISentimentTotal.WithLabelValues(sentiment).Inc()
+				infrastructure.AILanguageTotal.WithLabelValues(detectedLang).Inc()
+				return finalize(&AIResponse{
+					Content:     cleanContent,
+					Confidence:  confidence,
+					Source:      "intent_match",
+					Sentiment:   sentiment,
+					Language:    detectedLang,
+					Suggestions: suggestions,
+					MatchedQA:   &qa.ID,
+				})
+			}
 		}
 	}
 
-	// Try lowered semantic search as second fallback
-	if qa := b.semanticFallback(ctx, userID, userQuery); qa != nil {
-		humanized, err := b.humanizeResponse(ctx, qa.Answer, userQuery, nil, nil, recentTurns)
-		if err == nil && humanized != "" {
-			cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(humanized)
-			confidence := 0.65
-			b.logger.Info("AI request completed (semantic fallback)", "traceID", traceID, "duration", time.Since(startTime), "confidence", confidence, "sentiment", sentiment, "language", detectedLang, "matchedQA", qa.ID)
-			infrastructure.AISentimentTotal.WithLabelValues(sentiment).Inc()
-			infrastructure.AILanguageTotal.WithLabelValues(detectedLang).Inc()
-			return finalize(&AIResponse{
-				Content:     cleanContent,
-				Confidence:  confidence,
-				Source:      "semantic_fallback",
-				Sentiment:   sentiment,
-				Language:    detectedLang,
-				Suggestions: suggestions,
-				MatchedQA:   &qa.ID,
-			})
+	// Try lowered semantic search as second fallback (skip if Groq rate limited)
+	if !groqLimited {
+		if qa := b.semanticFallback(ctx, userID, userQuery); qa != nil {
+			humanized, err := b.humanizeResponse(ctx, qa.Answer, userQuery, nil, nil, recentTurns)
+			if err == nil && humanized != "" {
+				cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(humanized)
+				confidence := 0.65
+				b.logger.Info("AI request completed (semantic fallback)", "traceID", traceID, "duration", time.Since(startTime), "confidence", confidence, "sentiment", sentiment, "language", detectedLang, "matchedQA", qa.ID)
+				infrastructure.AISentimentTotal.WithLabelValues(sentiment).Inc()
+				infrastructure.AILanguageTotal.WithLabelValues(detectedLang).Inc()
+				return finalize(&AIResponse{
+					Content:     cleanContent,
+					Confidence:  confidence,
+					Source:      "semantic_fallback",
+					Sentiment:   sentiment,
+					Language:    detectedLang,
+					Suggestions: suggestions,
+					MatchedQA:   &qa.ID,
+				})
+			}
 		}
 	}
 

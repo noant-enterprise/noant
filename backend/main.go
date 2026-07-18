@@ -91,11 +91,6 @@ func main() {
 		logger.Warn("Failed to ensure owner_whatsapp column", "error", err)
 	}
 
-	_, err = db.Exec(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_avatar VARCHAR(500)`)
-	if err != nil {
-		logger.Warn("Failed to ensure customer_avatar column", "error", err)
-	}
-
 	// Ensure audit_logs table exists (direct creation as fallback)
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS audit_logs (
 		id VARCHAR(36) PRIMARY KEY,
