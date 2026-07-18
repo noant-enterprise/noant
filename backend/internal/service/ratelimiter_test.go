@@ -56,16 +56,19 @@ func TestRateLimiterDifferentSessions(t *testing.T) {
 	}
 }
 
-func TestRateLimiterDifferentTypes(t *testing.T) {
+func TestRateLimiterMediaLimitAndBurst(t *testing.T) {
 	rl := newTestRateLimiter()
-	// Fill text limit + burst
-	for i := 0; i < 7; i++ {
-		rl.Allow("s1", MsgTypeText)
+	// 3 limit + 2 burst = 5 allowed
+	for i := 0; i < 5; i++ {
+		ok, _ := rl.Allow("s1", MsgTypeMedia)
+		if !ok {
+			t.Fatalf("expected allow on media call %d", i+1)
+		}
 	}
-	// Media should still be allowed (separate limit)
+	// 6th should be blocked
 	ok, _ := rl.Allow("s1", MsgTypeMedia)
-	if !ok {
-		t.Fatal("expected media to be allowed when text limit exhausted")
+	if ok {
+		t.Fatal("expected block after media limit+burst exhausted")
 	}
 }
 
