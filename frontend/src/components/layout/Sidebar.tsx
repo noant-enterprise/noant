@@ -89,7 +89,8 @@ export function Sidebar({ onClose, collapsed = false, onToggleCollapse }: Sideba
   return (
     <div
       className={cn(
-        'flex flex-col h-full bg-surface border-r border-default transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] relative shrink-0',
+        'flex flex-col h-full bg-surface border-r border-default relative shrink-0 overflow-hidden',
+        'transition-[width] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
         isExpanded ? 'w-[220px]' : 'w-[68px]'
       )}
       onMouseEnter={() => setIsHovered(true)}
@@ -112,7 +113,7 @@ export function Sidebar({ onClose, collapsed = false, onToggleCollapse }: Sideba
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-default h-[57px] shrink-0">
         <div className={cn(
-          'flex items-center gap-2.5 transition-all duration-300',
+          'flex items-center gap-2.5 transition-all duration-500',
           isExpanded ? 'opacity-100' : 'opacity-0 w-0 overflow-hidden'
         )}>
           <svg className="w-7 h-7 shrink-0" viewBox="0 0 200 200" fill="none">
@@ -126,7 +127,7 @@ export function Sidebar({ onClose, collapsed = false, onToggleCollapse }: Sideba
         </div>
 
         <div className={cn(
-          'absolute left-4 transition-all duration-300',
+          'absolute left-4 transition-all duration-500',
           isExpanded ? 'opacity-0 scale-75' : 'opacity-100 scale-100'
         )}>
           <svg className="w-8 h-8" viewBox="0 0 200 200" fill="none">
@@ -154,8 +155,8 @@ export function Sidebar({ onClose, collapsed = false, onToggleCollapse }: Sideba
         {navSections.map((section) => (
           <div key={section.title} className={cn('mb-4', !isExpanded && 'mb-2')}>
             <div className={cn(
-              'px-3 mb-1.5 text-[9px] font-bold uppercase tracking-widest text-tertiary transition-all duration-300 whitespace-nowrap',
-              isExpanded ? 'opacity-100 h-auto' : 'opacity-0 h-0 overflow-hidden'
+              'px-3 mb-1.5 text-[9px] font-bold uppercase tracking-widest text-tertiary transition-all duration-500 whitespace-nowrap overflow-hidden',
+              isExpanded ? 'opacity-100 max-h-8' : 'opacity-0 max-h-0'
             )}>
               {section.title}
             </div>
@@ -200,8 +201,8 @@ export function Sidebar({ onClose, collapsed = false, onToggleCollapse }: Sideba
 
                   {/* Label */}
                   <span className={cn(
-                    'whitespace-nowrap transition-all duration-300 flex-1 min-w-0 truncate text-[13px]',
-                    isExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0 overflow-hidden absolute left-14'
+                    'whitespace-nowrap transition-all duration-500 flex-1 text-[13px] overflow-hidden',
+                    isExpanded ? 'opacity-100 max-w-[180px] ml-0.5 delay-75' : 'opacity-0 max-w-0 absolute left-14'
                   )}>
                     {item.label}
                   </span>
@@ -253,8 +254,8 @@ export function Sidebar({ onClose, collapsed = false, onToggleCollapse }: Sideba
             {initials}
           </div>
           <div className={cn(
-            'flex-1 min-w-0 text-left transition-all duration-300',
-            isExpanded ? 'opacity-100 w-auto' : 'opacity-0 w-0 overflow-hidden'
+            'flex-1 text-left transition-all duration-500 overflow-hidden',
+            isExpanded ? 'opacity-100 max-w-[140px] ml-1 delay-75' : 'opacity-0 max-w-0'
           )}>
             <div className="text-xs font-semibold truncate text-primary">{name}</div>
             <div className="text-[10px] text-tertiary flex items-center gap-1">
@@ -265,8 +266,8 @@ export function Sidebar({ onClose, collapsed = false, onToggleCollapse }: Sideba
             </div>
           </div>
           <LogOut className={cn(
-            'w-3.5 h-3.5 text-tertiary group-hover:text-noant-sky transition-colors shrink-0',
-            isExpanded ? 'opacity-100' : 'opacity-0 w-0'
+            'w-3.5 h-3.5 text-tertiary group-hover:text-noant-sky transition-all duration-500 shrink-0 overflow-hidden',
+            isExpanded ? 'opacity-100 max-w-4 delay-75' : 'opacity-0 max-w-0'
           )} />
         </button>
       </div>
