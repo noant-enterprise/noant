@@ -23,8 +23,10 @@ type User struct {
 	OwnerWhatsapp *string  `json:"owner_whatsapp,omitempty" db:"owner_whatsapp"`
 	IsVerified   bool      `json:"is_verified" db:"is_verified"`
 	VerificationCode *string `json:"-" db:"verification_code"`
-	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
+	OnboardingStatus *string   `json:"onboarding_status" db:"onboarding_status"`
+	Industry        *string   `json:"industry" db:"industry"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // Conversation represents a chat session

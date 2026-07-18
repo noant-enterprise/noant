@@ -22,6 +22,8 @@ import TeamPage from '@/app/(dashboard)/team/page'
 import WidgetPage from '@/app/(dashboard)/widget/page'
 import LeadsPage from '@/app/(dashboard)/leads/page'
 import InventoryPage from '@/app/(dashboard)/inventory/page'
+import OnboardingPage from '@/app/(dashboard)/onboarding/page'
+import UnknownQuestionsPage from '@/app/(dashboard)/teach/unknown/page'
 import LandingPage from '@/app/landing/page'
 import { useEffect } from 'react'
 import { OfflineBanner } from '@/components/OfflineBanner'
@@ -130,7 +132,10 @@ const router = createBrowserRouter([
         children: [
           { path: 'dashboard', element: <OverviewPage /> },
           { path: 'chats', element: <ChatsPage /> },
-          { path: 'teach', element: <TeachPage /> },
+          { path: 'teach', children: [
+            { index: true, element: <TeachPage /> },
+            { path: 'unknown', element: <UnknownQuestionsPage /> },
+          ]},
           { path: 'insights', element: <InsightsPage /> },
           { path: 'channels', element: <ChannelsPage /> },
 
@@ -141,6 +146,7 @@ const router = createBrowserRouter([
           { path: 'widget', element: <WidgetPage /> },
           { path: 'leads', element: <LeadsPage /> },
           { path: 'inventory', element: <InventoryPage /> },
+          { path: 'onboarding', element: <OnboardingPage /> },
         ],
       },
       { path: '*', element: <Navigate to='/' replace /> },

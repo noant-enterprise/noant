@@ -41,6 +41,7 @@ type Handlers struct {
 	Background   *BackgroundHandler
 	Template     *TemplateHandler
 	Assistant    *AssistantHandler
+	Onboarding   *OnboardingHandler
 }
 
 func NewHandlers(cfg *config.Config, services *service.Services, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
@@ -66,6 +67,7 @@ func NewHandlers(cfg *config.Config, services *service.Services, logger *infrast
 		Background:   NewBackgroundHandler(services.Background, logger),
 		Template:     NewTemplateHandler(services.Template, logger),
 		Assistant:    NewAssistantHandler(services.Assistant, logger),
+		Onboarding:   NewOnboardingHandler(services.Onboarding, logger),
 	}
 }
 
@@ -815,16 +817,59 @@ func (h *TrainingHandler) UploadCSV(c *gin.Context) {
 
 func (h *TrainingHandler) ListUnknownQuestions(c *gin.Context) {
 	status := c.Query("status")
-	limit := 50
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 
 	userID, _ := c.Get("userID")
-	questions, err := h.service.ListUnknownQuestions(c.Request.Context(), userID.(string), status, limit)
+	questions, err := h.service.ListUnknownQuestions(c.Request.Context(), userID.(string), status, limit, offset)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"questions": questions})
+	total, _ := h.service.CountUnknownQuestions(c.Request.Context(), userID.(string), status)
+
+	c.JSON(http.StatusOK, gin.H{"questions": questions, "total": total, "limit": limit, "offset": offset})
+}
+
+func (h *TrainingHandler) BatchTrainUnknown(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	var req struct {
+		IDs        []string `json:"ids" binding:"required,min=1"`
+		Answer     string   `json:"answer" binding:"required"`
+		CategoryID string   `json:"category_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "IDs, answer, and category_id are required")
+		return
+	}
+
+	if err := h.service.BatchTrainUnknown(c.Request.Context(), userID.(string), req.Answer, req.CategoryID, req.IDs); err != nil {
+		h.logger.Error("Batch train failed", "error", err)
+		utils.RespondInternalError(c, "")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Questions trained successfully", "count": len(req.IDs)})
+}
+
+func (h *TrainingHandler) BatchIgnoreUnknown(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	var req struct {
+		IDs []string `json:"ids" binding:"required,min=1"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "IDs are required")
+		return
+	}
+
+	if err := h.service.BatchIgnoreUnknown(c.Request.Context(), userID.(string), req.IDs); err != nil {
+		h.logger.Error("Batch ignore failed", "error", err)
+		utils.RespondInternalError(c, "")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Questions ignored successfully", "count": len(req.IDs)})
 }
 
 func (h *TrainingHandler) TrainUnknown(c *gin.Context) {
@@ -1036,6 +1081,57 @@ func (h *AnalyticsHandler) Trends(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"trends": trends})
+}
+
+func (h *AnalyticsHandler) Satisfaction(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	data, err := h.service.Satisfaction(c.Request.Context(), userID.(string))
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, data)
+}
+
+func (h *AnalyticsHandler) UnknownQuestions(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	data, err := h.service.UnknownQuestionsStats(c.Request.Context(), userID.(string))
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, data)
+}
+
+func (h *AnalyticsHandler) PopularQuestions(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	data, err := h.service.PopularQuestions(c.Request.Context(), userID.(string))
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"questions": data})
+}
+
+func (h *AnalyticsHandler) MessagesTrend(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	days := 7
+	data, err := h.service.MessagesTrend(c.Request.Context(), userID.(string), days)
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"trends": data})
+}
+
+func (h *AnalyticsHandler) Uptime(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	data, err := h.service.Uptime(c.Request.Context(), userID.(string))
+	if err != nil {
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, data)
 }
 
 // ========== INTEGRATION HANDLER ==========

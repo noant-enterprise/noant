@@ -53,6 +53,7 @@ type Services struct {
 	Background   *BackgroundWorker
 	Template     *TemplateService
 	Assistant    *AssistantService
+	Onboarding   *OnboardingService
 }
 
 func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService, polarSvc *PolarService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
@@ -68,6 +69,7 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 	dbManagerSvc := NewDBManagerService(repos, logger)
 	bgWorker := NewBackgroundWorker(logger, dbManagerSvc, 3)
 	templateSvc := NewTemplateService(cfg, openwaSvc, redis, logger, repos)
+	onboardingSvc := NewOnboardingService(cfg, repos, redis, logger)
 	return &Services{
 		Auth:         NewAuthService(cfg, repos.User, redis, logger, email),
 		Chat:         chatSvc,
@@ -91,6 +93,7 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 		Background:   bgWorker,
 		Template:     templateSvc,
 		Assistant:    NewAssistantService(aiBrain, logger),
+		Onboarding:   onboardingSvc,
 	}
 }
 
@@ -2744,8 +2747,20 @@ func (s *TrainingService) UploadCSV(ctx context.Context, userID, categoryID stri
 	return len(records) - 1, nil
 }
 
-func (s *TrainingService) ListUnknownQuestions(ctx context.Context, userID string, status string, limit int) ([]domain.UnknownQuestion, error) {
-	return s.repos.UnknownQ.List(ctx, userID, status, limit)
+func (s *TrainingService) ListUnknownQuestions(ctx context.Context, userID string, status string, limit int, offset int) ([]domain.UnknownQuestion, error) {
+	return s.repos.UnknownQ.List(ctx, userID, status, limit, offset)
+}
+
+func (s *TrainingService) CountUnknownQuestions(ctx context.Context, userID string, status string) (int, error) {
+	return s.repos.UnknownQ.CountByFilter(ctx, userID, status)
+}
+
+func (s *TrainingService) BatchTrainUnknown(ctx context.Context, userID, answer, categoryID string, ids []string) error {
+	return s.repos.UnknownQ.BatchTrain(ctx, userID, answer, categoryID, ids)
+}
+
+func (s *TrainingService) BatchIgnoreUnknown(ctx context.Context, userID string, ids []string) error {
+	return s.repos.UnknownQ.BatchIgnore(ctx, userID, ids)
 }
 
 func (s *TrainingService) TrainUnknown(ctx context.Context, userID, id string, answer string, categoryID string) error {
@@ -2941,6 +2956,87 @@ func (s *AnalyticsService) Trends(ctx context.Context, userID string, days int) 
 		return nil, err
 	}
 	return data, nil
+}
+
+func (s *AnalyticsService) Satisfaction(ctx context.Context, userID string) (map[string]interface{}, error) {
+	avgScore, totalRatings, err := s.repos.Conversation.GetCSATAverage(ctx, userID)
+	if err != nil {
+		s.logger.Warn("Failed to get CSAT average", "error", err)
+		avgScore, totalRatings = 0, 0
+	}
+
+	distribution, err := s.repos.Conversation.GetCSATDistribution(ctx, userID)
+	if err != nil {
+		s.logger.Warn("Failed to get CSAT distribution", "error", err)
+		distribution = map[int]int{}
+	}
+
+	trend, err := s.repos.Conversation.GetCSATTrend(ctx, userID, 30)
+	if err != nil {
+		s.logger.Warn("Failed to get CSAT trend", "error", err)
+		trend = []map[string]interface{}{}
+	}
+
+	return map[string]interface{}{
+		"avg_score":     avgScore,
+		"total_ratings": totalRatings,
+		"distribution":  distribution,
+		"trend":         trend,
+	}, nil
+}
+
+func (s *AnalyticsService) UnknownQuestionsStats(ctx context.Context, userID string) (map[string]interface{}, error) {
+	byStatus, err := s.repos.UnknownQ.CountByStatus(ctx, userID)
+	if err != nil {
+		s.logger.Warn("Failed to count unknown questions by status", "error", err)
+		byStatus = map[string]int{}
+	}
+
+	trend, err := s.repos.UnknownQ.CountByDate(ctx, userID, 30)
+	if err != nil {
+		s.logger.Warn("Failed to get unknown questions trend", "error", err)
+		trend = []map[string]interface{}{}
+	}
+
+	return map[string]interface{}{
+		"by_status": byStatus,
+		"trend":     trend,
+		"total":     byStatus["pending"] + byStatus["trained"] + byStatus["ignored"],
+	}, nil
+}
+
+func (s *AnalyticsService) PopularQuestions(ctx context.Context, userID string) ([]map[string]interface{}, error) {
+	data, err := s.repos.UnknownQ.MostPopular(ctx, userID, 10)
+	if err != nil {
+		s.logger.Warn("Failed to get popular questions", "error", err)
+		return []map[string]interface{}{}, nil
+	}
+	return data, nil
+}
+
+func (s *AnalyticsService) MessagesTrend(ctx context.Context, userID string, days int) ([]map[string]interface{}, error) {
+	data, err := s.repos.Conversation.CountMessagesByDate(ctx, userID, days)
+	if err != nil {
+		s.logger.Warn("Failed to get messages trend", "error", err)
+		return []map[string]interface{}{}, nil
+	}
+	return data, nil
+}
+
+func (s *AnalyticsService) Uptime(ctx context.Context, userID string) (map[string]interface{}, error) {
+	activeDays, err := s.repos.Conversation.GetUptimeStats(ctx, userID)
+	if err != nil {
+		s.logger.Warn("Failed to get uptime stats", "error", err)
+		activeDays = 0
+	}
+	uptime := 0.0
+	if activeDays > 0 {
+		uptime = float64(activeDays) / 30.0 * 100.0
+	}
+	return map[string]interface{}{
+		"active_days": activeDays,
+		"uptime":      uptime,
+	}, nil
 }
 
 // ========== INTEGRATION SERVICE ==========

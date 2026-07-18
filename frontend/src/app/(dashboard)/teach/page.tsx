@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import { useAPI } from '@/hooks/useAPI'
 import { UploadZone, UnknownQuestionItem } from '@/components/training'
 import { Button } from '@/components/ui/Button'
@@ -1074,6 +1075,12 @@ export default function TeachPage() {
             <div className="flex items-center justify-between mb-1">
               <h2 className="text-base font-bold text-primary tracking-tight">AI Gaps</h2>
               <div className="flex items-center gap-2">
+                <Link
+                  to="/teach/unknown"
+                  className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors mr-1"
+                >
+                  View all →
+                </Link>
                 <span className="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 text-xs font-bold px-2.5 py-0.5 rounded-full">
                   {questions.length} pending
                 </span>

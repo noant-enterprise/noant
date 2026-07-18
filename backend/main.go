@@ -382,6 +382,8 @@ func main() {
 			training.GET("/unknown-questions", handlers.Training.ListUnknownQuestions)
 			training.POST("/unknown-questions/:id/train", handlers.Training.TrainUnknown)
 			training.POST("/unknown-questions/:id/ignore", handlers.Training.IgnoreUnknown)
+			training.POST("/unknown-questions/batch-train", handlers.Training.BatchTrainUnknown)
+			training.POST("/unknown-questions/batch-ignore", handlers.Training.BatchIgnoreUnknown)
 			training.DELETE("/unknown-questions/clear", handlers.Training.ClearUnknown)
 			training.POST("/csv-upload", handlers.Training.UploadCSV)
 		}
@@ -395,6 +397,11 @@ func main() {
 			analytics.GET("/channels", handlers.Analytics.ChannelDistribution)
 			analytics.GET("/insights", handlers.Analytics.Insights)
 			analytics.GET("/trends", handlers.Analytics.Trends)
+			analytics.GET("/satisfaction", handlers.Analytics.Satisfaction)
+			analytics.GET("/unknown-questions", handlers.Analytics.UnknownQuestions)
+			analytics.GET("/popular-questions", handlers.Analytics.PopularQuestions)
+			analytics.GET("/messages-trend", handlers.Analytics.MessagesTrend)
+			analytics.GET("/uptime", handlers.Analytics.Uptime)
 		}
 
 		integrations := api.Group("/integrations")
@@ -621,6 +628,17 @@ func main() {
 	assistant.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
 	{
 		assistant.POST("/chat", handlers.Assistant.Chat)
+	}
+
+	// Onboarding wizard endpoints
+	onboarding := api.Group("/onboarding")
+	onboarding.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	onboarding.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
+	{
+		onboarding.GET("/status", handlers.Onboarding.GetStatus)
+		onboarding.POST("/step", handlers.Onboarding.CompleteStep)
+		onboarding.POST("/categories/auto-create", handlers.Onboarding.AutoCreateCategories)
+		onboarding.GET("/industry-templates", handlers.Onboarding.GetIndustryTemplates)
 	}
 
 	// Serve frontend static files if the static directory exists

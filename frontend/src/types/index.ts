@@ -28,6 +28,8 @@ export interface User {
   role: 'owner' | 'admin' | 'agent';
   is_active: boolean;
   must_change_password: boolean;
+  onboarding_status?: string;
+  industry?: string;
   last_login_at?: string;
   created_at: string;
   updated_at: string;
@@ -109,9 +111,21 @@ export interface QAPair {
 
 export interface UnknownQuestion {
   id: string;
+  user_id?: string;
   question: string;
+  conversation_id?: string;
+  channel?: string;
   status: 'pending' | 'trained' | 'ignored';
+  suggested_answer?: string;
+  category_id?: string;
   created_at: string;
+}
+
+export interface UnknownQuestionListResponse {
+  questions: UnknownQuestion[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 // Analytics

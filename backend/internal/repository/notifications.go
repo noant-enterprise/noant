@@ -188,3 +188,23 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, userID string, first
 		WHERE id = ?`, firstName, lastName, companyName, phone, userID)
 	return err
 }
+
+func (r *UserRepository) GetOnboardingStatus(ctx context.Context, userID string) (*string, error) {
+	query := `SELECT onboarding_status FROM users WHERE id = ?`
+	row := r.db.QueryRowContext(ctx, query, userID)
+	var status *string
+	if err := row.Scan(&status); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return status, nil
+}
+
+func (r *UserRepository) UpdateOnboardingStatus(ctx context.Context, userID string, status string, industry *string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE users SET onboarding_status = ?, industry = COALESCE(?, industry), updated_at = NOW()
+		WHERE id = ?`, status, industry, userID)
+	return err
+}

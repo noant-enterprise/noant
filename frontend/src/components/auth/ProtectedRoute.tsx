@@ -2,6 +2,8 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { Skeleton } from '@/components/ui/Skeleton'
 
+const ONBOARDING_EXEMPT = ['/onboarding']
+
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
   const location = useLocation()
@@ -20,6 +22,14 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  const onboardingStatus = user.onboarding_status
+  const needsOnboarding = onboardingStatus && onboardingStatus !== 'complete' && onboardingStatus !== ''
+  const isOnboardingRoute = ONBOARDING_EXEMPT.some(p => location.pathname.startsWith(p))
+
+  if (needsOnboarding && !isOnboardingRoute) {
+    return <Navigate to="/onboarding" replace />
   }
 
   return <>{children}</>

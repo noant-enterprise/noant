@@ -152,10 +152,10 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*domain.User, 
 			_ = cached
 		}
 	}
-	query := `SELECT id, email, password_hash, first_name, last_name, role, company_name, phone, avatar, plan_id, is_active, must_change_password, last_login_at, is_verified, verification_code, created_at, updated_at FROM users WHERE id = ?`
+	query := `SELECT id, email, password_hash, first_name, last_name, role, company_name, phone, avatar, plan_id, is_active, must_change_password, last_login_at, is_verified, verification_code, onboarding_status, industry, created_at, updated_at FROM users WHERE id = ?`
 	row := r.db.QueryRowContext(ctx, query, id)
 	user := &domain.User{}
-	err := row.Scan(&user.ID, &user.Email, &user.Password, &user.FirstName, &user.LastName, &user.Role, &user.CompanyName, &user.Phone, &user.Avatar, &user.PlanID, &user.IsActive, &user.MustChangePassword, &user.LastLoginAt, &user.IsVerified, &user.VerificationCode, &user.CreatedAt, &user.UpdatedAt)
+	err := row.Scan(&user.ID, &user.Email, &user.Password, &user.FirstName, &user.LastName, &user.Role, &user.CompanyName, &user.Phone, &user.Avatar, &user.PlanID, &user.IsActive, &user.MustChangePassword, &user.LastLoginAt, &user.IsVerified, &user.VerificationCode, &user.OnboardingStatus, &user.Industry, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -871,15 +871,15 @@ func (r *UnknownQuestionRepository) GetByIDAndUser(ctx context.Context, id strin
 	return uq, nil
 }
 
-func (r *UnknownQuestionRepository) List(ctx context.Context, userID string, status string, limit int) ([]domain.UnknownQuestion, error) {
+func (r *UnknownQuestionRepository) List(ctx context.Context, userID string, status string, limit int, offset int) ([]domain.UnknownQuestion, error) {
 	query := `SELECT id, question, conversation_id, channel, status, suggested_answer, category_id, created_at FROM unknown_questions WHERE user_id = ?`
 	args := []interface{}{userID}
 	if status != "" {
 		query += " AND status = ?"
 		args = append(args, status)
 	}
-	query += " ORDER BY created_at DESC LIMIT ?"
-	args = append(args, limit)
+	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -895,6 +895,48 @@ func (r *UnknownQuestionRepository) List(ctx context.Context, userID string, sta
 		questions = append(questions, uq)
 	}
 	return questions, nil
+}
+
+func (r *UnknownQuestionRepository) BatchTrain(ctx context.Context, userID, answer, categoryID string, ids []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, id := range ids {
+		var question string
+		err := tx.QueryRowContext(ctx, `SELECT question FROM unknown_questions WHERE id = ? AND user_id = ?`, id, userID).Scan(&question)
+		if err != nil {
+			continue
+		}
+		qaID := generateUUID()
+		_, err = tx.ExecContext(ctx, `INSERT INTO qa_pairs (id, user_id, category_id, question, answer, is_active, created_at) VALUES (?, ?, ?, ?, ?, true, NOW())`, qaID, userID, categoryID, question, answer)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE unknown_questions SET status = 'trained', suggested_answer = ?, category_id = ? WHERE id = ? AND user_id = ?`, answer, categoryID, id, userID)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *UnknownQuestionRepository) BatchIgnore(ctx context.Context, userID string, ids []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, id := range ids {
+		_, err := tx.ExecContext(ctx, `UPDATE unknown_questions SET status = 'ignored' WHERE id = ? AND user_id = ?`, id, userID)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (r *UnknownQuestionRepository) ExistsPending(ctx context.Context, userID string, question string) (bool, error) {
@@ -916,6 +958,77 @@ func (r *UnknownQuestionRepository) Clear(ctx context.Context, userID string) er
 	query := `DELETE FROM unknown_questions WHERE user_id = ?`
 	_, err := r.db.ExecContext(ctx, query, userID)
 	return err
+}
+
+func (r *UnknownQuestionRepository) CountByStatus(ctx context.Context, userID string) (map[string]int, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT status, COUNT(*) as count FROM unknown_questions WHERE user_id = ? GROUP BY status`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[string]int{"pending": 0, "trained": 0, "ignored": 0}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err == nil {
+			result[status] = count
+		}
+	}
+	return result, nil
+}
+
+func (r *UnknownQuestionRepository) MostPopular(ctx context.Context, userID string, limit int) ([]map[string]interface{}, error) {
+	query := `SELECT question, COUNT(*) as count FROM unknown_questions WHERE user_id = ? AND status = 'pending' GROUP BY question ORDER BY count DESC LIMIT ?`
+	rows, err := r.db.QueryContext(ctx, query, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []map[string]interface{}
+	for rows.Next() {
+		var question string
+		var count int
+		if err := rows.Scan(&question, &count); err == nil {
+			result = append(result, map[string]interface{}{"question": question, "count": count})
+		}
+	}
+	return result, nil
+}
+
+func (r *UnknownQuestionRepository) CountByFilter(ctx context.Context, userID string, status string) (int, error) {
+	query := `SELECT COUNT(*) FROM unknown_questions WHERE user_id = ?`
+	args := []interface{}{userID}
+	if status != "" {
+		query += " AND status = ?"
+		args = append(args, status)
+	}
+	var total int
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+func (r *UnknownQuestionRepository) CountByDate(ctx context.Context, userID string, days int) ([]map[string]interface{}, error) {
+	query := `SELECT DATE(created_at) as date, COUNT(*) as count FROM unknown_questions WHERE user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) GROUP BY DATE(created_at) ORDER BY date`
+	rows, err := r.db.QueryContext(ctx, query, userID, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []map[string]interface{}
+	for rows.Next() {
+		var dateStr string
+		var count int
+		if err := rows.Scan(&dateStr, &count); err == nil {
+			if len(dateStr) > 10 {
+				dateStr = dateStr[:10]
+			}
+			result = append(result, map[string]interface{}{"date": dateStr, "unknown_count": count})
+		}
+	}
+	return result, nil
 }
 
 type IntegrationRepository struct {
@@ -1397,6 +1510,98 @@ func (r *ConversationRepository) CountByDate(ctx context.Context, userID string,
 		}
 	}
 	return result, nil
+}
+
+// ========== CSAT RATINGS ==========
+
+func (r *ConversationRepository) RecordCSAT(ctx context.Context, userID, conversationID string, score int, comment *string) error {
+	query := `INSERT INTO csat_ratings (id, user_id, conversation_id, score, comment, created_at) VALUES (?, ?, ?, ?, ?, NOW())`
+	_, err := r.db.ExecContext(ctx, query, generateUUID(), userID, conversationID, score, comment)
+	return err
+}
+
+func (r *ConversationRepository) GetCSATAverage(ctx context.Context, userID string) (float64, int, error) {
+	var avg sql.NullFloat64
+	var total int
+	err := r.db.QueryRowContext(ctx, `SELECT AVG(score), COUNT(*) FROM csat_ratings WHERE user_id = ?`, userID).Scan(&avg, &total)
+	if err != nil {
+		return 0, 0, err
+	}
+	return avg.Float64, total, nil
+}
+
+func (r *ConversationRepository) GetCSATDistribution(ctx context.Context, userID string) (map[int]int, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT score, COUNT(*) as count FROM csat_ratings WHERE user_id = ? GROUP BY score ORDER BY score`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	dist := map[int]int{1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+	for rows.Next() {
+		var score, count int
+		if err := rows.Scan(&score, &count); err == nil {
+			dist[score] = count
+		}
+	}
+	return dist, nil
+}
+
+func (r *ConversationRepository) GetCSATTrend(ctx context.Context, userID string, days int) ([]map[string]interface{}, error) {
+	query := `SELECT DATE(created_at) as date, AVG(score) as avg_score, COUNT(*) as count
+		FROM csat_ratings WHERE user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+		GROUP BY DATE(created_at) ORDER BY date`
+	rows, err := r.db.QueryContext(ctx, query, userID, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []map[string]interface{}
+	for rows.Next() {
+		var dateStr string
+		var avg float64
+		var count int
+		if err := rows.Scan(&dateStr, &avg, &count); err == nil {
+			if len(dateStr) > 10 {
+				dateStr = dateStr[:10]
+			}
+			result = append(result, map[string]interface{}{"date": dateStr, "avg_score": avg, "count": count})
+		}
+	}
+	return result, nil
+}
+
+func (r *ConversationRepository) CountMessagesByDate(ctx context.Context, userID string, days int) ([]map[string]interface{}, error) {
+	query := `SELECT DATE(m.created_at) as date, COUNT(*) as count
+		FROM messages m JOIN conversations c ON m.conversation_id = c.id
+		WHERE c.user_id = ? AND m.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+		GROUP BY DATE(m.created_at) ORDER BY date`
+	rows, err := r.db.QueryContext(ctx, query, userID, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []map[string]interface{}
+	for rows.Next() {
+		var dateStr string
+		var count int
+		if err := rows.Scan(&dateStr, &count); err == nil {
+			if len(dateStr) > 10 {
+				dateStr = dateStr[:10]
+			}
+			result = append(result, map[string]interface{}{"date": dateStr, "messages": count})
+		}
+	}
+	return result, nil
+}
+
+func (r *ConversationRepository) GetUptimeStats(ctx context.Context, userID string) (int, error) {
+	// Count active days in last 30 days where the user had conversations
+	var activeDays int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT DATE(created_at)) FROM conversations WHERE user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)`, userID).Scan(&activeDays)
+	if err != nil {
+		return 0, err
+	}
+	return activeDays, nil
 }
 
 // ========== USER OWNER WHATSAPP ==========
