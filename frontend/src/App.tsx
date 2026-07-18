@@ -29,6 +29,7 @@ import { useEffect } from 'react'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import { NetworkProvider } from '@/contexts/NetworkContext'
 import { refreshToken } from '@/lib/auth'
+import { PwaInstallPrompt } from '@/components/ui/PwaInstallPrompt'
 
 function AppShell() {
   const location = useLocation()
@@ -57,6 +58,7 @@ function AppShell() {
     <>
       <OfflineBanner />
       <CommandPalette />
+      <PwaInstallPrompt />
       <Outlet />
     </>
   )

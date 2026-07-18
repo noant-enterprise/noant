@@ -54,6 +54,7 @@ type Services struct {
 	Template     *TemplateService
 	Assistant    *AssistantService
 	Onboarding   *OnboardingService
+	Push         *PushNotificationService
 }
 
 func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService, polarSvc *PolarService, broadcastFn func(convID string, msgType string, data interface{})) *Services {
@@ -70,6 +71,8 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 	bgWorker := NewBackgroundWorker(logger, dbManagerSvc, 3)
 	templateSvc := NewTemplateService(cfg, openwaSvc, redis, logger, repos)
 	onboardingSvc := NewOnboardingService(cfg, repos, redis, logger)
+	pushSvc := NewPushNotificationService(cfg, repos, logger)
+	notifSvc := NewNotificationService(cfg, repos, redis, logger, email, pushSvc)
 	return &Services{
 		Auth:         NewAuthService(cfg, repos.User, redis, logger, email),
 		Chat:         chatSvc,
@@ -80,7 +83,7 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 		Archive:      NewArchiveService(cfg, repos, redis, logger),
 		Payment:      NewPaymentService(cfg, repos, redis, logger, polarSvc, creditSvc),
 		Audit:        NewAuditService(repos, logger),
-		Notification: NewNotificationService(cfg, repos, redis, logger, email),
+		Notification: notifSvc,
 		Widget:       NewWidgetService(cfg, repos, redis, aiBrain, logger, email),
 		Inventory:    NewInventoryService(cfg, repos, redis, logger, embeddings),
 		Handoff:      NewHandoffService(cfg, repos, redis, logger, broadcastFn, planSvc),
@@ -94,6 +97,7 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 		Template:     templateSvc,
 		Assistant:    NewAssistantService(aiBrain, logger),
 		Onboarding:   onboardingSvc,
+		Push:         pushSvc,
 	}
 }
 

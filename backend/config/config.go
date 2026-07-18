@@ -83,6 +83,11 @@ type Config struct {
 	InstagramAccountID string
 	MetaVerifyToken    string
 
+	// Web Push (VAPID)
+	VAPIDPublicKey  string
+	VAPIDPrivateKey string
+	VAPIDSubject    string
+
 	// OpenWA (self-hosted WhatsApp API)
 	OpenWAEnabled          bool
 	OpenWABaseURL          string
@@ -147,6 +152,9 @@ func Load() *Config {
 		LogLevel:      getEnv("LOG_LEVEL", "info"),
 		APIURL:        getEnv("API_URL", "http://localhost:"+port),
 		AppURL:        getEnv("APP_URL", "http://localhost:3000"),
+		VAPIDPublicKey:  getEnv("VAPID_PUBLIC_KEY", ""),
+		VAPIDPrivateKey: getEnv("VAPID_PRIVATE_KEY", ""),
+		VAPIDSubject:    getEnv("VAPID_SUBJECT", "mailto:support@noant.io"),
 
 		CacheTTL:     time.Duration(cacheTTL) * time.Second,
 		CacheMaxKeys: cacheMaxKeys,

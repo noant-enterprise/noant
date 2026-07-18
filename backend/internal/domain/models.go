@@ -380,6 +380,18 @@ type CampaignSchedule struct {
 	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 }
 
+// PushSubscription represents a Web Push subscription for a user
+type PushSubscription struct {
+	ID        string    `json:"id" db:"id"`
+	UserID    string    `json:"user_id" db:"user_id"`
+	Endpoint  string    `json:"endpoint" db:"endpoint"`
+	Auth      string    `json:"auth" db:"auth"`
+	P256dh    string    `json:"p256dh" db:"p256dh"`
+	UserAgent string    `json:"user_agent,omitempty" db:"user_agent"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
 // PlanLimit defines limits per plan
 type PlanLimit struct {
 	PlanID               string `json:"plan_id" db:"plan_id"`

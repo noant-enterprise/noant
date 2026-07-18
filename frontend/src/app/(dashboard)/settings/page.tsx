@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { User, Shield, Bell, Palette, Lock, Save, Eye, EyeOff, Download, Trash2, Check, Globe } from 'lucide-react'
+import { User, Shield, Bell, Palette, Lock, Save, Eye, EyeOff, Download, Trash2, Check, Globe, Smartphone, BellOff } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '../../../lib/api'
 import { useToast } from '@/components/ui/Toast'
+import { usePushNotifications } from '@/hooks/usePushNotifications'
 
 type Tab = 'profile' | 'security' | 'notifications' | 'appearance' | 'privacy'
 
@@ -213,6 +214,7 @@ function SecurityTab() {
 
 function NotificationsTab() {
   const { toast: showToast } = useToast()
+  const push = usePushNotifications()
   const [prefs, setPrefs] = useState({
     notif_escalation: true,
     notif_unknown_questions: true,
@@ -250,6 +252,36 @@ function NotificationsTab() {
 
   return (
     <div className="space-y-4 animate-page-in">
+      {/* Push / Desktop Notifications */}
+      {push.supported && (
+        <div className="rounded-xl border border-default overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3.5 bg-inset/30 border-b border-default">
+            <div className="flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-noant-sky" />
+              <div>
+                <div className="text-sm font-medium text-primary">Desktop & Push Notifications</div>
+                <div className="text-xs text-secondary mt-0.5">Receive notifications even when the app is closed</div>
+              </div>
+            </div>
+            <button
+              onClick={() => push.subscribed ? push.unsubscribe() : push.subscribe()}
+              disabled={push.loading}
+              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-noant-sky ${push.subscribed ? 'bg-noant-sky' : 'bg-border-strong'} disabled:opacity-60`}
+              aria-checked={push.subscribed}
+              role="switch"
+            >
+              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transform transition duration-200 ${push.subscribed ? 'translate-x-4' : 'translate-x-0'}`} />
+            </button>
+          </div>
+          {push.permission === 'denied' && (
+            <div className="px-4 py-2.5 text-xs text-amber-500 bg-amber-500/5 flex items-center gap-2">
+              <BellOff className="w-3.5 h-3.5 shrink-0" />
+              Notifications blocked. Enable them in your browser settings.
+            </div>
+          )}
+        </div>
+      )}
+
       <p className="text-sm text-secondary">Choose which events send you email notifications.</p>
       <div className="rounded-xl border border-default overflow-hidden">
         {items.map((item, i) => (

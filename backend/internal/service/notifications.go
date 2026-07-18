@@ -21,14 +21,27 @@ type NotificationService struct {
 	redis  *infrastructure.RedisClient
 	logger *infrastructure.Logger
 	email  *EmailService
+	push   *PushNotificationService
 }
 
-func NewNotificationService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *NotificationService {
-	return &NotificationService{cfg: cfg, repos: repos, redis: redis, logger: logger, email: email}
+func NewNotificationService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService, push *PushNotificationService) *NotificationService {
+	return &NotificationService{cfg: cfg, repos: repos, redis: redis, logger: logger, email: email, push: push}
 }
 
 func (s *NotificationService) Create(ctx context.Context, n *domain.Notification) error {
-	return s.repos.Notification.Create(ctx, n)
+	if err := s.repos.Notification.Create(ctx, n); err != nil {
+		return err
+	}
+	// Also send push notification if VAPID keys are configured
+	if n.UserID != "" && n.Title != "" {
+		go func() {
+			pushCtx := context.Background()
+			if err := s.push.SendToUser(pushCtx, n.UserID, n.Title, n.Body, n.Link); err != nil {
+				s.logger.Warn("Push notification send failed", "error", err)
+			}
+		}()
+	}
+	return nil
 }
 
 func (s *NotificationService) List(ctx context.Context, userID string, limit int) ([]*domain.Notification, error) {

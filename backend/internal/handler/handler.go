@@ -42,6 +42,7 @@ type Handlers struct {
 	Template     *TemplateHandler
 	Assistant    *AssistantHandler
 	Onboarding   *OnboardingHandler
+	Push         *PushHandler
 }
 
 func NewHandlers(cfg *config.Config, services *service.Services, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
@@ -68,6 +69,7 @@ func NewHandlers(cfg *config.Config, services *service.Services, logger *infrast
 		Template:     NewTemplateHandler(services.Template, logger),
 		Assistant:    NewAssistantHandler(services.Assistant, logger),
 		Onboarding:   NewOnboardingHandler(services.Onboarding, logger),
+		Push:         NewPushHandler(services.Push, logger),
 	}
 }
 

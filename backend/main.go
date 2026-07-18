@@ -17,6 +17,7 @@ import (
 	"noant/internal/repository"
 	"noant/internal/service"
 
+	"github.com/SherClockHolmes/webpush-go"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -33,6 +34,20 @@ func main() {
 		logger.Fatal("Failed to connect to TiDB", "error", err)
 	}
 	defer db.Close()
+
+	// Auto-generate VAPID keys if not configured
+	if cfg.VAPIDPublicKey == "" || cfg.VAPIDPrivateKey == "" {
+		privateKey, publicKey, err := webpush.GenerateVAPIDKeys()
+		if err != nil {
+			logger.Fatal("Failed to generate VAPID keys", "error", err)
+		}
+		cfg.VAPIDPrivateKey = privateKey
+		cfg.VAPIDPublicKey = publicKey
+		logger.Warn("VAPID keys auto-generated. Set these in .env for persistence:",
+			"VAPID_PUBLIC_KEY", publicKey,
+			"VAPID_PRIVATE_KEY", privateKey,
+		)
+	}
 
 	// Apply database migrations
 	if err := infrastructure.RunMigrations(db, "./migrations"); err != nil {
@@ -639,6 +654,15 @@ func main() {
 		onboarding.POST("/step", handlers.Onboarding.CompleteStep)
 		onboarding.POST("/categories/auto-create", handlers.Onboarding.AutoCreateCategories)
 		onboarding.GET("/industry-templates", handlers.Onboarding.GetIndustryTemplates)
+	}
+
+	// Push notification subscription endpoints
+	pushSub := api.Group("/push")
+	pushSub.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	pushSub.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
+	{
+		pushSub.POST("/subscribe", handlers.Push.Subscribe)
+		pushSub.POST("/unsubscribe", handlers.Push.Unsubscribe)
 	}
 
 	// Serve frontend static files if the static directory exists
