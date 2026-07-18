@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"io"
 	"log/slog"
 	"os"
 )
@@ -27,6 +28,10 @@ func NewLogger(level string) *Logger {
 	})
 
 	return &Logger{slog.New(handler)}
+}
+
+func NewNullLogger() *Logger {
+	return &Logger{slog.New(slog.NewTextHandler(io.Discard, nil))}
 }
 
 func (l *Logger) Fatal(msg string, args ...interface{}) {

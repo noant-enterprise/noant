@@ -126,6 +126,12 @@ func (s *DBManagerService) CleanupCompletedCampaigns(ctx context.Context, days i
 	})
 }
 
+func (s *DBManagerService) CleanupExpiredMediaMessages(ctx context.Context) (int64, error) {
+	return s.measure(func() (int64, error) {
+		return s.repos.MediaMessage.CleanupExpired(ctx)
+	})
+}
+
 func (s *DBManagerService) RunAllCleanups(ctx context.Context, config *CleanupConfig) *CleanupReport {
 	startedAt := time.Now()
 	report := &CleanupReport{
@@ -149,6 +155,7 @@ func (s *DBManagerService) RunAllCleanups(ctx context.Context, config *CleanupCo
 		{"expired_credits", func() (int64, error) { return s.CleanupExpiredCredits(ctx) }},
 		{"stale_credit_purchases", func() (int64, error) { return s.CleanupStaleCreditPurchases(ctx, config.CreditPurchasesDays) }},
 		{"completed_campaigns", func() (int64, error) { return s.CleanupCompletedCampaigns(ctx, config.CompletedCampaignsDays) }},
+		{"expired_media_messages", func() (int64, error) { return s.CleanupExpiredMediaMessages(ctx) }},
 	}
 
 	for _, t := range tasks {

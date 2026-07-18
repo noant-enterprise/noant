@@ -689,6 +689,7 @@ func (b *AIBrain) allowGroqCall(ctx context.Context, userID string) bool {
 	}
 	if !allowed {
 		b.logger.Warn("Groq rate limit exceeded for user", "userID", userID)
+		infrastructure.NoantGroqRateLimited.Inc()
 	}
 	return allowed
 }
@@ -2506,6 +2507,53 @@ func (s *ChatService) StoreWhatsAppIntegrationWithStatus(ctx context.Context, us
 		return
 	}
 	_ = s.repos.Integration.Create(ctx, integration)
+}
+
+// EnsureConversation finds or creates a conversation for a customer on a given channel
+func (s *ChatService) EnsureConversation(ctx context.Context, userID, customerName, customerKey, channel, customerAvatar string) (*domain.Conversation, error) {
+	existing, _ := s.repos.Conversation.FindActiveByCustomer(ctx, userID, customerKey, channel)
+	if existing != nil {
+		return existing, nil
+	}
+	conv := &domain.Conversation{
+		UserID:        userID,
+		CustomerName:  customerName,
+		CustomerPhone: customerKey,
+		Channel:       channel,
+		Status:        "active",
+	}
+	if err := s.repos.Conversation.Create(ctx, conv); err != nil {
+		return nil, err
+	}
+	return conv, nil
+}
+
+// StoreMediaRecord stores a media message record in the database
+func (s *ChatService) StoreMediaRecord(ctx context.Context, conversationID, userID, sessionID string, msg *OpenWAMessageData) error {
+	record := &domain.MediaMessage{
+		ConversationID: conversationID,
+		UserID:         userID,
+		SessionID:      sessionID,
+		MessageID:      msg.ID,
+		MediaType:      msg.MediaType,
+		MimeType:       msg.MimeType,
+		FileSize:       msg.FileSize,
+		FileName:       msg.FileName,
+		Width:          msg.Width,
+		Height:         msg.Height,
+		Duration:       msg.Duration,
+		RemoteURL:      msg.MediaURL,
+		ExpiresAt:      time.Now().Add(30 * 24 * time.Hour), // 30-day retention
+	}
+	if msg.Latitude != 0 || msg.Longitude != 0 {
+		record.RemoteURL = fmt.Sprintf("%f,%f", msg.Latitude, msg.Longitude)
+		record.MediaType = "location"
+	}
+	if msg.VCard != "" {
+		record.RemoteURL = msg.VCard
+		record.MediaType = "contact"
+	}
+	return s.repos.MediaMessage.Create(ctx, record)
 }
 
 // GetWhatsAppIntegration returns the WhatsApp integration for a user regardless of

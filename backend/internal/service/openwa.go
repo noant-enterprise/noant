@@ -275,6 +275,18 @@ type OpenWAMessageData struct {
 	Timestamp interface{}  `json:"timestamp"`
 	FromMe    bool         `json:"fromMe"`
 	HasMedia  bool         `json:"hasMedia"`
+	MediaType string       `json:"mediaType"`
+	MimeType  string       `json:"mimeType"`
+	FileName  string       `json:"fileName"`
+	FileSize  int64        `json:"fileSize"`
+	MediaURL  string       `json:"mediaUrl"`
+	Width     int          `json:"width"`
+	Height    int          `json:"height"`
+	Duration  int          `json:"duration"`
+	Latitude  float64      `json:"latitude"`
+	Longitude float64      `json:"longitude"`
+	Address   string       `json:"address"`
+	VCard     string       `json:"vcard"`
 	Sender    OpenWASender `json:"sender"`
 }
 
@@ -329,6 +341,7 @@ func (s *OpenWAService) SendTextMessage(sessionID string, chatID string, text st
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		infrastructure.OpenWAMessagesSentTotal.WithLabelValues("text", "error").Inc()
 		s.logger.Error("OpenWA send failed", "error", err, "chatID", chatID, "sessionID", sessionID)
 		return fmt.Errorf("openwa request failed: %w", err)
 	}
@@ -337,9 +350,11 @@ func (s *OpenWAService) SendTextMessage(sessionID string, chatID string, text st
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		s.logger.Error("OpenWA send error", "status", resp.StatusCode, "body", string(body), "chatID", chatID, "sessionID", sessionID)
+		infrastructure.OpenWAMessagesSentTotal.WithLabelValues("text", "error").Inc()
 		return fmt.Errorf("openwa returned status %d: %s", resp.StatusCode, string(body))
 	}
 
+	infrastructure.OpenWAMessagesSentTotal.WithLabelValues("text", "success").Inc()
 	s.logger.Info("OpenWA message sent", "chatID", chatID, "sessionID", sessionID, "length", len(text))
 	return nil
 }
@@ -382,9 +397,11 @@ func (s *OpenWAService) SendMediaMessage(sessionID string, chatID string, mediaU
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
+		infrastructure.OpenWAMessagesSentTotal.WithLabelValues("media", "error").Inc()
 		return fmt.Errorf("openwa media send failed: %d %s", resp.StatusCode, string(body))
 	}
 
+	infrastructure.OpenWAMessagesSentTotal.WithLabelValues("media", "success").Inc()
 	return nil
 }
 

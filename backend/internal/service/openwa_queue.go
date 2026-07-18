@@ -371,11 +371,12 @@ func (sq *SendQueue) Stats() map[string]interface{} {
 			deadLetter++
 		}
 	}
+	infrastructure.OpenWAQueueDepth.Set(float64(queued))
 	return map[string]interface{}{
-		"total":      len(sq.entries),
-		"queued":     queued,
-		"sent":       sent,
-		"failed":     failed,
+		"total":       len(sq.entries),
+		"queued":      queued,
+		"sent":        sent,
+		"failed":      failed,
 		"dead_letter": deadLetter,
 	}
 }

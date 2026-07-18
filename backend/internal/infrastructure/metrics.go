@@ -53,4 +53,19 @@ var (
 		Help:    "CSAT rating distribution (1-5)",
 		Buckets: []float64{1, 2, 3, 4, 5},
 	})
+
+	OpenWAMessagesSentTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "noant_openwa_messages_sent_total",
+		Help: "Total OpenWA messages sent",
+	}, []string{"type", "status"})
+
+	OpenWAQueueDepth = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "noant_openwa_queue_depth",
+		Help: "Current OpenWA send queue depth",
+	})
+
+	NoantGroqRateLimited = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "noant_groq_rate_limited",
+		Help: "Total number of Groq API calls rate limited",
+	})
 )

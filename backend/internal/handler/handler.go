@@ -1769,17 +1769,8 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 		return
 	}
 
-	// Ignore non-text messages for now (OpenWA uses "chat" for standard text messages)
-	if msg.Type != "text" && msg.Type != "chat" && msg.Type != "" {
-		h.logger.Info("Ignoring non-text message", "type", msg.Type)
-		return
-	}
-
 	chatID := msg.From
-	content := msg.Body
-
 	customerPhone := service.CleanPhoneNumber(chatID)
-	h.logger.Info("OpenWA incoming message", "from", customerPhone, "body", content)
 
 	integration, err := h.chat.GetWhatsAppIntegrationBySessionID(c.Request.Context(), event.SessionID)
 	if err != nil {
@@ -1825,6 +1816,43 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 	if customerName == "" {
 		customerName = customerPhone
 	}
+
+	// Handle media messages (image, document, audio, video, etc.)
+	if msg.HasMedia && msg.MediaURL != "" {
+		h.logger.Info("Processing incoming media message", "type", msg.Type, "mediaType", msg.MediaType, "from", customerPhone)
+		mediaHandler := h.openwa.GetMediaHandler()
+		filePath, thumbPath, err := mediaHandler.HandleIncomingMedia(c.Request.Context(), event.SessionID, userID, &service.OpenWAMediaData{
+			HasMedia:  true,
+			MediaURL:  msg.MediaURL,
+			MediaType: msg.MediaType,
+			MimeType:  msg.MimeType,
+			FileName:  msg.FileName,
+			FileSize:  msg.FileSize,
+			Width:     msg.Width,
+			Height:    msg.Height,
+			Duration:  msg.Duration,
+		})
+		if err != nil {
+			h.logger.Error("Failed to process incoming media", "error", err)
+		} else {
+			conv, _ := h.chat.EnsureConversation(c.Request.Context(), userID, customerName, customerPhone, "whatsapp", customerAvatar)
+			if conv != nil {
+				_ = h.chat.StoreMediaRecord(c.Request.Context(), conv.ID, userID, event.SessionID, msg)
+			}
+			h.logger.Info("Incoming media stored", "path", filePath, "thumb", thumbPath)
+		}
+		// Don't send AI reply for media-only messages
+		return
+	}
+
+	// Ignore non-text messages that aren't media
+	if msg.Type != "text" && msg.Type != "chat" && msg.Type != "" {
+		h.logger.Info("Ignoring non-text message", "type", msg.Type)
+		return
+	}
+
+	content := msg.Body
+	h.logger.Info("OpenWA incoming message", "from", customerPhone, "body", content)
 
 	// Process through chat service (same flow as web widget)
 	conv, aiResp, err := h.chat.DirectChat(c.Request.Context(), userID, customerName, customerPhone, content, "whatsapp", customerAvatar)
@@ -2148,6 +2176,11 @@ func (h *OpenWAHandler) ConnectWhatsApp(c *gin.Context) {
 		if !webhookOK {
 			h.logger.Error("Background: All webhook URLs failed for session", "sessionID", sid)
 		}
+
+		// Register session with health monitor
+		if mgr := h.openwa.GetSessionManager(); mgr != nil {
+			mgr.RegisterSession(sid, uid)
+		}
 	}(sessionID, userID.(string), req.Phone)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -2245,6 +2278,11 @@ func (h *OpenWAHandler) GetWhatsAppStatus(c *gin.Context) {
 		if ok {
 			h.chat.StoreWhatsAppIntegrationWithStatus(c.Request.Context(), userID.(string), sessionID, "", "connected")
 
+			// Register session with health monitor
+			if mgr := h.openwa.GetSessionManager(); mgr != nil {
+				mgr.RegisterSession(sessionID, userID.(string))
+			}
+
 			// Broadcast real-time status update to frontend
 			if h.wsHub != nil {
 				h.wsHub.BroadcastMessage(WebSocketMessage{
@@ -2336,6 +2374,11 @@ func (h *OpenWAHandler) RefreshWhatsAppQR(c *gin.Context) {
 		if wErr := h.openwa.ConfigureWebhook(nid, webhookURL, h.cfg.OpenWAWebhookSecret); wErr != nil {
 			h.logger.Warn("Background QR Refresh: Webhook config failed, trying localhost fallback", "error", wErr, "sessionID", nid)
 			_ = h.openwa.ConfigureWebhook(nid, "http://localhost:8080/api/v1/openwa/webhook", h.cfg.OpenWAWebhookSecret)
+		}
+
+		// Register session with health monitor
+		if mgr := h.openwa.GetSessionManager(); mgr != nil {
+			mgr.RegisterSession(nid, uid)
 		}
 	}(newID, userID.(string), phone)
 

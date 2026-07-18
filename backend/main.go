@@ -230,6 +230,21 @@ func main() {
 		services.DBManager.CleanupCompletedCampaigns(ctx, dbCleanupCfg.CompletedCampaignsDays)
 		return nil
 	})
+	jobQueue.RegisterHandler("db_cleanup_expired_media", func(ctx context.Context, job *infrastructure.Job) error {
+		services.DBManager.CleanupExpiredMediaMessages(ctx)
+		return nil
+	})
+	jobQueue.RegisterHandler("openwa_media_cleanup", func(ctx context.Context, job *infrastructure.Job) error {
+		if mh := services.OpenWA.GetMediaHandler(); mh != nil {
+			removed, err := mh.CleanupExpiredMedia()
+			if err != nil {
+				logger.Error("OpenWA media cleanup failed", "error", err)
+				return err
+			}
+			logger.Info("OpenWA media cleanup completed", "files_removed", removed)
+		}
+		return nil
+	})
 	jobQueue.RegisterHandler("openwa_webhook_repair", func(ctx context.Context, job *infrastructure.Job) error {
 		integrations, err := repos.Integration.ListByChannel(ctx, "whatsapp")
 		if err != nil {
@@ -269,6 +284,8 @@ func main() {
 	jobQueue.ScheduleRecurring("db_cleanup_orphaned_msgs", map[string]interface{}{}, 1*time.Hour)
 	jobQueue.ScheduleRecurring("db_cleanup_expired_handoffs", map[string]interface{}{}, 30*time.Minute)
 	jobQueue.ScheduleRecurring("openwa_webhook_repair", map[string]interface{}{}, 30*time.Minute)
+	jobQueue.ScheduleRecurring("openwa_media_cleanup", map[string]interface{}{}, 1*time.Hour)
+	jobQueue.ScheduleRecurring("db_cleanup_expired_media", map[string]interface{}{}, 30*time.Minute)
 
 	// Pass wsHub to handlers
 	handlers := handler.NewHandlers(cfg, services, logger, wsHub)
