@@ -53,6 +53,7 @@ type Conversation struct {
 	Unread          int        `json:"unread"`
 }
 
+// Location represents geographic coordinates extracted from a customer's message or device.
 type Location struct {
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
@@ -75,6 +76,8 @@ type Message struct {
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }
 
+// MessageMetadata holds AI-generated metadata attached to a message, including
+// confidence scores, matched QA pair references, and detected language.
 type MessageMetadata struct {
 	Confidence    float64 `json:"confidence,omitempty"`
 	MatchedQAID   *string `json:"matched_qa_id,omitempty"`
@@ -197,6 +200,7 @@ type PaymentPlan struct {
 	IsPopular     bool   `json:"is_popular" db:"is_popular"`
 }
 
+// Subscription represents a user's active Polar subscription and billing period.
 type Subscription struct {
 	ID                 string    `json:"id" db:"id"`
 	UserID             string    `json:"user_id" db:"user_id"`
@@ -208,6 +212,7 @@ type Subscription struct {
 	UpdatedAt          time.Time `json:"updated_at" db:"updated_at"`
 }
 
+// Notification represents an in-app notification for a user (e.g. unknown question, handoff alert).
 type Notification struct {
 	ID        string    `json:"id" db:"id"`
 	UserID    string    `json:"user_id" db:"user_id"`
@@ -219,6 +224,7 @@ type Notification struct {
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
+// WidgetConfig stores the visual and behavioral configuration for a user's embedded chat widget.
 type WidgetConfig struct {
 	ID           string    `json:"id" db:"id"`
 	UserID       string    `json:"user_id" db:"user_id"`
@@ -392,7 +398,7 @@ type PushSubscription struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
-// PlanLimit defines limits per plan
+// PlanLimit defines the resource limits (responses, handoffs, inventory) for each subscription plan tier.
 type PlanLimit struct {
 	PlanID               string `json:"plan_id" db:"plan_id"`
 	MaxResponses         int    `json:"max_responses" db:"max_responses"`

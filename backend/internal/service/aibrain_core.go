@@ -77,6 +77,11 @@ type AIBrain struct {
 	httpClient  *http.Client
 }
 
+// NewAIBrain creates the core AI orchestration engine. It manages intent classification,
+// 3-tier semantic search (threshold 0.65 → category fallback → threshold 0.4),
+// Groq-powered response humanization, sentiment analysis, and circuit breaker
+// protection against API failures. The broadcastFn callback pushes real-time
+// events to the WebSocket hub.
 func NewAIBrain(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, broadcastFn func(convID string, msgType string, data interface{})) *AIBrain {
 	transport := &http.Transport{
 		MaxIdleConns:        20,

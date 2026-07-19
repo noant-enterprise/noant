@@ -38,6 +38,9 @@ type loginAttempt struct {
 	lockedUntil time.Time
 }
 
+// NewAuthService creates an AuthService with JWT generation, login attempt tracking,
+// and background cleanup of expired lockouts. Requires a valid EmailService for
+// verification code delivery.
 func NewAuthService(cfg *config.Config, userRepo *repository.UserRepository, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *AuthService {
 	s := &AuthService{cfg: cfg, userRepo: userRepo, redis: redis, logger: logger, email: email, memRL: infrastructure.NewMemoryRateLimiter(5 * time.Minute), loginAttempts: make(map[string]*loginAttempt)}
 	// Periodic cleanup of expired lockouts
@@ -85,6 +88,9 @@ func validatePasswordStrength(password string) error {
 	return nil
 }
 
+// Register creates a new user account with a 14-day trial, hashed password,
+// and a 6-digit verification code. Returns the created user. Returns an error
+// if the email is already registered or the password doesn't meet strength requirements.
 func (s *AuthService) Register(ctx context.Context, email, password, firstName, lastName, companyName string) (*domain.User, error) {
 	if err := validatePasswordStrength(password); err != nil {
 		return nil, err
@@ -142,6 +148,10 @@ func (s *AuthService) generateRefreshToken() string {
 	return hex.EncodeToString(b)
 }
 
+// Login authenticates a user by email and password. Returns a JWT access token,
+// refresh token, and the authenticated user on success. Returns ErrInvalidCredentials
+// on wrong password, ErrAccountLocked after 5 failed attempts (15-minute lockout),
+// or ErrEmailNotVerified if the account hasn't been verified.
 func (s *AuthService) Login(ctx context.Context, email, password string) (*domain.User, string, string, error) {
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if user == nil {
@@ -196,6 +206,10 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*domai
 	return user, token, refreshToken, nil
 }
 
+// VerifyEmail validates the 6-digit code sent to the user's email. On success,
+// marks the account as verified and returns JWT tokens. Rate-limited to 5 attempts
+// per minute. Returns ErrInvalidVerification on code mismatch or
+// ErrTooManyVerifications when rate-limited.
 func (s *AuthService) VerifyEmail(ctx context.Context, email, code string) (*domain.User, string, string, error) {
 	if !s.memRL.Allow("verify:"+email, 5, time.Minute) {
 		return nil, "", "", apperrors.ErrTooManyVerifications
@@ -242,6 +256,8 @@ func (s *AuthService) VerifyEmail(ctx context.Context, email, code string) (*dom
 	return user, token, refreshToken, nil
 }
 
+// ResendVerification generates a new 6-digit verification code and sends it
+// via email. Returns ErrEmailAlreadyVerified if the account is already verified.
 func (s *AuthService) ResendVerification(ctx context.Context, email string) error {
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {

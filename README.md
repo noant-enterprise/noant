@@ -40,7 +40,7 @@ The logo is modeled after an advanced conversation-loop icon:
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **Backend** | Go 1.22, Gin | HTTP API server, WebSocket hub, business logic |
+| **Backend** | Go 1.23, Gin | HTTP API server, WebSocket hub, business logic |
 | **Frontend** | React 18, TypeScript, Vite | Single-page application dashboard |
 | **AI** | Groq Llama 3.3 (via REST API) | Natural language understanding & response generation |
 | **Database** | TiDB Cloud (MySQL-compatible) | Distributed SQL for conversations, users, training data |
@@ -56,74 +56,98 @@ The logo is modeled after an advanced conversation-loop icon:
 ```
 noant/
 ├── backend/
-│   ├── main.go                    # Entry point, router, middleware wiring
+│   ├── main.go                         # Entry point, router, middleware wiring
 │   ├── config/
-│   │   └── config.go              # Environment-based configuration
-│   ├── migrations/                # SQL migration files (sequenced)
+│   │   └── config.go                   # Environment-based configuration
+│   ├── migrations/                     # SQL migration files (001–017)
 │   ├── internal/
 │   │   ├── domain/
-│   │   │   └── models.go          # Core domain types (User, Conversation, etc.)
+│   │   │   └── models.go              # Core domain types (User, Conversation, etc.)
+│   │   ├── errors/
+│   │   │   └── errors.go              # Typed sentinel errors (ErrEmailNotVerified, etc.)
 │   │   ├── infrastructure/
-│   │   │   ├── db.go              # TiDB connection pool
-│   │   │   ├── redis.go           # Redis client wrapper
-│   │   │   ├── cache.go           # Generic cache layer
-│   │   │   ├── bottleneck.go      # Concurrency limiter
-│   │   │   ├── jobqueue.go        # Background job scheduler
-│   │   │   ├── blacklist.go       # In-memory token blacklist (Redis fallback)
-│   │   │   ├── memory_ratelimit.go# In-memory rate limiter (Redis fallback)
-│   │   │   └── logger.go          # Structured logger
+│   │   │   ├── db.go                  # TiDB connection pool
+│   │   │   ├── redis.go              # Redis client wrapper
+│   │   │   ├── cache.go              # Generic cache layer
+│   │   │   ├── bottleneck.go         # Concurrency limiter
+│   │   │   ├── jobqueue.go           # Background job scheduler
+│   │   │   ├── blacklist.go          # In-memory token blacklist (Redis fallback)
+│   │   │   ├── memory_ratelimit.go   # In-memory rate limiter (Redis fallback)
+│   │   │   └── logger.go             # Structured logger
 │   │   ├── middleware/
-│   │   │   ├── auth.go            # JWT auth, CSP, rate limiting, token blacklist
-│   │   │   ├── csrf.go            # Origin/Referer CSRF validation
-│   │   │   ├── bodylimit.go       # 1 MB request body limit
-│   │   │   ├── sanitize.go        # XSS sanitization middleware
-│   │   │   ├── audit.go           # Request audit logging
-│   │   │   └── websocket_auth.go  # WebSocket origin validation
-│   │   ├── handler/
-│   │   │   ├── handler.go         # Auth, Chat, Integration, Inventory handlers
-│   │   │   ├── websocket.go       # WebSocket hub & connection management
-│   │   │   ├── health.go          # /health endpoint
-│   │   │   ├── notifications.go   # Notification polling
-│   │   │   └── background.go      # Background task endpoints
-│   │   ├── service/
-│   │   │   ├── service.go         # Auth, Chat, AI Brain, Integration services
-│   │   │   ├── ai_sales.go        # Sales mode AI logic
-│   │   │   ├── assistant.go       # Floating assistant chat service
-│   │   │   ├── embedding.go       # Vector search & QA matching
-│   │   │   ├── email.go           # Email sending (SMTP, Resend)
-│   │   │   ├── plan.go            # Plan gating & enforcement
-│   │   │   ├── credit.go          # Credit balance management
-│   │   │   ├── campaign.go        # Broadcast campaign scheduling
-│   │   │   ├── openwa.go          # Open WhatsApp API integration
-│   │   │   ├── openwa_queue.go    # Redis FIFO queue + rate limiter
-│   │   │   ├── openwa_session.go  # Session health monitor + auto-reconnect
-│   │   │   ├── openwa_media.go    # Media download, storage, thumbnails
-│   │   │   ├── openwa_templates.go# HSM templates + interactive messages
-│   │   │   ├── openwa_campaign.go # Campaign broadcast + analytics
-│   │   │   ├── telegram.go        # Telegram bot integration
-│   │   │   ├── dbmanager.go       # Data retention cleanup jobs
-│   │   │   └── notifications.go   # Notification service
-│   │   ├── repository/
-│   │   │   ├── repository.go      # All DB repository implementations
-│   │   │   ├── uow.go             # Unit of Work (transaction wrapper)
-│   │   │   ├── audit.go           # Audit log repository
-│   │   │   ├── notifications.go   # Notification repository
-│   │   │   └── fcm_repository.go  # FCM push notification repository
+│   │   │   ├── auth.go               # JWT auth, CSP, rate limiting, token blacklist
+│   │   │   ├── csrf.go               # Origin/Referer CSRF validation
+│   │   │   ├── bodylimit.go          # 1 MB request body limit
+│   │   │   ├── sanitize.go           # XSS sanitization middleware
+│   │   │   ├── audit.go              # Request audit logging
+│   │   │   └── websocket_auth.go     # WebSocket origin validation
+│   │   ├── handler/                   # HTTP handlers (25 files, split by domain)
+│   │   │   ├── handler.go            # Aggregator registering all routes
+│   │   │   ├── auth_handler.go       # Registration, login, email verification
+│   │   │   ├── chat_handler.go       # Conversations, messages, escalation
+│   │   │   ├── training_handler.go   # QA pairs, categories, unknown questions
+│   │   │   ├── analytics_handler.go  # Dashboard stats, insights
+│   │   │   ├── integration_handler.go# Channel connection management
+│   │   │   ├── settings_handler.go   # User preferences, notifications
+│   │   │   ├── payment_handler.go    # Subscription, billing webhooks
+│   │   │   ├── inventory_handler.go  # Product catalog CRUD
+│   │   │   ├── handoff_handler.go    # Lead handoff management
+│   │   │   ├── credit_handler.go     # Credit balance & purchases
+│   │   │   ├── campaign_handler.go   # Broadcast campaigns
+│   │   │   ├── openwa_handler.go     # WhatsApp webhook & admin
+│   │   │   └── websocket.go          # WebSocket hub & connection management
+│   │   ├── service/                   # Business logic (37 files, split by domain)
+│   │   │   ├── service.go            # Aggregator constructing all services
+│   │   │   ├── aibrain_core.go       # AI orchestration, intent classification, response gen
+│   │   │   ├── auth.go               # Registration, login, JWT, 2FA, password reset
+│   │   │   ├── chat.go               # Conversation CRUD, message handling
+│   │   │   ├── training.go           # QA management, CSV import, unknown questions
+│   │   │   ├── analytics.go          # Stats aggregation, insights generation
+│   │   │   ├── integration.go        # Multi-channel connection logic
+│   │   │   ├── settings.go           # User preferences, widget config
+│   │   │   ├── payment.go            # Subscription, Polar webhooks
+│   │   │   ├── inventory.go          # Product catalog operations
+│   │   │   ├── handoff.go            # Lead handoff & escalation
+│   │   │   ├── credit.go             # Credit balance management
+│   │   │   ├── campaign.go           # Broadcast scheduling & delivery
+│   │   │   ├── embedding.go          # Vector search & semantic QA matching
+│   │   │   ├── openwa.go             # WhatsApp integration core
+│   │   │   ├── openwa_queue.go       # Redis FIFO queue + rate limiter
+│   │   │   ├── openwa_session.go     # Session health monitor + auto-reconnect
+│   │   │   ├── openwa_media.go       # Media download, storage, thumbnails
+│   │   │   ├── openwa_templates.go   # HSM templates + interactive messages
+│   │   │   ├── telegram.go           # Telegram bot integration
+│   │   │   ├── polar.go              # Polar payment gateway client
+│   │   │   ├── email.go              # Email sending (SMTP, Resend)
+│   │   │   └── plan.go               # Plan gating & enforcement
+│   │   ├── repository/                # Data access layer (19 domain files)
+│   │   │   ├── repository.go         # Aggregator constructing all repos
+│   │   │   ├── user_repo.go          # User CRUD
+│   │   │   ├── conversation_repo.go  # Conversation & message queries
+│   │   │   ├── qa_repo.go            # QA pair persistence
+│   │   │   ├── category_repo.go      # Training category CRUD
+│   │   │   └── ...                   # 14 more domain-specific repos
 │   │   └── utils/
-│   │       ├── errors.go          # Standardized error responses
-│   │       └── sanitize.go        # Reflection-based struct sanitizer
-│   └── .env.example               # Environment variable template
+│   │       ├── errors.go             # Standardized ErrorResponse + helpers
+│   │       └── sanitize.go           # Reflection-based struct sanitizer
+│   ├── .golangci.yaml                 # Linter configuration
+│   └── .env.example                   # Environment variable template
 ├── frontend/
 │   ├── src/
-│   │   ├── app/                   # Next.js-style App Router pages
-│   │   ├── components/            # Reusable UI components
-│   │   ├── hooks/                 # Custom React hooks
-│   │   ├── lib/                   # API client, WebSocket manager
-│   │   ├── contexts/              # React context providers
-│   │   └── types/                 # TypeScript type definitions
-│   └── public/                    # Static assets, favicons
-├── brain/                         # Design assets (logos, branding)
-└── README.md
+│   │   ├── app/                       # Page components (auth + dashboard routes)
+│   │   ├── components/                # Reusable UI components (12 subdirectories)
+│   │   ├── hooks/                     # Custom React hooks
+│   │   ├── lib/                       # API client, WebSocket manager, utils
+│   │   ├── contexts/                  # React context providers (Network, Widget, etc.)
+│   │   └── types/                     # TypeScript type definitions
+│   ├── .eslintrc.cjs                  # ESLint configuration
+│   ├── .prettierrc                    # Prettier configuration
+│   ├── vitest.config.ts              # Test runner configuration
+│   └── package.json                   # Dependencies & scripts
+├── .github/workflows/ci.yml          # CI: lint → test → build (5 jobs)
+├── Dockerfile                         # Multi-stage: Node → Go → Alpine
+├── docker-compose.yml                 # Local dev (backend + MySQL + Redis)
+└── README.md                          # This file
 ```
 
 ---
@@ -150,7 +174,7 @@ graph TD
         SANITIZE[XSS Sanitizer]
     end
 
-    subgraph Backend ["Go 1.22 App Service (Gin)"]
+    subgraph Backend ["Go 1.23 App Service (Gin)"]
         H_CHATS[ChatHandler]
         H_INTEG[IntegrationHandler]
         H_TRAIN[TrainingHandler]
@@ -702,8 +726,8 @@ All configuration is via environment variables. Copy `backend/.env.example` to `
 
 ### Prerequisites
 
-- Go 1.22+
-- Node.js 18+ (with npm)
+- Go 1.23+
+- Node.js 22+ (with npm)
 - MySQL client or TiDB Cloud access
 - Redis (Upstash or self-hosted)
 
@@ -749,11 +773,10 @@ The backend serves the compiled React SPA from `./static/` on the same port — 
 ### Docker
 
 ```bash
-# Build
-docker build -f backend/Dockerfile -t noant-backend .
-docker build -f frontend/Dockerfile -t noant-frontend .
+# Multi-stage build (produces optimized Alpine image)
+docker build -t noant .
 
-# Or use docker-compose (if available)
+# Or use docker-compose for local dev (backend + MySQL + Redis)
 docker compose up -d
 ```
 
@@ -762,20 +785,27 @@ docker compose up -d
 ## Testing
 
 ```bash
-# All backend tests
+# All backend tests (198 tests, 6 packages)
 cd backend && go test -count=1 ./...
+
+# With race detection
+go test -count=1 -race ./...
 
 # Specific packages
 go test -count=1 ./internal/infrastructure/...
 go test -count=1 ./internal/middleware/...
+go test -count=1 ./internal/handler/...
 go test -count=1 ./internal/service/...
 go test -count=1 ./internal/utils/...
 
 # Frontend type check
 cd frontend && npx tsc --noEmit
 
-# Frontend tests (if configured)
-npm test
+# Frontend lint
+cd frontend && npm run lint
+
+# Frontend tests
+cd frontend && npm test
 ```
 
 ### Test Coverage Areas
@@ -784,7 +814,8 @@ npm test
 |---|---|---|
 | `infrastructure` | Rate limiter, blacklist | Allow/deny logic, window reset, key isolation, cleanup, TTL expiry |
 | `middleware` | Body limit | Safe method pass-through, oversized rejection, streaming truncation |
-| `service` | AI sales, duplicate reply, WhatsApp identity, Polar | Business logic correctness |
+| `handler` | Request validation | Auth, chat, training DTO binding; error response format; rate limit response |
+| `service` | Auth, AI, circuit breaker | Sentinel errors, verification codes, parseAIMetadata, qaWordOverlap |
 | `utils` | Sanitization | XSS stripping, control char removal, struct traversal, validation regexes |
 
 ---

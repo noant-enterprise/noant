@@ -25,6 +25,9 @@ type TrainingService struct {
 	embeddings *EmbeddingService
 }
 
+// NewTrainingService creates a TrainingService for managing QA pairs, categories,
+// unknown questions, and CSV bulk imports. The embeddings parameter handles vector
+// generation for semantic search indexing.
 func NewTrainingService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, logger *infrastructure.Logger, embeddings *EmbeddingService) *TrainingService {
 	return &TrainingService{cfg: cfg, repos: repos, redis: redis, logger: logger, embeddings: embeddings}
 }

@@ -35,6 +35,9 @@ type replyGateState struct {
 	lastReplyAt time.Time
 }
 
+// NewChatService creates a ChatService that manages conversations, messages,
+// and real-time WebSocket broadcasting. The aiBrain parameter handles AI response
+// generation; openwa and telegram handle outbound channel delivery.
 func NewChatService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, aiBrain *AIBrain, logger *infrastructure.Logger, openwa *OpenWAService, telegram *TelegramService) *ChatService {
 	return &ChatService{
 		cfg:      cfg,
