@@ -49,11 +49,19 @@ func TestBodyLimitMiddleware_AllowsSmallRequest(t *testing.T) {
 	}
 }
 
-func TestBodyLimitMiddleware_TruncatesStreamingBody(t *testing.T) {
+func TestBodyLimitMiddleware_RejectsOversizedStreamingBody(t *testing.T) {
 	body := strings.Repeat("a", MaxRequestBodySize+100)
 	rr := testBodyLimitStreamRequest(t, "POST", "/api", body)
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413 for oversized streaming body, got %d", rr.Code)
+	}
+}
+
+func TestBodyLimitMiddleware_AllowsSmallStreamingBody(t *testing.T) {
+	body := strings.Repeat("a", 100)
+	rr := testBodyLimitStreamRequest(t, "POST", "/api", body)
 	if rr.Code != http.StatusOK {
-		t.Errorf("expected 200 for streaming body exceeding limit (truncated), got %d", rr.Code)
+		t.Errorf("expected 200 for small streaming body, got %d", rr.Code)
 	}
 }
 

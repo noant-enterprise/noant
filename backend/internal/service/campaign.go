@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"noant/config"
+	apperrors "noant/internal/errors"
 	"noant/internal/domain"
 	"noant/internal/infrastructure"
 	"noant/internal/repository"
@@ -86,7 +87,7 @@ func (s *CampaignService) Cancel(ctx context.Context, id string, userID string) 
 			return s.repos.Campaign.UpdateStatus(ctx, id, "cancelled")
 		}
 	}
-	return fmt.Errorf("campaign not found or access denied")
+	return apperrors.ErrCampaign
 }
 
 // ProcessStarting is a background job that finds campaigns starting today and activates them

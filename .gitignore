@@ -20,3 +20,17 @@ task_progress.md
 test_all_endpoints_v2.py
 test_audit.py
 test_*.py
+
+# Coverage
+coverage.out
+*.cover
+
+# IDE
+.vscode/
+.idea/
+
+# Vendor
+vendor/
+
+# Windows temp files
+*.exe~

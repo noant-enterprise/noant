@@ -27,7 +27,6 @@ import UnknownQuestionsPage from '@/app/(dashboard)/teach/unknown/page'
 import LandingPage from '@/app/landing/page'
 import { useEffect } from 'react'
 import { OfflineBanner } from '@/components/OfflineBanner'
-import { NetworkProvider } from '@/contexts/NetworkContext'
 import { refreshToken } from '@/lib/auth'
 import { PwaInstallPrompt } from '@/components/ui/PwaInstallPrompt'
 
@@ -126,7 +125,9 @@ const router = createBrowserRouter([
           <ProtectedRoute>
             <WidgetConfigProvider>
               <SidebarAlertsProvider>
-                <DashboardLayout />
+                <RouteErrorBoundary pageName="Dashboard">
+                  <DashboardLayout />
+                </RouteErrorBoundary>
               </SidebarAlertsProvider>
             </WidgetConfigProvider>
           </ProtectedRoute>
@@ -159,13 +160,12 @@ const router = createBrowserRouter([
 import { WidgetConfigProvider } from '@/contexts/WidgetConfigContext';
 import { SidebarAlertsProvider } from '@/contexts/SidebarAlertsContext';
 import { ModalProvider } from '@/contexts/ModalContext';
+import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
 
 export default function App() {
   return (
-    <NetworkProvider>
-      <ModalProvider>
-        <RouterProvider router={router} />
-      </ModalProvider>
-    </NetworkProvider>
+    <ModalProvider>
+      <RouterProvider router={router} />
+    </ModalProvider>
   );
 }

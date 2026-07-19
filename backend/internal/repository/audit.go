@@ -72,3 +72,12 @@ func (r *AuditRepository) ListByUser(ctx context.Context, userID string, limit i
 	}
 	return logs, nil
 }
+
+func (r *AuditRepository) CleanupOld(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

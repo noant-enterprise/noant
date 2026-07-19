@@ -208,3 +208,12 @@ func (r *UserRepository) UpdateOnboardingStatus(ctx context.Context, userID stri
 		WHERE id = ?`, status, industry, userID)
 	return err
 }
+
+func (r *NotificationRepository) CleanupOld(ctx context.Context, days int) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		`DELETE FROM notifications WHERE created_at < NOW() - INTERVAL ? DAY`, days)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

@@ -1,0 +1,35 @@
+run:
+  timeout: 5m
+  skip-files:
+    - ".*_test\\.go$"
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - durationcheck
+    - exportloopref
+    - gocritic
+    - misspell
+    - prealloc
+
+linters-settings:
+  errcheck:
+    check-blank: true
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+  misspell:
+    locale: US
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0

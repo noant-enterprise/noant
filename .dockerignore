@@ -1,0 +1,13 @@
+node_modules
+frontend/node_modules
+.git
+.env
+dist
+build
+*.log
+backend/bin
+*.exe
+.gocache
+.vscode
+.idea
+coverage.out
