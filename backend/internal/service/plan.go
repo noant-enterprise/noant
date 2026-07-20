@@ -79,6 +79,9 @@ func (s *PlanService) GetLimits(planID string) domain.PlanLimit {
 func (s *PlanService) CanGenerateResponse(ctx context.Context, userID, planID string) (canGenerate bool, reason string, err error) {
 	switch planID {
 	case "free":
+		if s.redis == nil {
+			return true, "", nil
+		}
 		// Check weekly free counter in Redis
 		key := fmt.Sprintf("free_weekly:%s", userID)
 		count, err := s.redis.GetInt(ctx, key)
@@ -181,6 +184,9 @@ func (s *PlanService) GetLimitsByUserID(ctx context.Context, userID string) (dom
 
 // GetFreeWeeklyUsage returns the current weekly usage count for free users
 func (s *PlanService) GetFreeWeeklyUsage(ctx context.Context, userID string) (int, error) {
+	if s.redis == nil {
+		return 0, nil
+	}
 	key := fmt.Sprintf("free_weekly:%s", userID)
 	count, err := s.redis.GetInt(ctx, key)
 	if err != nil {

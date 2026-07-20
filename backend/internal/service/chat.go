@@ -522,6 +522,9 @@ func (s *ChatService) RateConversation(ctx context.Context, userID, conversation
 	data, _ := json.Marshal(rating)
 	infrastructure.CSATScore.Observe(float64(score))
 	s.logger.Info("CSAT rating recorded", "conversation_id", conversationID, "score", score, "feedback", feedback)
+	if s.redis == nil {
+		return nil
+	}
 	ttl := 90 * 24 * time.Hour
 	return s.redis.Set(ctx, fmt.Sprintf("conv:%s:rating", conversationID), string(data), ttl)
 }
