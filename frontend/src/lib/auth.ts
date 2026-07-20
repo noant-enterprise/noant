@@ -1,15 +1,18 @@
 import { api } from './api.ts'
 import type { AuthResponse, LoginRequest, SignupRequest, User } from '@/types'
 
+let hasFailedRefresh = false
+
 export function getToken(): string | null {
   return null
 }
 
 export function setToken(_token: string, _refresh?: string): void {
-  // Sessions are now handled with httpOnly cookies.
+  hasFailedRefresh = false
 }
 
 export function clearAuth(): void {
+  hasFailedRefresh = true
   localStorage.removeItem('noant_token')
   localStorage.removeItem('noant_refresh')
   import('./websocket').then(({ ws }) => ws.disconnect()).catch(() => undefined)
@@ -53,10 +56,13 @@ export async function getCurrentUser(): Promise<User> {
 }
 
 export async function refreshToken(): Promise<string | null> {
+  if (hasFailedRefresh) return null
   try {
     await api.post<{ message: string }>('/auth/refresh', {})
+    hasFailedRefresh = false
     return 'refreshed'
   } catch {
+    hasFailedRefresh = true
     clearAuth()
     return null
   }

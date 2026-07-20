@@ -9,6 +9,7 @@ class WebSocketManager {
   private url = ''
   private shouldReconnect = false
   private retryCount = 0
+  private maxRetries = 15
   private maxRetryDelay = 30000
   private initialRetryDelay = 1000
 
@@ -26,6 +27,10 @@ class WebSocketManager {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
+    }
+
+    if (this.retryCount >= this.maxRetries) {
+      return
     }
 
     this.shouldReconnect = true
@@ -52,7 +57,6 @@ class WebSocketManager {
       this.ws = new WebSocket(this.url)
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected to', this.url)
         this.retryCount = 0
       }
 
@@ -68,36 +72,35 @@ class WebSocketManager {
             data: raw.data || raw.Data,
           }
           this.handlers.forEach((handler) => handler(msg))
-        } catch (err) {
-          console.error('WebSocket message parse error:', err)
+        } catch {
+          // ignore parse errors
         }
       }
 
       this.ws.onclose = () => {
         this.ws = null
-        if (this.shouldReconnect) {
+        if (this.shouldReconnect && this.retryCount < this.maxRetries) {
+          this.retryCount++
           const delay = Math.min(
-            this.initialRetryDelay * Math.pow(2, this.retryCount),
+            this.initialRetryDelay * Math.pow(2, this.retryCount - 1),
             this.maxRetryDelay
           )
-          this.retryCount++
           this.reconnectTimer = setTimeout(() => {
             this.connect()
           }, delay)
         }
       }
 
-      this.ws.onerror = (err) => {
-        console.error('WebSocket error:', err)
+      this.ws.onerror = () => {
         this.ws?.close()
       }
-    } catch (err) {
-      if (this.shouldReconnect) {
+    } catch {
+      if (this.shouldReconnect && this.retryCount < this.maxRetries) {
+        this.retryCount++
         const delay = Math.min(
-          this.initialRetryDelay * Math.pow(2, this.retryCount),
+          this.initialRetryDelay * Math.pow(2, this.retryCount - 1),
           this.maxRetryDelay
         )
-        this.retryCount++
         this.reconnectTimer = setTimeout(() => this.connect(), delay)
       }
     }
@@ -106,6 +109,10 @@ class WebSocketManager {
   onMessage(handler: MessageHandler): () => void {
     this.handlers.add(handler)
     return () => this.handlers.delete(handler)
+  }
+
+  reset(): void {
+    this.retryCount = 0
   }
 
   disconnect(): void {
