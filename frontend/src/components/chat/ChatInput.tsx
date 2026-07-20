@@ -8,11 +8,9 @@ interface ChatInputProps {
   onSend: (message: string) => void
   onTakeover: () => void
   disabled?: boolean
-  typing?: boolean
-  typingText?: string
 }
 
-export function ChatInput({ onSend, onTakeover, disabled, typing, typingText }: ChatInputProps) {
+export function ChatInput({ onSend, onTakeover, disabled }: ChatInputProps) {
   const [text, setText] = useState('')
   const [showEmoji, setShowEmoji] = useState(false)
   const emojiRef = useRef<HTMLDivElement>(null)
@@ -40,17 +38,6 @@ export function ChatInput({ onSend, onTakeover, disabled, typing, typingText }: 
 
   return (
     <div className="border-t border-default bg-surface shrink-0">
-      {typing && (
-        <div className="px-4 py-2 text-[11px] lg:text-[10px] text-tertiary flex items-center gap-2 animate-fade-in">
-          <span className="flex gap-1">
-            <span className="w-1 h-1 bg-noant-sky rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-            <span className="w-1 h-1 bg-noant-sky rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-            <span className="w-1 h-1 bg-noant-sky rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-          </span>
-          {typingText || 'Customer is typing...'}
-        </div>
-      )}
-      
       <form onSubmit={handleSubmit} className="pt-3 px-3 flex gap-2 items-end">
         <input
           type="text"

@@ -474,9 +474,7 @@ export default function ChatsPage() {
                   {activeConv.customer_name === 'Noant AI' && (
                     <span className="text-noant-sky ml-1">● AI</span>
                   )}
-                  {pendingAI.has(activeId || '') && (
-                    <span className="text-noant-sky ml-1 animate-pulse">● typing...</span>
-                  )}
+
                 </p>
               </div>
               <button
@@ -503,8 +501,7 @@ export default function ChatsPage() {
               onSend={handleSend}
               onTakeover={handleTakeover}
               disabled={!activeId || sending}
-              typing={typing || pendingAI.has(activeId || '')}
-              typingText={pendingAI.has(activeId || '') ? 'Noant AI is thinking...' : 'Customer is typing...'}
+
             />
           </>
         ) : (

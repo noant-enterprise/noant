@@ -160,7 +160,7 @@ export default function ChatsPage() {
           <ChatMessages messages={allMessages} />
         </div>
 
-        <ChatInput onSend={handleSend} onTakeover={handleTakeover} disabled={!activeId || sending} typing={typing} />
+        <ChatInput onSend={handleSend} onTakeover={handleTakeover} disabled={!activeId || sending} />
       </div>
 
       <CustomerInfo
