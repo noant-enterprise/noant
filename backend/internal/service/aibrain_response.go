@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"noant/internal/domain"
@@ -197,10 +198,35 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID, userQuer
 		infrastructure.AICallsTotal.WithLabelValues("llama-3.3-70b-versatile", status).Inc()
 		infrastructure.AIDuration.WithLabelValues("llama-3.3-70b-versatile").Observe(duration)
 	}()
-	conv, err := b.repos.Conversation.GetByID(ctx, conversationID)
-	if err != nil {
-		b.logger.Warn("Failed to get conversation", "error", err)
+	// Parallel DB lookups: conversation + history (no dependencies between them)
+	type convResult struct {
+		conv *domain.Conversation
+		err  error
 	}
+	type historyResult struct {
+		turns []MessageTurn
+	}
+
+	var convRes convResult
+	var histRes historyResult
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		convRes.conv, convRes.err = b.repos.Conversation.GetByID(ctx, conversationID)
+	}()
+	go func() {
+		defer wg.Done()
+		histRes.turns = b.recentConversationTurns(ctx, conversationID, userQuery, 8)
+	}()
+	wg.Wait()
+
+	conv := convRes.conv
+	if convRes.err != nil {
+		b.logger.Warn("Failed to get conversation", "error", convRes.err)
+	}
+	recentTurns := histRes.turns
+
 	userID := ""
 	var user *domain.User
 	if conv != nil {
@@ -214,7 +240,6 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID, userQuer
 		channel = conv.Channel
 	}
 	b.logger.Info("AI request started", "traceID", traceID, "userID", userID, "query", userQuery, "channel", channel)
-	recentTurns := b.recentConversationTurns(ctx, conversationID, userQuery, 8)
 
 	finalize := func(resp *AIResponse) (*AIResponse, error) {
 		if resp != nil {
@@ -228,6 +253,7 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID, userQuer
 	// Plan limit check (before intent classification)
 	if userID != "" {
 		if user == nil {
+			var err error
 			user, err = b.repos.User.GetByID(ctx, userID)
 			if err != nil {
 				b.logger.Warn("Failed to get user for plan check", "error", err)
@@ -290,9 +316,20 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID, userQuer
 		return resp, err
 	}
 
-	// Default: support mode — search training data AND inventory
-	qaPairs := b.searchKnowledgeBase(ctx, userID, userQuery, 6)
-	inventory := b.searchInventoryContext(ctx, userID, userQuery, 3)
+	// Default: support mode — search training data AND inventory in parallel
+	var qaPairs []domain.QAPair
+	var inventory []domain.InventoryItem
+	var searchWg sync.WaitGroup
+	searchWg.Add(2)
+	go func() {
+		defer searchWg.Done()
+		qaPairs = b.searchKnowledgeBase(ctx, userID, userQuery, 6)
+	}()
+	go func() {
+		defer searchWg.Done()
+		inventory = b.searchInventoryContext(ctx, userID, userQuery, 3)
+	}()
+	searchWg.Wait()
 
 	b.logger.Info("Search completed", "traceID", traceID, "qaMatches", len(qaPairs), "inventoryMatches", len(inventory))
 
@@ -429,6 +466,241 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID, userQuer
 	}
 
 	b.logger.Info("AI request completed (escalated)", "traceID", traceID, "duration", time.Since(startTime), "similarFound", len(similar))
+	return finalize(&AIResponse{
+		Content:    escalationMsg,
+		Confidence: 0.3,
+		Escalate:   true,
+		Reason:     "No matching training data or inventory",
+	})
+}
+
+// GenerateStreamingResponse is like GenerateResponse but streams the final Groq call
+// via onChunk. The non-streaming parts (intent classification, search) still run
+// synchronously, but the final humanization/response generation streams tokens
+// as they arrive.
+func (b *AIBrain) GenerateStreamingResponse(ctx context.Context, conversationID, userQuery, language string, onChunk func(chunk string)) (aiResp *AIResponse, aiErr error) {
+	startTime := time.Now()
+	status := "success"
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		switch {
+		case aiErr != nil:
+			status = "error"
+		case aiResp != nil && aiResp.Escalate:
+			status = "escalated"
+		case aiResp != nil && aiResp.Source == "plan_limit":
+			status = "plan_limited"
+		case aiResp != nil && aiResp.Source == "greeting":
+			status = "greeting"
+		}
+		infrastructure.AICallsTotal.WithLabelValues("llama-3.3-70b-versatile", status).Inc()
+		infrastructure.AIDuration.WithLabelValues("llama-3.3-70b-versatile").Observe(duration)
+	}()
+
+	// Parallel DB lookups: conversation + history
+	type convResult struct {
+		conv *domain.Conversation
+		err  error
+	}
+	type historyResult struct {
+		turns []MessageTurn
+	}
+	var convRes convResult
+	var histRes historyResult
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		convRes.conv, convRes.err = b.repos.Conversation.GetByID(ctx, conversationID)
+	}()
+	go func() {
+		defer wg.Done()
+		histRes.turns = b.recentConversationTurns(ctx, conversationID, userQuery, 8)
+	}()
+	wg.Wait()
+
+	conv := convRes.conv
+	if convRes.err != nil {
+		b.logger.Warn("Failed to get conversation", "error", convRes.err)
+	}
+	recentTurns := histRes.turns
+
+	userID := ""
+	var user *domain.User
+	if conv != nil {
+		userID = conv.UserID
+	}
+
+	traceID := fmt.Sprintf("trace_%d", time.Now().UnixNano())
+	channel := ""
+	if conv != nil {
+		channel = conv.Channel
+	}
+	b.logger.Info("AI stream request started", "traceID", traceID, "userID", userID, "query", userQuery, "channel", channel)
+
+	finalize := func(resp *AIResponse) (*AIResponse, error) {
+		if resp != nil {
+			if err := b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content); err != nil {
+				b.logger.Warn("Failed to store conversation turn", "error", err)
+			}
+		}
+		return resp, nil
+	}
+
+	// Plan limit check
+	if userID != "" {
+		if user == nil {
+			var err error
+			user, err = b.repos.User.GetByID(ctx, userID)
+			if err != nil {
+				b.logger.Warn("Failed to get user for plan check", "error", err)
+			}
+		}
+		if user != nil {
+			canRespond, reason, err := b.planSvc.CanGenerateResponse(ctx, userID, user.PlanID)
+			if err != nil {
+				b.logger.Warn("Failed to check plan limit", "error", err)
+			}
+			if !canRespond {
+				return finalize(&AIResponse{Content: reason, Source: "plan_limit"})
+			}
+		}
+	}
+
+	groqLimited := !b.allowGroqCall(ctx, userID)
+	if groqLimited {
+		b.logger.Warn("Groq rate limited for user, using local-only mode", "traceID", traceID, "userID", userID)
+	}
+
+	if b.isGreetingQuery(userQuery) {
+		b.logger.Info("AI stream request completed (greeting)", "traceID", traceID, "duration", time.Since(startTime))
+		return finalize(&AIResponse{
+			Content:     "Hi! How can I help you today?",
+			Confidence:  0.98,
+			Sentiment:   "neutral",
+			Language:    "en",
+			Suggestions: []string{"I want to buy something", "I need help", "Tell me about your products"},
+		})
+	}
+
+	// Intent classification (use keyword fast-path only for streaming — skip Groq call to save latency)
+	intent := b.keywordIntent(userQuery)
+	b.logger.Info("Intent classified (stream keyword fast-path)", "traceID", traceID, "intent", intent)
+
+	if intent == "handoff" {
+		resp, err := b.handleHandoff(ctx, conversationID, userID, userQuery)
+		b.logger.Info("AI stream request completed (handoff)", "traceID", traceID, "duration", time.Since(startTime))
+		if err == nil && resp != nil {
+			_ = b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content)
+		}
+		return resp, err
+	}
+
+	if intent == "sales" {
+		resp, err := b.handleSalesMode(ctx, userID, conv, userQuery, language, recentTurns)
+		b.logger.Info("AI stream request completed (sales)", "traceID", traceID, "duration", time.Since(startTime))
+		if err == nil && resp != nil {
+			_ = b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content)
+		}
+		return resp, err
+	}
+
+	// Support mode — parallel search
+	var qaPairs []domain.QAPair
+	var inventory []domain.InventoryItem
+	var searchWg sync.WaitGroup
+	searchWg.Add(2)
+	go func() {
+		defer searchWg.Done()
+		qaPairs = b.searchKnowledgeBase(ctx, userID, userQuery, 6)
+	}()
+	go func() {
+		defer searchWg.Done()
+		inventory = b.searchInventoryContext(ctx, userID, userQuery, 3)
+	}()
+	searchWg.Wait()
+
+	b.logger.Info("Search completed (stream)", "traceID", traceID, "qaMatches", len(qaPairs), "inventoryMatches", len(inventory))
+
+	// Try local answer first
+	local := b.localPlatformAnswer(userID, userQuery, qaPairs, inventory)
+	if local != nil {
+		if !groqLimited {
+			// Stream the humanization via Groq
+			humanized, err := b.humanizeStreaming(ctx, local.Content, userQuery, qaPairs, inventory, recentTurns, onChunk)
+			if err == nil && humanized != "" {
+				cleanContent, sentiment, detectedLang, suggestions := parseAIMetadata(humanized)
+				confidence := local.Confidence * 0.95
+				b.logger.Info("AI stream request completed (humanized)", "traceID", traceID, "duration", time.Since(startTime))
+				return finalize(&AIResponse{
+					Content:     cleanContent,
+					Confidence:  confidence,
+					Source:      local.Source,
+					Sentiment:   sentiment,
+					Language:    detectedLang,
+					Suggestions: suggestions,
+					MatchedQA:   local.MatchedQA,
+				})
+			}
+		}
+		validatedContent, validatedConf := b.validateResponse(ctx, userID, local.Content, qaPairs, inventory)
+		local.Content = validatedContent
+		local.Confidence = validatedConf
+		b.logger.Info("AI stream request completed (local fallback)", "traceID", traceID, "duration", time.Since(startTime))
+		return finalize(local)
+	}
+
+	// Escalate
+	similar := b.findSimilarForUnknown(ctx, userID, userQuery)
+	escChannel := ""
+	if conv != nil {
+		escChannel = conv.Channel
+	}
+	normalizedQuery := strings.ToLower(strings.TrimSpace(userQuery))
+	alreadyPending, checkErr := b.repos.UnknownQ.ExistsPending(ctx, userID, normalizedQuery)
+	if checkErr != nil {
+		b.logger.Error("Failed to check existing unknown question", "error", checkErr)
+	}
+	if !alreadyPending {
+		_ = b.repos.UnknownQ.Create(ctx, &domain.UnknownQuestion{
+			UserID:         userID,
+			Question:       normalizedQuery,
+			ConversationID: conversationID,
+			Channel:        escChannel,
+			Status:         "pending",
+		})
+	}
+
+	escalationMsg := "I don't have that information yet, but I'll escalate this to a human agent who can help you."
+	if len(similar) > 0 {
+		escalationMsg += "\n\nDid you mean:"
+		for i := range similar {
+			if i >= 3 {
+				break
+			}
+			escalationMsg += "\n• " + similar[i].Question
+		}
+	}
+
+	notif := &domain.Notification{
+		UserID: userID,
+		Type:   "unknown_question",
+		Title:  "New Unknown Question",
+		Body:   fmt.Sprintf("AI could not answer: %q", userQuery),
+		Link:   "/teach?tab=unknown",
+		IsRead: false,
+	}
+	_ = b.repos.Notification.Create(ctx, notif)
+	if b.broadcastFn != nil {
+		b.broadcastFn(conversationID, "unknown_question", map[string]interface{}{
+			"question":        userQuery,
+			"conversation_id": conversationID,
+			"channel":         escChannel,
+			"created_at":      time.Now(),
+		})
+	}
+
+	b.logger.Info("AI stream request completed (escalated)", "traceID", traceID, "duration", time.Since(startTime))
 	return finalize(&AIResponse{
 		Content:    escalationMsg,
 		Confidence: 0.3,

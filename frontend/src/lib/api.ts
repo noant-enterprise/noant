@@ -13,6 +13,62 @@ export const api = {
   async post<T>(endpoint: string, body?: unknown, isFormData?: boolean): Promise<T> { return request<T>('POST', endpoint, body, isFormData); },
   async put<T>(endpoint: string, body?: unknown): Promise<T> { return request<T>('PUT', endpoint, body); },
   async delete<T>(endpoint: string): Promise<T> { return request<T>('DELETE', endpoint); },
+  streamPost(endpoint: string, body: unknown, onChunk: (chunk: string) => void, onDone?: (meta?: Record<string, unknown>) => void, onError?: (err: Error) => void): AbortController {
+    const controller = new AbortController();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+    fetch(`${API_BASE}${endpoint}`, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        onError?.(new APIError(data.error || 'Stream request failed', res.status));
+        return;
+      }
+      const reader = res.body?.getReader();
+      if (!reader) { onError?.(new Error('No response body')); return; }
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') {
+            onDone?.();
+            return;
+          }
+          if (data === '[DONE]') { onDone?.(); return; }
+          if (data.startsWith('[DONE]')) {
+            const metaStr = data.slice(7);
+            try { onDone?.(JSON.parse(metaStr)); } catch { onDone?.(); }
+            return;
+          }
+          if (data === '[ERROR]') {
+            onError?.(new Error('Server error during streaming'));
+            return;
+          }
+          onChunk(data);
+        }
+      }
+      onDone?.();
+    }).catch((err) => {
+      if (err.name !== 'AbortError') {
+        onError?.(err);
+      }
+    });
+
+    return controller;
+  },
 };
 
 export interface APIClient {

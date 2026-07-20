@@ -298,6 +298,7 @@ func main() {
 		chats.GET("/conversations", handlers.Chat.ListConversations)
 		chats.GET("/conversations/:id", handlers.Chat.GetConversation)
 		chats.POST("/conversations/:id/messages", handlers.Chat.SendMessage)
+		chats.POST("/conversations/:id/stream", handlers.Chat.StreamMessage)
 		chats.PUT("/conversations/:id/takeover", handlers.Chat.HumanTakeover)
 		chats.POST("/conversations/:id/escalate", handlers.Chat.Escalate)
 		chats.POST("/conversations/:id/rate", handlers.Chat.RateConversation)

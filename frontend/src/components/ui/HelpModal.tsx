@@ -20,7 +20,6 @@ export default function ChatsPage() {
 
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([])
   const [sending, setSending] = useState(false)
-  const [typing, setTyping] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
 
   useEffect(() => {
@@ -40,10 +39,6 @@ export default function ChatsPage() {
 
   useEffect(() => {
     const unsub = subscribe((msg: WSMessage) => {
-      if (msg.type === 'typing' && msg.conversation_id === activeId) {
-        setTyping(true)
-        setTimeout(() => setTyping(false), 3000)
-      }
       if (msg.type === 'new_message' && msg.conversation_id === activeId) {
         getMessages(`/chats/conversations/${activeId}`)
       }

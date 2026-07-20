@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -233,6 +235,116 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Message sent"})
+}
+
+func (h *ChatHandler) StreamMessage(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		Content string `json:"content" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, err.Error())
+		return
+	}
+	utils.SanitizeStruct(&req)
+
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	// Store customer message
+	_, err := h.service.SendMessage(c.Request.Context(), userID.(string), id, "customer", req.Content)
+	if err != nil {
+		h.logger.Error("Failed to store message", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	// Broadcast typing indicator
+	if h.wsHub != nil {
+		h.wsHub.BroadcastMessage(WebSocketMessage{
+			ConversationID: id,
+			Type:           "typing_indicator",
+			Data: map[string]interface{}{
+				"conversation_id": id,
+				"is_typing":       true,
+			},
+		})
+	}
+
+	// Set SSE headers
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Streaming not supported"})
+		return
+	}
+
+	// Stream AI response
+	var fullContent string
+	aiMsg, err := h.service.GenerateAIStreamingResponse(c.Request.Context(), id, req.Content, func(chunk string) {
+		fullContent += chunk
+		fmt.Fprintf(c.Writer, "data: %s\n\n", chunk)
+		flusher.Flush()
+	})
+
+	// Stop typing indicator
+	if h.wsHub != nil {
+		h.wsHub.BroadcastMessage(WebSocketMessage{
+			ConversationID: id,
+			Type:           "typing_indicator",
+			Data: map[string]interface{}{
+				"conversation_id": id,
+				"is_typing":       false,
+			},
+		})
+	}
+
+	if err != nil {
+		h.logger.Error("AI streaming failed", "error", err)
+		fmt.Fprintf(c.Writer, "data: [ERROR]\n\n")
+		flusher.Flush()
+		return
+	}
+
+	// Send completion signal with message metadata
+	if aiMsg != nil {
+		metaJSON, _ := json.Marshal(map[string]interface{}{
+			"id":         aiMsg.ID,
+			"created_at": aiMsg.CreatedAt,
+			"confidence": aiMsg.Confidence,
+			"source":     aiMsg.Source,
+		})
+		fmt.Fprintf(c.Writer, "data: [DONE]%s\n\n", metaJSON)
+	} else {
+		fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
+	}
+	flusher.Flush()
+
+	// Broadcast full message to WebSocket for other clients
+	if h.wsHub != nil && aiMsg != nil {
+		h.wsHub.BroadcastMessage(WebSocketMessage{
+			ConversationID: id,
+			Type:           "new_message",
+			Data: map[string]interface{}{
+				"id":              aiMsg.ID,
+				"conversation_id": aiMsg.ConversationID,
+				"content":         aiMsg.Content,
+				"role":            aiMsg.Role,
+				"created_at":      aiMsg.CreatedAt,
+				"metadata":        aiMsg.Metadata,
+				"confidence":      aiMsg.Confidence,
+				"source":          aiMsg.Source,
+			},
+		})
+	}
 }
 
 func (h *ChatHandler) HumanTakeover(c *gin.Context) {

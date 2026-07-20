@@ -35,7 +35,6 @@ export default function ChatsPage() {
 
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([])
   const [sending, setSending] = useState(false)
-  const [typing, setTyping] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
   const [page, setPage] = useState(1)
   const [allConversations, setAllConversations] = useState<Conversation[]>([])
@@ -105,7 +104,6 @@ export default function ChatsPage() {
           next.delete(activeId)
           return next
         })
-        setTyping(false)
       }
     }
   }, [activeMessages, activeId, pendingAI])
@@ -167,10 +165,6 @@ export default function ChatsPage() {
   // Real-time WebSocket sync (optimistic updates in place, with silent background sync)
   useEffect(() => {
     const unsub = subscribe((msg: WSMessage) => {
-      if (msg.type === 'typing' && msg.conversation_id === activeId) {
-        setTyping(true)
-        setTimeout(() => setTyping(false), 3000)
-      }
       if (msg.type === 'typing_indicator' && msg.conversation_id === activeId) {
         const isTyping = msg.data?.is_typing ?? false
         if (isTyping) {
@@ -185,7 +179,6 @@ export default function ChatsPage() {
             next.delete(activeId)
             return next
           })
-          setTyping(false)
         }
       }
       if (msg.type === 'new_message') {
@@ -206,14 +199,13 @@ export default function ChatsPage() {
             return [...prev, newMsg]
           })
           
-          // Clear pending AI and typing only if the incoming message is from the AI!
+          // Clear pending AI only if the incoming message is from the AI!
           if (newMsg.sender_type === 'ai') {
             setPendingAI(prev => {
               const next = new Set(prev)
               next.delete(activeId)
               return next
             })
-            setTyping(false)
           }
         }
 
@@ -282,33 +274,58 @@ export default function ChatsPage() {
     // Show immediately
     setOptimisticMessages(prev => [...prev, optimisticMsg])
     setSending(true)
-    
-
 
     // Optimistically update conversation's last message and move it to top in sidebar
     setAllConversations(prev =>
       prev.map(c => c.id === activeId ? { ...c, last_message: text, updated_at: new Date().toISOString() } : c)
     )
 
+    // Create a streaming AI message placeholder
+    const aiTempId = `ai-temp-${Date.now()}`
+    const aiPlaceholder: Message = {
+      id: aiTempId,
+      conversation_id: activeId,
+      content: '',
+      sender_type: 'ai',
+      role: 'ai',
+      created_at: new Date().toISOString(),
+    }
+    setOptimisticMessages(prev => [...prev, aiPlaceholder])
+
+    let streamedContent = ''
+
     try {
-      await post(`/chats/conversations/${activeId}/messages`, { content: text })
-
-      // Pull fresh page 1 messages to sync
-      const syncRes = await api.get<any>(`/chats/conversations/${activeId}?limit=30&page=1`)
-      setActiveMessages(syncRes.messages || [])
-      setMsgHasMore(syncRes.has_more || false)
-      setMsgPage(1)
-
-
+      api.streamPost(
+        `/chats/conversations/${activeId}/stream`,
+        { content: text },
+        (chunk) => {
+          streamedContent += chunk
+          setOptimisticMessages(prev =>
+            prev.map(m => m.id === aiTempId ? { ...m, content: streamedContent } : m)
+          )
+        },
+        (_meta) => {
+          // Done — sync with server to get the real message
+          setSending(false)
+          api.get<any>(`/chats/conversations/${activeId}?limit=30&page=1`).then(syncRes => {
+            setActiveMessages(syncRes.messages || [])
+            setMsgHasMore(syncRes.has_more || false)
+            setMsgPage(1)
+          }).catch(() => {})
+        },
+        (err) => {
+          console.error('Stream failed:', err)
+          toast('Failed to get AI response', 'error')
+          setOptimisticMessages(prev => prev.filter(m => m.id !== aiTempId))
+          setSending(false)
+        }
+      )
     } catch (err) {
       console.error('Send failed:', err)
       toast('Failed to send message', 'error')
       setOptimisticMessages(prev => prev.map(m =>
         m.id === tempId ? { ...m, content: `${m.content} (failed)` } : m
       ))
-
-      setTyping(false)
-    } finally {
       setSending(false)
     }
   }

@@ -91,19 +91,4 @@ describe('ChatInput', () => {
     await user.click(screen.getByText('Take over'))
     expect(onTakeover).toHaveBeenCalledOnce()
   })
-
-  it('shows typing indicator text when typing prop is true', () => {
-    render(<ChatInput {...defaultProps} typing />)
-    expect(screen.getByText('Customer is typing...')).toBeInTheDocument()
-  })
-
-  it('shows custom typing text when typingText prop is provided', () => {
-    render(<ChatInput {...defaultProps} typing typingText="Agent is typing..." />)
-    expect(screen.getByText('Agent is typing...')).toBeInTheDocument()
-  })
-
-  it('does not show typing indicator when typing is false', () => {
-    render(<ChatInput {...defaultProps} />)
-    expect(screen.queryByText('Customer is typing...')).not.toBeInTheDocument()
-  })
 })

@@ -323,3 +323,54 @@ RULES:
 	}
 	return strings.TrimSpace(humanized), nil
 }
+
+// humanizeStreaming is like humanizeResponse but streams the Groq response via onChunk.
+func (b *AIBrain) humanizeStreaming(ctx context.Context, answer, query string, qaPairs []domain.QAPair, inventory []domain.InventoryItem, history []MessageTurn, onChunk func(chunk string)) (string, error) {
+	var contextBuf strings.Builder
+	if len(qaPairs) > 0 {
+		contextBuf.WriteString("Relevant Q&A:\n")
+		for _, qa := range qaPairs {
+			contextBuf.WriteString(fmt.Sprintf("Q: %s\nA: %s\n\n", qa.Question, qa.Answer))
+		}
+	}
+	if len(inventory) > 0 {
+		contextBuf.WriteString("Relevant products:\n")
+		for _, item := range inventory {
+			contextBuf.WriteString(fmt.Sprintf("- %s: ₦%.0f", item.Name, item.Price))
+			if item.Description != "" {
+				contextBuf.WriteString(" - " + trimTurnText(item.Description, 80))
+			}
+			contextBuf.WriteString("\n")
+		}
+	}
+
+	prompt := []MessageTurn{
+		{Role: "system", Content: fmt.Sprintf(`You are a friendly Nigerian shop assistant rephrasing answers to sound natural.
+
+Rules:
+1. Keep ALL facts, prices, and information EXACTLY as given. Never add or remove information.
+2. Make it sound natural — use Nigerian Pidgin/Yoruba/English expressions naturally (o, abeg, oya, na, shebi).
+3. Keep the same length and meaning. Just change the VOICE.
+4. NEVER say "I'm an AI" or "I'm a bot" or "according to my training".
+5. If the customer seems to say hi, respond naturally.
+6. Output ONLY the rephrased answer — no prefixes, no explanations.%s`, contextBuf.String())},
+	}
+	if len(history) > 0 {
+		cut := history
+		if len(cut) > 4 {
+			cut = cut[len(cut)-4:]
+		}
+		var historyLines []string
+		for _, t := range cut {
+			historyLines = append(historyLines, t.Role+": "+t.Content)
+		}
+		prompt = append(prompt, MessageTurn{Role: "system", Content: "Recent conversation:\n" + strings.Join(historyLines, "\n")})
+	}
+	prompt = append(prompt, MessageTurn{Role: "user", Content: fmt.Sprintf("Customer asked: %s\n\nAnswer to humanize: %s", query, answer)})
+
+	humanized, _, err := b.callGroqStreaming(ctx, prompt, onChunk)
+	if err != nil || humanized == "" {
+		return answer, err
+	}
+	return strings.TrimSpace(humanized), nil
+}

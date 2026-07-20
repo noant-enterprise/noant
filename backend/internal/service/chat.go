@@ -636,6 +636,47 @@ func (s *ChatService) GenerateAIResponse(ctx context.Context, conversationID, us
 	return aiMsg, nil
 }
 
+// GenerateAIStreamingResponse is like GenerateAIResponse but streams the AI response
+// via onChunk. Returns the complete message after streaming finishes.
+func (s *ChatService) GenerateAIStreamingResponse(ctx context.Context, conversationID, userMessage string, onChunk func(chunk string)) (*domain.Message, error) {
+	if !s.beginAIReply(conversationID, userMessage) {
+		s.logger.Info("Skipping duplicate AI reply", "conversationID", conversationID)
+		return nil, nil
+	}
+	defer s.abortAIReply(conversationID)
+
+	aiResp, err := s.aiBrain.GenerateStreamingResponse(ctx, conversationID, userMessage, "en", onChunk)
+	if err != nil {
+		s.logger.Error("AI generation failed", "error", err)
+		aiResp = &AIResponse{
+			Content:    "I apologize, I am having trouble right now. A human agent will assist you shortly.",
+			Confidence: 0,
+			Escalate:   true,
+		}
+	}
+	aiMsg := &domain.Message{
+		ConversationID: conversationID,
+		Role:           "ai",
+		Content:        aiResp.Content,
+		IsRead:         false,
+		Metadata: &domain.MessageMetadata{
+			Confidence: aiResp.Confidence,
+			Language:   "en",
+		},
+	}
+	if err := s.repos.Message.Create(ctx, aiMsg); err != nil {
+		return nil, err
+	}
+	if aiResp.Escalate {
+		conv, err := s.repos.Conversation.GetByID(ctx, conversationID)
+		if err == nil && conv != nil {
+			_ = s.repos.Conversation.UpdateStatus(ctx, conversationID, "escalated", conv.UserID)
+		}
+	}
+	s.completeAIReply(conversationID, userMessage)
+	return aiMsg, nil
+}
+
 // StoreWhatsAppIntegration stores the WhatsApp integration config
 func (s *ChatService) StoreWhatsAppIntegration(ctx context.Context, userID, sessionID, phone string) {
 	s.StoreWhatsAppIntegrationWithStatus(ctx, userID, sessionID, phone, "connected")
