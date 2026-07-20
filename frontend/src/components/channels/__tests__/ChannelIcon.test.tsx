@@ -44,7 +44,7 @@ describe('ChannelIcon', () => {
     const { container } = render(<ChannelIcon channel="unknown" />)
     const div = container.querySelector('div')
     expect(div?.className).toContain('bg-tertiary/20')
-    expect(div?.textContent).toBe('U')
+    expect(div?.textContent).toBe('u')
   })
 
   it('applies sm size', () => {
