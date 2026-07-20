@@ -28,7 +28,6 @@ describe('Button', () => {
   })
 
   it('is disabled when loading', async () => {
-    const user = userEvent.setup()
     render(<Button loading>Loading</Button>)
     const btn = screen.getByRole('button')
     expect(btn).toBeDisabled()
