@@ -24,7 +24,7 @@ import (
 
 type AuthService struct {
 	cfg           *config.Config
-	userRepo      *repository.UserRepository
+	userRepo      repository.IUserRepo
 	redis         *infrastructure.RedisClient
 	logger        *infrastructure.Logger
 	email         *EmailService
@@ -41,7 +41,7 @@ type loginAttempt struct {
 // NewAuthService creates an AuthService with JWT generation, login attempt tracking,
 // and background cleanup of expired lockouts. Requires a valid EmailService for
 // verification code delivery.
-func NewAuthService(cfg *config.Config, userRepo *repository.UserRepository, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *AuthService {
+func NewAuthService(cfg *config.Config, userRepo repository.IUserRepo, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *AuthService {
 	s := &AuthService{cfg: cfg, userRepo: userRepo, redis: redis, logger: logger, email: email, memRL: infrastructure.NewMemoryRateLimiter(5 * time.Minute), loginAttempts: make(map[string]*loginAttempt)}
 	// Periodic cleanup of expired lockouts
 	go func() {

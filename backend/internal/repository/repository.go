@@ -7,28 +7,28 @@ import (
 )
 
 type Repositories struct {
-	User                *UserRepository
-	Conversation        *ConversationRepository
-	Message             *MessageRepository
-	QAPair              *QAPairRepository
-	Category            *CategoryRepository
-	UnknownQ            *UnknownQuestionRepository
-	Integration         *IntegrationRepository
-	Team                *TeamRepository
-	APIKey              *APIKeyRepository
-	Archive             *ArchiveRepository
-	Subscription        *SubscriptionRepository
-	Audit               *AuditRepository
-	Notification        *NotificationRepository
-	WidgetConfig        *WidgetConfigRepository
-	Inventory           *InventoryRepository
-	Handoff             *HandoffRepository
-	Credit              *CreditRepository
-	Campaign            *CampaignRepository
-	WhatsAppTemplate    *WhatsAppTemplateRepository
-	CampaignRecipient   *CampaignRecipientRepository
-	MediaMessage        *MediaMessageRepository
-	PushSubscription    *PushSubscriptionRepository
+	User                IUserRepo
+	Conversation        IConversationRepo
+	Message             IMessageRepo
+	QAPair              IQAPairRepo
+	Category            ICategoryRepo
+	UnknownQ            IUnknownQuestionRepo
+	Integration         IIntegrationRepo
+	Team                ITeamRepo
+	APIKey              IAPIKeyRepo
+	Archive             IArchiveRepo
+	Subscription        ISubscriptionRepo
+	Audit               IAuditRepo
+	Notification        INotificationRepo
+	WidgetConfig        IWidgetConfigRepo
+	Inventory           IInventoryRepo
+	Handoff             IHandoffRepo
+	Credit              ICreditRepo
+	Campaign            ICampaignRepo
+	WhatsAppTemplate    IWhatsAppTemplateRepo
+	CampaignRecipient   ICampaignRecipientRepo
+	MediaMessage        IMediaMessageRepo
+	PushSubscription    IPushSubscriptionRepo
 }
 
 func NewRepositories(db *sql.DB, redis *infrastructure.RedisClient) *Repositories {
