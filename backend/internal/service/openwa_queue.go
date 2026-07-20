@@ -431,6 +431,9 @@ func (w *SessionWorker) run() {
 }
 
 func (w *SessionWorker) processNext() {
+	if w.queue == nil {
+		return
+	}
 	entry := w.queue.DequeueBySession(w.sessionID)
 	if entry == nil {
 		return

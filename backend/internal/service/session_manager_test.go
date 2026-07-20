@@ -9,12 +9,15 @@ import (
 )
 
 func newTestSessionManager() *SessionManager {
+	cfg := &config.Config{OpenWAQueueDepth: 100}
+	queue := NewSendQueue(cfg, nil, infrastructure.NewNullLogger())
 	return &SessionManager{
-		cfg:      &config.Config{},
+		cfg:      cfg,
 		sessions: make(map[string]*SessionHealth),
 		logger:   infrastructure.NewNullLogger(),
 		workerPool: &WorkerPool{
 			workers: make(map[string]*SessionWorker),
+			queue:   queue,
 			logger:  infrastructure.NewNullLogger(),
 		},
 	}
