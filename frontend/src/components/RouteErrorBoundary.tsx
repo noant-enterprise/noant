@@ -20,7 +20,11 @@ export class RouteErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error(`RouteErrorBoundary (${this.props.pageName || 'page'}):`, error, info)
+    console.error(`RouteErrorBoundary (${this.props.pageName || 'page'}):`, error, info.componentStack)
+  }
+
+  handleTryAgain = () => {
+    this.setState({ hasError: false, error: undefined })
   }
 
   handleReload = () => {
@@ -51,13 +55,13 @@ export class RouteErrorBoundary extends Component<Props, State> {
               </code>
             </div>
             <div className="flex gap-2 justify-center">
+              <Button onClick={this.handleTryAgain} className="gap-2 text-sm">
+                <RefreshCw className="w-3 h-3" />
+                Try again
+              </Button>
               <Button variant="ghost" onClick={this.handleGoBack} className="gap-2 text-sm">
                 <ArrowLeft className="w-3 h-3" />
                 Go back
-              </Button>
-              <Button onClick={this.handleReload} className="gap-2 text-sm">
-                <RefreshCw className="w-3 h-3" />
-                Reload
               </Button>
             </div>
           </div>

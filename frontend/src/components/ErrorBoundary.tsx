@@ -4,6 +4,7 @@ import { Button } from './ui/Button'
 
 interface Props {
   children: ReactNode
+  fallback?: ReactNode
 }
 
 interface State {
@@ -19,8 +20,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('ErrorBoundary caught:', error, info)
-    // TODO: Send to Sentry in production
+    console.error('ErrorBoundary caught:', error, info.componentStack)
+  }
+
+  handleTryAgain = () => {
+    this.setState({ hasError: false, error: undefined })
   }
 
   handleReload = () => {
@@ -29,6 +33,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback
+      }
+
       return (
         <div className="min-h-screen flex items-center justify-center bg-base p-6">
           <div className="max-w-md w-full text-center">
@@ -37,17 +45,22 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
             <h1 className="text-2xl font-bold text-primary mb-2">Something went wrong</h1>
             <p className="text-secondary mb-6">
-              We're sorry — an unexpected error occurred. Our team has been notified.
+              An unexpected error occurred. You can try again or reload the page.
             </p>
             <div className="bg-inset rounded-lg p-4 mb-6 text-left">
               <code className="text-xs text-red-500 font-mono break-all">
                 {this.state.error?.message || 'Unknown error'}
               </code>
             </div>
-            <Button onClick={this.handleReload} className="gap-2">
-              <RefreshCw className="w-4 h-4" />
-              Reload page
-            </Button>
+            <div className="flex gap-3 justify-center">
+              <Button onClick={this.handleTryAgain} className="gap-2">
+                <RefreshCw className="w-4 h-4" />
+                Try again
+              </Button>
+              <Button variant="ghost" onClick={this.handleReload} className="gap-2">
+                Reload page
+              </Button>
+            </div>
           </div>
         </div>
       )

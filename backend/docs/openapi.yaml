@@ -1,0 +1,4995 @@
+openapi: 3.0.3
+info:
+  title: NOANT Enterprise Platform API
+  description: |
+    NOANT is an AI-powered customer service platform with multi-channel support
+    (WhatsApp, Telegram, Web Widget), inventory management, sales handoffs,
+    campaign broadcasting, and analytics.
+
+    ## Authentication
+    All authenticated endpoints use **HTTP-only JWT cookies**:
+    - `noant_access` — short-lived access token (24h)
+    - `noant_refresh` — long-lived refresh token (7d)
+
+    On login/verify, tokens are set as cookies. The `POST /api/v1/auth/refresh`
+    endpoint rotates both tokens using the refresh cookie.
+
+    A few endpoints are **public** (no cookies required):
+    - Widget public config & chat
+    - Payment webhook
+    - WhatsApp & Telegram webhooks
+    - Payment plan listing
+  version: 2.0.0
+  contact:
+    name: NOANT
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://api.noant.com
+    description: Production
+
+tags:
+  - name: Health
+    description: Health and readiness probes
+  - name: Auth
+    description: Registration, login, sessions, password management
+  - name: Chats
+    description: Conversations, messaging, human takeover
+  - name: Training
+    description: QA pair and category management, unknown questions
+  - name: Analytics
+    description: Dashboard metrics, trends, satisfaction
+  - name: Integrations
+    description: Channel connect / disconnect / test
+  - name: Settings
+    description: Profile, API keys, team, notifications, account
+  - name: Audit
+    description: Audit logs
+  - name: Notifications
+    description: In-app notification inbox
+  - name: Widget
+    description: Embeddable chat widget config & public chat
+  - name: Archive
+    description: Conversation archiving and folders
+  - name: Payments
+    description: Plans, subscriptions, webhooks
+  - name: Inventory
+    description: Products, services, packages
+  - name: Handoffs
+    description: AI-to-human sales handoffs
+  - name: Credits
+    description: AI response credit balance and purchases
+  - name: Campaigns
+    description: Campaign scheduling
+  - name: WhatsApp
+    description: OpenWA session management, webhooks, channels
+  - name: Templates
+    description: WhatsApp message templates
+  - name: WhatsApp Admin
+    description: Queue stats, session metrics, reconnect
+  - name: WhatsApp Interactive
+    description: List and button messages
+  - name: WhatsApp Media
+    description: Upload, list, and retrieve conversation media
+  - name: WhatsApp Campaigns
+    description: Broadcast campaigns and analytics
+  - name: DB Manager
+    description: Database cleanup tasks (admin only)
+  - name: Background Worker
+    description: Background job submission and monitoring (admin only)
+  - name: Assistant
+    description: Onboarding AI assistant chat
+  - name: Onboarding
+    description: Onboarding wizard steps and templates
+  - name: Push Notifications
+    description: Web push subscription management
+
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: noant_access
+      description: |
+        JWT access token set as an HTTP-only cookie on login.
+        The refresh token cookie `noant_refresh` is also required for
+        session rotation via `POST /api/v1/auth/refresh`.
+
+  schemas:
+    # ── Common ──────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      required: [success, error, code, request_id, timestamp, retryable]
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "An unexpected error occurred. Please try again later."
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - NOT_FOUND
+            - CONFLICT
+            - INTERNAL_ERROR
+            - RATE_LIMITED
+          example: INTERNAL_ERROR
+        request_id:
+          type: string
+          example: "req_a1b2c3d4"
+        timestamp:
+          type: string
+          format: date-time
+        retryable:
+          type: boolean
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Operation completed successfully"
+
+    SuccessFlag:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+
+    # ── User ────────────────────────────────────────────────
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        role:
+          type: string
+          enum: [owner, admin, agent]
+        company_name:
+          type: string
+        phone:
+          type: string
+        avatar:
+          type: string
+          nullable: true
+        plan_id:
+          type: string
+        is_active:
+          type: boolean
+        must_change_password:
+          type: boolean
+        is_verified:
+          type: boolean
+        onboarding_status:
+          type: string
+          nullable: true
+        industry:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TrialInfo:
+      type: object
+      properties:
+        trial_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        trial_ended:
+          type: boolean
+        trial_days_left:
+          type: integer
+
+    # ── Conversation ────────────────────────────────────────
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+        customer_email:
+          type: string
+        customer_avatar:
+          type: string
+        channel:
+          type: string
+          enum: [telegram, whatsapp, web, instagram]
+        status:
+          type: string
+          enum: [active, resolved, escalated, archived]
+        intent:
+          type: string
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+        is_ai_transferred:
+          type: boolean
+        taken_over_by:
+          type: string
+          nullable: true
+        folder_id:
+          type: string
+          nullable: true
+        last_message:
+          type: string
+        unread:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ── Message ─────────────────────────────────────────────
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        conversation_id:
+          type: string
+        role:
+          type: string
+          enum: [ai, human, customer, system]
+        content:
+          type: string
+        is_read:
+          type: boolean
+        confidence:
+          type: number
+          format: float
+        source:
+          type: string
+        sequence:
+          type: integer
+        metadata:
+          $ref: "#/components/schemas/MessageMetadata"
+        created_at:
+          type: string
+          format: date-time
+
+    MessageMetadata:
+      type: object
+      properties:
+        confidence:
+          type: number
+        matched_qa_id:
+          type: string
+          nullable: true
+        escalation_reason:
+          type: string
+        language:
+          type: string
+        source:
+          type: string
+
+    # ── Training ────────────────────────────────────────────
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        color:
+          type: string
+        qa_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    QAPair:
+      type: object
+      properties:
+        id:
+          type: string
+        category_id:
+          type: string
+        question:
+          type: string
+        answer:
+          type: string
+        is_active:
+          type: boolean
+        usage_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UnknownQuestion:
+      type: object
+      properties:
+        id:
+          type: string
+        question:
+          type: string
+        conversation_id:
+          type: string
+        channel:
+          type: string
+        status:
+          type: string
+          enum: [pending, trained, ignored]
+        suggested_answer:
+          type: string
+          nullable: true
+        category_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Integration ─────────────────────────────────────────
+    Integration:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        channel:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive, error]
+        config:
+          type: object
+          additionalProperties: true
+        webhook_url:
+          type: string
+        last_error:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ── Inventory ───────────────────────────────────────────
+    InventoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        type:
+          type: string
+          enum: [product, service, package]
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+          format: double
+        min_price:
+          type: number
+          format: double
+          nullable: true
+        stock_quantity:
+          type: integer
+          nullable: true
+        image_url:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ── Handoff ─────────────────────────────────────────────
+    Handoff:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        conversation_id:
+          type: string
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+        customer_whatsapp:
+          type: string
+        customer_location:
+          type: string
+        product_name:
+          type: string
+        original_price:
+          type: number
+          format: double
+        agreed_price:
+          type: number
+          format: double
+        quantity:
+          type: integer
+        status:
+          type: string
+          enum: [pending, sold, lost, expired]
+        final_price:
+          type: number
+          format: double
+          nullable: true
+        owner_notes:
+          type: string
+        summary:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ── Payment ─────────────────────────────────────────────
+    PaymentPlan:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price_ngn:
+          type: integer
+        ai_responses:
+          type: integer
+        channels:
+          type: array
+          items:
+            type: string
+        features:
+          type: array
+          items:
+            type: string
+        is_popular:
+          type: boolean
+
+    # ── Notification ────────────────────────────────────────
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        link:
+          type: string
+        is_read:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Widget ──────────────────────────────────────────────
+    WidgetConfig:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        brand_color:
+          type: string
+        greeting:
+          type: string
+        bot_name:
+          type: string
+        position:
+          type: string
+        widget_api_key:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ── Archive ─────────────────────────────────────────────
+    ArchiveFolder:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        color:
+          type: string
+        item_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    # ── API Key ─────────────────────────────────────────────
+    APIKey:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        name:
+          type: string
+        key:
+          type: string
+        last_used:
+          type: string
+          format: date-time
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Team ────────────────────────────────────────────────
+    TeamMember:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        email:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        role:
+          type: string
+        is_active:
+          type: boolean
+        joined_at:
+          type: string
+          format: date-time
+
+    # ── Campaign ────────────────────────────────────────────
+    CampaignSchedule:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        name:
+          type: string
+        start_date:
+          type: string
+        end_date:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, completed, canceled]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ── Credits ─────────────────────────────────────────────
+    CreditBalance:
+      type: object
+      properties:
+        balance:
+          type: integer
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_updated:
+          type: string
+          format: date-time
+
+    CreditPurchase:
+      type: object
+      properties:
+        id:
+          type: string
+        pack_type:
+          type: string
+          enum: [small, medium, large]
+        amount:
+          type: integer
+        status:
+          type: string
+          enum: [pending, completed, failed, refunded]
+        purchased_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+
+    PlanLimit:
+      type: object
+      properties:
+        plan_id:
+          type: string
+        max_responses:
+          type: integer
+        max_handoffs:
+          type: integer
+        max_inventory_items:
+          type: integer
+        has_notification:
+          type: boolean
+        price_ngn:
+          type: integer
+        description:
+          type: string
+
+    # ── WhatsApp Template ───────────────────────────────────
+    WhatsAppTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        name:
+          type: string
+        language:
+          type: string
+        category:
+          type: string
+          enum: [marketing, utility, authentication]
+        status:
+          type: string
+          enum: [draft, pending, approved, rejected, disabled]
+        header_type:
+          type: string
+          enum: [text, image, video, document, none]
+        header_value:
+          type: string
+        body_text:
+          type: string
+        footer_text:
+          type: string
+        buttons:
+          type: string
+        namespace:
+          type: string
+        rejection_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TemplateButton:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [quick_reply, url, call, catalog]
+        text:
+          type: string
+        url:
+          type: string
+        phone:
+          type: string
+
+    # ── Media ───────────────────────────────────────────────
+    MediaMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        conversation_id:
+          type: string
+        session_id:
+          type: string
+        media_type:
+          type: string
+        mime_type:
+          type: string
+        file_size:
+          type: integer
+          format: int64
+        file_name:
+          type: string
+        caption:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Analytics ───────────────────────────────────────────
+    AnalyticsOverview:
+      type: object
+      properties:
+        total_conversations:
+          type: integer
+        conversations_today:
+          type: integer
+        active_conversations:
+          type: integer
+        unread_conversations:
+          type: integer
+        resolved_today:
+          type: integer
+        ai_resolution_rate:
+          type: number
+        avg_response_time:
+          type: number
+        customer_satisfaction:
+          type: number
+        total_messages:
+          type: integer
+        escalated_count:
+          type: integer
+        billing_alert:
+          type: boolean
+
+    # ── DB Manager ──────────────────────────────────────────
+    CleanupReport:
+      type: object
+      properties:
+        tasks_run:
+          type: integer
+        total_deleted:
+          type: integer
+        has_errors:
+          type: boolean
+        results:
+          type: array
+          items:
+            type: object
+
+    # ── Background Worker ───────────────────────────────────
+    BackgroundTask:
+      type: object
+      properties:
+        id:
+          type: string
+        task_name:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        payload:
+          type: object
+        result:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    # ── OpenAI Assistant ────────────────────────────────────
+    AssistantResponse:
+      type: object
+      properties:
+        content:
+          type: string
+        action:
+          type: string
+        steps:
+          type: array
+          items:
+            type: string
+        suggestions:
+          type: array
+          items:
+            type: string
+
+    # ── Onboarding ──────────────────────────────────────────
+    OnboardingStatus:
+      type: object
+      properties:
+        completed_steps:
+          type: array
+          items:
+            type: string
+        current_step:
+          type: string
+        is_complete:
+          type: boolean
+
+    IndustryTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        categories:
+          type: array
+          items:
+            type: string
+
+    # ── Push Subscription ───────────────────────────────────
+    PushSubscriptionRequest:
+      type: object
+      required: [endpoint, auth, p256dh]
+      properties:
+        endpoint:
+          type: string
+          format: uri
+        auth:
+          type: string
+        p256dh:
+          type: string
+
+    # ── Settings ────────────────────────────────────────────
+    NotifPrefs:
+      type: object
+      properties:
+        email_notifications:
+          type: boolean
+        push_notifications:
+          type: boolean
+        handoff_alerts:
+          type: boolean
+        weekly_report:
+          type: boolean
+
+  parameters:
+    ConversationId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Conversation ID
+
+    CategoryId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Category ID
+
+    QAPairId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: QA pair ID
+
+    UnknownQuestionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unknown question ID
+
+    ChannelName:
+      name: channel
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [telegram, whatsapp, facebook, instagram]
+      description: Channel name
+
+    APIKeyId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: API key ID
+
+    TeamMemberId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Team member ID
+
+    NotificationId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Notification ID
+
+    ArchiveFolderId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Archive folder ID
+
+    InventoryItemId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Inventory item ID
+
+    HandoffId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Handoff ID
+
+    CampaignId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Campaign ID
+
+    TemplateId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: WhatsApp template ID
+
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: WhatsApp session ID
+
+    SessionID:
+      name: sessionID
+      in: path
+      required: true
+      schema:
+        type: string
+      description: WhatsApp session ID
+
+    MediaId:
+      name: mediaID
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Media file ID
+
+    BackgroundTaskId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Background task ID
+
+    CampaignIdPath:
+      name: campaignID
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Campaign ID
+
+# ════════════════════════════════════════════════════════════
+#  PATHS
+# ════════════════════════════════════════════════════════════
+paths:
+
+  # ── Health ────────────────────────────────────────────────
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns health status of API, database, Redis, and Groq.
+      operationId: healthCheck
+      responses:
+        "200":
+          description: All critical services healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: string
+        "503":
+          description: Critical service unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+                  checks:
+                    type: object
+
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      operationId: healthz
+      responses:
+        "200":
+          description: Alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      operationId: readyz
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+                  checks:
+                    type: object
+
+  /metrics:
+    get:
+      tags: [Health]
+      summary: Prometheus metrics
+      description: Admin-only Prometheus metrics endpoint.
+      operationId: metrics
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  # ── WebSocket ─────────────────────────────────────────────
+  /ws:
+    get:
+      tags: [Chats]
+      summary: WebSocket connection
+      description: |
+        Real-time WebSocket connection for conversation updates.
+        Secured with JWT auth (from cookie) and origin validation.
+        Messages arrive as JSON: `{ type: "new_message"|"typing_indicator"|"integration_update", conversation_id, data }`.
+      operationId: websocketConnect
+      security:
+        - CookieAuth: []
+      responses:
+        "101":
+          description: WebSocket upgrade successful
+        "401":
+          description: Invalid or missing JWT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ══════════════════════════════════════════════════════════
+  #  AUTH
+  # ══════════════════════════════════════════════════════════
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new user
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, first_name, last_name]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: jane@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  example: SecurePass123!
+                first_name:
+                  type: string
+                  example: Jane
+                last_name:
+                  type: string
+                  example: Doe
+                company_name:
+                  type: string
+                  example: Acme Corp
+      responses:
+        "201":
+          description: User registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User registered successfully
+                  user:
+                    $ref: "#/components/schemas/User"
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: Login successful (sets noant_access + noant_refresh cookies)
+          headers:
+            Set-Cookie:
+              description: JWT cookies set automatically
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  trial_info:
+                    $ref: "#/components/schemas/TrialInfo"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Email not verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: email_not_verified
+        "429":
+          description: Account temporarily locked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout
+      operationId: logout
+      description: Blacklists the current access token and clears auth cookies.
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/auth/verify:
+    post:
+      tags: [Auth]
+      summary: Verify email address
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email:
+                  type: string
+                  format: email
+                code:
+                  type: string
+                  example: "123456"
+      responses:
+        "200":
+          description: Email verified (sets auth cookies)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    $ref: "#/components/schemas/User"
+                  trial_info:
+                    $ref: "#/components/schemas/TrialInfo"
+        "400":
+          description: Invalid verification code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: invalid_code
+        "429":
+          description: Too many verification attempts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: too_many_attempts
+
+  /api/v1/auth/resend-verification:
+    post:
+      tags: [Auth]
+      summary: Resend verification code
+      operationId: resendVerification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: Verification code sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh session tokens
+      description: |
+        Reads the `noant_refresh` cookie, validates it, and issues new
+        access + refresh tokens (rotation). Sets updated cookies.
+      operationId: refreshToken
+      responses:
+        "200":
+          description: Session refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user
+      operationId: getMe
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  trial_info:
+                    $ref: "#/components/schemas/TrialInfo"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change password
+      operationId: changePassword
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password:
+                  type: string
+                  format: password
+                new_password:
+                  type: string
+                  format: password
+                  minLength: 8
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Current password incorrect
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: Always returns success (does not reveal if email exists)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: If the email exists, a reset link has been sent
+
+  /api/v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password with token
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token:
+                  type: string
+                  description: Password reset token from email link
+                new_password:
+                  type: string
+                  format: password
+                  minLength: 8
+      responses:
+        "200":
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "500":
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ══════════════════════════════════════════════════════════
+  #  CHATS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/chats/direct-chat:
+    post:
+      tags: [Chats]
+      summary: Start direct chat
+      description: Create or resume a conversation and send the first message.
+      operationId: directChat
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, channel]
+              properties:
+                customer_name:
+                  type: string
+                message:
+                  type: string
+                channel:
+                  type: string
+                  enum: [web, telegram, whatsapp, instagram, facebook]
+      responses:
+        "200":
+          description: Conversation created / message sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation:
+                    $ref: "#/components/schemas/Conversation"
+                  message:
+                    $ref: "#/components/schemas/Message"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/chats/conversations:
+    get:
+      tags: [Chats]
+      summary: List conversations
+      operationId: listConversations
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, resolved, escalated, archived]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Paginated conversation list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Conversation"
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  has_more:
+                    type: boolean
+
+  /api/v1/chats/conversations/{id}:
+    get:
+      tags: [Chats]
+      summary: Get conversation with messages
+      operationId: getConversation
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 30
+            maximum: 100
+      responses:
+        "200":
+          description: Conversation detail with paginated messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation:
+                    $ref: "#/components/schemas/Conversation"
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+                  total:
+                    type: integer
+                  has_more:
+                    type: boolean
+                  page:
+                    type: integer
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/chats/conversations/{id}/messages:
+    post:
+      tags: [Chats]
+      summary: Send message in conversation
+      description: |
+        Sends a customer message and triggers an async AI response.
+        AI reply is delivered over WebSocket, not in the HTTP response.
+      operationId: sendMessage
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+      responses:
+        "200":
+          description: Message queued (AI response sent via WebSocket)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Message sent
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/chats/conversations/{id}/takeover:
+    put:
+      tags: [Chats]
+      summary: Human agent takeover
+      operationId: humanTakeover
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Conversation taken over
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/chats/conversations/{id}/escalate:
+    post:
+      tags: [Chats]
+      summary: Escalate conversation
+      operationId: escalateConversation
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Conversation escalated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/chats/conversations/{id}/rate:
+    post:
+      tags: [Chats]
+      summary: Rate a conversation
+      operationId: rateConversation
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [score]
+              properties:
+                score:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                feedback:
+                  type: string
+      responses:
+        "200":
+          description: Rating submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Score must be 1-5
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/chats/clear:
+    delete:
+      tags: [Chats]
+      summary: Clear all chats
+      operationId: clearChats
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Chats cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ══════════════════════════════════════════════════════════
+  #  TRAINING
+  # ══════════════════════════════════════════════════════════
+  /api/v1/training/search:
+    get:
+      tags: [Training]
+      summary: Search QA pairs
+      operationId: searchQAPairs
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search query
+      responses:
+        "200":
+          description: Matching QA pairs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qa_pairs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/QAPair"
+
+  /api/v1/training/categories:
+    get:
+      tags: [Training]
+      summary: List categories
+      operationId: listCategories
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Categories list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Category"
+    post:
+      tags: [Training]
+      summary: Create category
+      operationId: createCategory
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: Pricing
+                description:
+                  type: string
+                color:
+                  type: string
+                  example: "#3B82F6"
+      responses:
+        "201":
+          description: Category created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  id:
+                    type: string
+
+  /api/v1/training/categories/{id}:
+    delete:
+      tags: [Training]
+      summary: Delete category and all QA pairs
+      operationId: deleteCategory
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CategoryId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/training/categories/{id}/qa:
+    get:
+      tags: [Training]
+      summary: List QA pairs in category
+      operationId: listQAPairs
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CategoryId"
+      responses:
+        "200":
+          description: QA pairs list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qa_pairs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/QAPair"
+
+  /api/v1/training/qa:
+    post:
+      tags: [Training]
+      summary: Create QA pair
+      operationId: createQAPair
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_id, question, answer]
+              properties:
+                category_id:
+                  type: string
+                question:
+                  type: string
+                  example: What is your return policy?
+                answer:
+                  type: string
+                  example: We offer a 30-day money-back guarantee.
+      responses:
+        "201":
+          description: QA pair created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  qa_pair:
+                    $ref: "#/components/schemas/QAPair"
+
+  /api/v1/training/qa/{id}:
+    put:
+      tags: [Training]
+      summary: Update QA pair
+      operationId: updateQAPair
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QAPairId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_id, question, answer]
+              properties:
+                category_id:
+                  type: string
+                question:
+                  type: string
+                answer:
+                  type: string
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+    delete:
+      tags: [Training]
+      summary: Delete QA pair
+      operationId: deleteQAPair
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QAPairId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/training/bulk-qa:
+    post:
+      tags: [Training]
+      summary: Bulk import QA pairs
+      operationId: bulkImportQA
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_id, qa_pairs]
+              properties:
+                category_id:
+                  type: string
+                qa_pairs:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      question:
+                        type: string
+                      answer:
+                        type: string
+      responses:
+        "200":
+          description: Import successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  count:
+                    type: integer
+
+  /api/v1/training/unknown-questions:
+    get:
+      tags: [Training]
+      summary: List unknown questions
+      operationId: listUnknownQuestions
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, trained, ignored]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Unknown questions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  questions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/UnknownQuestion"
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/v1/training/unknown-questions/{id}/train:
+    post:
+      tags: [Training]
+      summary: Train unknown question (create QA pair from it)
+      operationId: trainUnknown
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UnknownQuestionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer, category_id]
+              properties:
+                answer:
+                  type: string
+                category_id:
+                  type: string
+      responses:
+        "200":
+          description: Question trained
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "404":
+          description: Unknown question not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/training/unknown-questions/{id}/ignore:
+    post:
+      tags: [Training]
+      summary: Ignore unknown question
+      operationId: ignoreUnknown
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UnknownQuestionId"
+      responses:
+        "200":
+          description: Ignored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/training/unknown-questions/batch-train:
+    post:
+      tags: [Training]
+      summary: Batch train unknown questions
+      operationId: batchTrainUnknown
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids, answer, category_id]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                answer:
+                  type: string
+                category_id:
+                  type: string
+      responses:
+        "200":
+          description: Batch trained
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  count:
+                    type: integer
+
+  /api/v1/training/unknown-questions/batch-ignore:
+    post:
+      tags: [Training]
+      summary: Batch ignore unknown questions
+      operationId: batchIgnoreUnknown
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+      responses:
+        "200":
+          description: Batch ignored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  count:
+                    type: integer
+
+  /api/v1/training/unknown-questions/clear:
+    delete:
+      tags: [Training]
+      summary: Clear all unknown questions
+      operationId: clearUnknown
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/training/csv-upload:
+    post:
+      tags: [Training]
+      summary: Upload CSV of QA pairs
+      description: |
+        Multipart form upload. Max 2 MB, `.csv` extension required.
+        Binary/compressed content is rejected.
+      operationId: uploadCSV
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV file (question,answer columns)
+                category_id:
+                  type: string
+                  description: Target category (defaults to "default")
+      responses:
+        "200":
+          description: CSV uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  count:
+                    type: integer
+        "400":
+          description: Invalid file
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  # ══════════════════════════════════════════════════════════
+  #  ANALYTICS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/analytics/overview:
+    get:
+      tags: [Analytics]
+      summary: Dashboard overview metrics
+      operationId: analyticsOverview
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Overview metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsOverview"
+
+  /api/v1/analytics/channels:
+    get:
+      tags: [Analytics]
+      summary: Channel distribution
+      operationId: channelDistribution
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Distribution by channel
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  distribution:
+                    type: object
+                    additionalProperties:
+                      type: integer
+
+  /api/v1/analytics/insights:
+    get:
+      tags: [Analytics]
+      summary: AI insights
+      operationId: analyticsInsights
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Insights data
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Dynamic insight data
+
+  /api/v1/analytics/trends:
+    get:
+      tags: [Analytics]
+      summary: Conversation trends (last 7 days)
+      operationId: analyticsTrends
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Trend data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trends:
+                    type: array
+                    items:
+                      type: object
+
+  /api/v1/analytics/satisfaction:
+    get:
+      tags: [Analytics]
+      summary: Customer satisfaction metrics
+      operationId: analyticsSatisfaction
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Satisfaction data
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/analytics/unknown-questions:
+    get:
+      tags: [Analytics]
+      summary: Unknown questions stats
+      operationId: analyticsUnknownQuestions
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/analytics/popular-questions:
+    get:
+      tags: [Analytics]
+      summary: Popular questions
+      operationId: analyticsPopularQuestions
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Popular questions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  questions:
+                    type: array
+                    items:
+                      type: object
+
+  /api/v1/analytics/messages-trend:
+    get:
+      tags: [Analytics]
+      summary: Message volume trend (last 7 days)
+      operationId: analyticsMessagesTrend
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Message trend
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trends:
+                    type: array
+                    items:
+                      type: object
+
+  /api/v1/analytics/uptime:
+    get:
+      tags: [Analytics]
+      summary: Uptime metrics
+      operationId: analyticsUptime
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Uptime data
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ══════════════════════════════════════════════════════════
+  #  INTEGRATIONS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/integrations/list:
+    get:
+      tags: [Integrations]
+      summary: List connected channels
+      operationId: listIntegrations
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Integrations list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integrations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Integration"
+
+  /api/v1/integrations/connect:
+    post:
+      tags: [Integrations]
+      summary: Connect a channel
+      operationId: connectIntegration
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel]
+              properties:
+                channel:
+                  type: string
+                  enum: [telegram, whatsapp, facebook, instagram]
+                config:
+                  type: object
+                  additionalProperties: true
+                  description: Channel-specific credentials (e.g. bot_token for Telegram)
+      responses:
+        "201":
+          description: Channel connected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  integration:
+                    $ref: "#/components/schemas/Integration"
+
+  /api/v1/integrations/disconnect/{channel}:
+    post:
+      tags: [Integrations]
+      summary: Disconnect channel
+      operationId: disconnectIntegration
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ChannelName"
+      responses:
+        "200":
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/integrations/test/{channel}:
+    post:
+      tags: [Integrations]
+      summary: Test channel credentials
+      operationId: testIntegration
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ChannelName"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                config:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Test passed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+        "400":
+          description: Test failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: error
+                  message:
+                    type: string
+
+  # ══════════════════════════════════════════════════════════
+  #  SETTINGS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/settings/profile:
+    get:
+      tags: [Settings]
+      summary: Get user profile
+      operationId: getProfile
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Profile data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    put:
+      tags: [Settings]
+      summary: Update profile
+      operationId: updateProfile
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Partial profile fields to update
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                company_name:
+                  type: string
+                phone:
+                  type: string
+                avatar:
+                  type: string
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/settings/api-keys:
+    get:
+      tags: [Settings]
+      summary: List API keys
+      operationId: listAPIKeys
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: API keys list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_keys:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/APIKey"
+    post:
+      tags: [Settings]
+      summary: Create API key
+      operationId: createAPIKey
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: Production API Key
+      responses:
+        "201":
+          description: API key created (key shown once)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key:
+                    $ref: "#/components/schemas/APIKey"
+                  id:
+                    type: string
+
+  /api/v1/settings/api-keys/{id}:
+    delete:
+      tags: [Settings]
+      summary: Revoke API key
+      operationId: revokeAPIKey
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/APIKeyId"
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/settings/team:
+    get:
+      tags: [Settings]
+      summary: List team members
+      operationId: listTeam
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Team members
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  team:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TeamMember"
+
+  /api/v1/settings/team/invite:
+    post:
+      tags: [Settings]
+      summary: Invite team member
+      operationId: inviteTeamMember
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [admin, agent]
+      responses:
+        "200":
+          description: Invitation sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  id:
+                    type: string
+
+  /api/v1/settings/team/{id}:
+    delete:
+      tags: [Settings]
+      summary: Remove team member
+      operationId: removeTeamMember
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TeamMemberId"
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/settings/audit-logs:
+    get:
+      tags: [Audit]
+      summary: List audit logs
+      operationId: listAuditLogs
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Audit logs (last 50)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  audit_logs:
+                    type: array
+                    items:
+                      type: object
+                  count:
+                    type: integer
+
+  /api/v1/settings/notifications:
+    get:
+      tags: [Settings]
+      summary: Get notification preferences
+      operationId: getNotifPrefs
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Notification preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotifPrefs"
+    put:
+      tags: [Settings]
+      summary: Update notification preferences
+      operationId: updateNotifPrefs
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotifPrefs"
+      responses:
+        "200":
+          description: Preferences updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/settings/account:
+    delete:
+      tags: [Settings]
+      summary: Delete account
+      operationId: deleteAccount
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Account deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/settings/account/export:
+    get:
+      tags: [Settings]
+      summary: Export user data
+      operationId: exportData
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Exported data (JSON blob)
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ══════════════════════════════════════════════════════════
+  #  NOTIFICATIONS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications
+      operationId: listNotifications
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+      responses:
+        "200":
+          description: Notifications list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Notification"
+
+  /api/v1/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Unread notification count
+      operationId: unreadCount
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+
+  /api/v1/notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark notification as read
+      operationId: markNotificationRead
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "200":
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      operationId: markAllRead
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: All marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ══════════════════════════════════════════════════════════
+  #  WIDGET
+  # ══════════════════════════════════════════════════════════
+  /api/v1/widget/config:
+    get:
+      tags: [Widget]
+      summary: Get widget config
+      operationId: getWidgetConfig
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Widget configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WidgetConfig"
+    post:
+      tags: [Widget]
+      summary: Upsert widget config
+      operationId: upsertWidgetConfig
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                brand_color:
+                  type: string
+                  example: "#6366F1"
+                greeting:
+                  type: string
+                  example: "Hi! How can I help you today?"
+                bot_name:
+                  type: string
+                  example: "NOANT AI"
+                position:
+                  type: string
+                  enum: [bottom-right, bottom-left]
+                  example: bottom-right
+                is_active:
+                  type: boolean
+      responses:
+        "200":
+          description: Config updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  config:
+                    $ref: "#/components/schemas/WidgetConfig"
+
+  /api/v1/widget/public/config:
+    get:
+      tags: [Widget]
+      summary: Get public widget config (no auth)
+      description: Used by the embeddable widget script. Requires `api_key` query parameter.
+      operationId: getPublicWidgetConfig
+      parameters:
+        - name: api_key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Public widget config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WidgetConfig"
+        "404":
+          description: Widget not found or inactive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/widget/public/chat:
+    post:
+      tags: [Widget]
+      summary: Public chat (no auth)
+      description: Send a message through the embeddable widget. Requires `api_key` in body.
+      operationId: publicChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [api_key, message]
+              properties:
+                api_key:
+                  type: string
+                message:
+                  type: string
+                conversation_id:
+                  type: string
+                  description: Optional existing conversation ID for follow-up messages
+      responses:
+        "200":
+          description: AI reply
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reply:
+                    type: string
+                  conversation_id:
+                    type: string
+
+  # ══════════════════════════════════════════════════════════
+  #  ARCHIVE
+  # ══════════════════════════════════════════════════════════
+  /api/v1/archive/folders:
+    get:
+      tags: [Archive]
+      summary: List archive folders
+      operationId: listArchiveFolders
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [chats, contacts, locations, custom]
+      responses:
+        "200":
+          description: Folders list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  folders:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ArchiveFolder"
+    post:
+      tags: [Archive]
+      summary: Create archive folder
+      operationId: createArchiveFolder
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                type:
+                  type: string
+                  default: custom
+                color:
+                  type: string
+      responses:
+        "201":
+          description: Folder created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  id:
+                    type: string
+
+  /api/v1/archive/folders/{id}:
+    delete:
+      tags: [Archive]
+      summary: Delete archive folder
+      operationId: deleteArchiveFolder
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ArchiveFolderId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/archive/move:
+    post:
+      tags: [Archive]
+      summary: Move conversation to folder
+      operationId: moveChatToArchive
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conversation_id, folder_id]
+              properties:
+                conversation_id:
+                  type: string
+                folder_id:
+                  type: string
+      responses:
+        "200":
+          description: Moved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/archive/remove:
+    post:
+      tags: [Archive]
+      summary: Remove conversation from archive
+      operationId: removeFromArchive
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conversation_id]
+              properties:
+                conversation_id:
+                  type: string
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/archive/status:
+    get:
+      tags: [Archive]
+      summary: Archive status overview
+      operationId: archiveStatus
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Status data
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ══════════════════════════════════════════════════════════
+  #  PAYMENTS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/payments/plans:
+    get:
+      tags: [Payments]
+      summary: List available plans (public)
+      operationId: listPlans
+      responses:
+        "200":
+          description: Plans list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plans:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PaymentPlan"
+
+  /api/v1/payments/subscribe:
+    post:
+      tags: [Payments]
+      summary: Subscribe to a plan
+      description: Initiates a Polar checkout session. Returns a checkout URL.
+      operationId: subscribe
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan_id:
+                  type: string
+                plan:
+                  type: string
+                  description: Alternative key for plan_id (frontend compat)
+                currency:
+                  type: string
+                  example: NGN
+      responses:
+        "200":
+          description: Subscription initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  checkout_url:
+                    type: string
+                    format: uri
+                    nullable: true
+
+  /api/v1/payments/webhook:
+    post:
+      tags: [Payments]
+      summary: Polar payment webhook
+      description: |
+        No auth cookie required. Verified by Polar webhook signature
+        headers: `webhook-id`, `webhook-timestamp`, `webhook-signature`.
+      operationId: paymentWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Polar webhook event payload
+      responses:
+        "200":
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/v1/payments/status:
+    get:
+      tags: [Payments]
+      summary: Get subscription status
+      operationId: paymentStatus
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Current subscription status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ══════════════════════════════════════════════════════════
+  #  INVENTORY
+  # ══════════════════════════════════════════════════════════
+  /api/v1/inventory:
+    get:
+      tags: [Inventory]
+      summary: List inventory items
+      operationId: listInventory
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [product, service, package]
+      responses:
+        "200":
+          description: Items list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InventoryItem"
+                  count:
+                    type: integer
+    post:
+      tags: [Inventory]
+      summary: Create inventory item
+      operationId: createInventory
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, name, price]
+              properties:
+                type:
+                  type: string
+                  enum: [product, service, package]
+                name:
+                  type: string
+                description:
+                  type: string
+                price:
+                  type: number
+                  format: double
+                min_price:
+                  type: number
+                  format: double
+                  nullable: true
+                stock_quantity:
+                  type: integer
+                  nullable: true
+                image_url:
+                  type: string
+                  nullable: true
+      responses:
+        "201":
+          description: Item created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    $ref: "#/components/schemas/InventoryItem"
+
+  /api/v1/inventory/search:
+    get:
+      tags: [Inventory]
+      summary: Search inventory
+      operationId: searchInventory
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InventoryItem"
+                  count:
+                    type: integer
+
+  /api/v1/inventory/{id}:
+    get:
+      tags: [Inventory]
+      summary: Get inventory item by ID
+      operationId: getInventoryItem
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/InventoryItemId"
+      responses:
+        "200":
+          description: Item detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    $ref: "#/components/schemas/InventoryItem"
+        "404":
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags: [Inventory]
+      summary: Update inventory item
+      operationId: updateInventory
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/InventoryItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                name:
+                  type: string
+                description:
+                  type: string
+                price:
+                  type: number
+                min_price:
+                  type: number
+                  nullable: true
+                stock_quantity:
+                  type: integer
+                  nullable: true
+                image_url:
+                  type: string
+                  nullable: true
+                is_active:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    $ref: "#/components/schemas/InventoryItem"
+    delete:
+      tags: [Inventory]
+      summary: Delete inventory item
+      operationId: deleteInventory
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/InventoryItemId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ══════════════════════════════════════════════════════════
+  #  HANDOFFS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/handoffs:
+    get:
+      tags: [Handoffs]
+      summary: List handoffs
+      operationId: listHandoffs
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, sold, lost, expired]
+      responses:
+        "200":
+          description: Handoffs list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  handoffs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Handoff"
+                  count:
+                    type: integer
+
+  /api/v1/handoffs/{id}:
+    get:
+      tags: [Handoffs]
+      summary: Get handoff by ID
+      operationId: getHandoff
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/HandoffId"
+      responses:
+        "200":
+          description: Handoff detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  handoff:
+                    $ref: "#/components/schemas/Handoff"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/handoffs/status:
+    put:
+      tags: [Handoffs]
+      summary: Update handoff status
+      operationId: updateHandoffStatus
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, status]
+              properties:
+                id:
+                  type: string
+                status:
+                  type: string
+                  enum: [pending, sold, lost, expired]
+                notes:
+                  type: string
+                final_price:
+                  type: number
+                  format: double
+                  nullable: true
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ══════════════════════════════════════════════════════════
+  #  CREDITS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/credits/balance:
+    get:
+      tags: [Credits]
+      summary: Get credit balance
+      operationId: getCreditBalance
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Balance info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditBalance"
+
+  /api/v1/credits/limits:
+    get:
+      tags: [Credits]
+      summary: Get plan limits
+      operationId: getCreditLimits
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Plan limits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limits:
+                    $ref: "#/components/schemas/PlanLimit"
+
+  /api/v1/credits/purchase:
+    post:
+      tags: [Credits]
+      summary: Purchase credit pack
+      description: Returns a Polar checkout URL for the selected pack.
+      operationId: purchaseCreditPack
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pack_type]
+              properties:
+                pack_type:
+                  type: string
+                  enum: [small, medium, large]
+      responses:
+        "200":
+          description: Checkout URL returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkout_url:
+                    type: string
+                    format: uri
+
+  /api/v1/credits/history:
+    get:
+      tags: [Credits]
+      summary: Credit purchase history
+      operationId: creditHistory
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Purchase history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  history:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CreditPurchase"
+
+  # ══════════════════════════════════════════════════════════
+  #  CAMPAIGNS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/campaigns:
+    get:
+      tags: [Campaigns]
+      summary: List campaigns
+      operationId: listCampaigns
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Campaigns list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaigns:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CampaignSchedule"
+    post:
+      tags: [Campaigns]
+      summary: Create campaign
+      operationId: createCampaign
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, start_date, end_date]
+              properties:
+                name:
+                  type: string
+                  example: "Holiday Promo 2026"
+                start_date:
+                  type: string
+                  format: date
+                  example: "2026-12-01"
+                end_date:
+                  type: string
+                  format: date
+                  example: "2026-12-31"
+      responses:
+        "201":
+          description: Campaign created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaign:
+                    $ref: "#/components/schemas/CampaignSchedule"
+
+  /api/v1/campaigns/{id}:
+    delete:
+      tags: [Campaigns]
+      summary: Cancel campaign
+      operationId: cancelCampaign
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      responses:
+        "200":
+          description: Campaign cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "404":
+          description: Campaign not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  # ══════════════════════════════════════════════════════════
+  #  WHATSAPP (OpenWA) — Session & Webhook
+  # ══════════════════════════════════════════════════════════
+  /api/v1/openwa/webhook:
+    post:
+      tags: [WhatsApp]
+      summary: WhatsApp webhook receiver
+      description: |
+        No JWT auth. Verified by HMAC signature (`X-Hub-Signature-256`).
+        Rate-limited to 1000 req/min.
+      operationId: whatsappWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: OpenWA webhook event payload
+      responses:
+        "200":
+          description: Event processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "401":
+          description: Invalid or missing signature
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/openwa/status:
+    get:
+      tags: [WhatsApp]
+      summary: Get WhatsApp session status
+      operationId: getOpenWAStatus
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Session status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  session_id:
+                    type: string
+
+  /api/v1/openwa/restart:
+    post:
+      tags: [WhatsApp]
+      summary: Restart WhatsApp session
+      operationId: restartOpenWA
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Restart initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  session_id:
+                    type: string
+
+  # ── WhatsApp Channel Endpoints ────────────────────────────
+  /api/v1/channels/whatsapp/connect:
+    post:
+      tags: [WhatsApp]
+      summary: Connect WhatsApp (create session + QR code)
+      description: |
+        Creates an OpenWA session, starts it, and returns session info.
+        QR code is obtained via long-polling `GET /channels/whatsapp/status/{sessionId}`.
+      operationId: connectWhatsApp
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+                  example: "+2348012345678"
+      responses:
+        "200":
+          description: Session initializing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  qr_code:
+                    type: string
+                    description: Empty initially; poll status endpoint for QR
+                  phone:
+                    type: string
+                  status:
+                    type: string
+                    example: initializing
+
+  /api/v1/channels/whatsapp/status/{sessionId}:
+    get:
+      tags: [WhatsApp]
+      summary: Get WhatsApp status (long-poll)
+      description: |
+        Long-polls for up to 25 seconds waiting for status/QR changes.
+        Use `?force=true` to force-mark as connected, `?poll=false` to disable long-polling.
+      operationId: getWhatsAppStatus
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: force
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+        - name: poll
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "true"
+      responses:
+        "200":
+          description: Session status with optional QR code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  qr_code:
+                    type: string
+                  session:
+                    type: string
+                  connected:
+                    type: boolean
+
+  /api/v1/channels/whatsapp/refresh/{sessionId}:
+    post:
+      tags: [WhatsApp]
+      summary: Refresh QR code
+      description: Deletes the old session and creates a fresh one to generate a new QR code.
+      operationId: refreshWhatsAppQR
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: New session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qr_code:
+                    type: string
+                  session_id:
+                    type: string
+
+  /api/v1/channels/whatsapp/disconnect:
+    post:
+      tags: [WhatsApp]
+      summary: Disconnect WhatsApp session
+      operationId: disconnectWhatsApp
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id]
+              properties:
+                session_id:
+                  type: string
+      responses:
+        "200":
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/v1/channels/whatsapp/ping:
+    post:
+      tags: [WhatsApp]
+      summary: Send test message to verify connection
+      operationId: phonePing
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+                  example: "+2348012345678"
+      responses:
+        "200":
+          description: Test message sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        "400":
+          description: Phone number not on WhatsApp
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /api/v1/channels/whatsapp/check:
+    post:
+      tags: [WhatsApp]
+      summary: Check if phone number exists on WhatsApp
+      operationId: checkWhatsAppNumber
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+      responses:
+        "200":
+          description: Check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  phone:
+                    type: string
+                  exists:
+                    type: boolean
+
+  /api/v1/channels/whatsapp/health:
+    get:
+      tags: [WhatsApp]
+      summary: OpenWA health check
+      operationId: openWAHealthCheck
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, unhealthy]
+                  openwa:
+                    type: string
+                  sessions:
+                    type: integer
+
+  # ── Telegram ──────────────────────────────────────────────
+  /api/v1/telegram/webhook:
+    post:
+      tags: [WhatsApp]
+      summary: Telegram webhook receiver
+      description: |
+        No JWT auth. Verified by `X-Telegram-Bot-Api-Secret-Token` header.
+        Rate-limited to 1000 req/min.
+      operationId: telegramWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Telegram Bot API update object
+      responses:
+        "200":
+          description: Event processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  # ══════════════════════════════════════════════════════════
+  #  TEMPLATES
+  # ══════════════════════════════════════════════════════════
+  /api/v1/templates:
+    get:
+      tags: [Templates]
+      summary: List WhatsApp templates
+      operationId: listTemplates
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Templates list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WhatsAppTemplate"
+    post:
+      tags: [Templates]
+      summary: Create WhatsApp template
+      operationId: createTemplate
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, language, category, body_text]
+              properties:
+                name:
+                  type: string
+                  example: order_confirmation
+                language:
+                  type: string
+                  example: en
+                category:
+                  type: string
+                  enum: [marketing, utility, authentication]
+                header_type:
+                  type: string
+                  enum: [text, image, video, document, none]
+                header_value:
+                  type: string
+                body_text:
+                  type: string
+                  example: "Hi {{1}}, your order #{{2}} has been confirmed!"
+                footer_text:
+                  type: string
+                buttons:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/TemplateButton"
+      responses:
+        "201":
+          description: Template created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template:
+                    $ref: "#/components/schemas/WhatsAppTemplate"
+
+  /api/v1/templates/{id}:
+    get:
+      tags: [Templates]
+      summary: Get template by ID
+      operationId: getTemplate
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TemplateId"
+      responses:
+        "200":
+          description: Template detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template:
+                    $ref: "#/components/schemas/WhatsAppTemplate"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+    put:
+      tags: [Templates]
+      summary: Update template
+      operationId: updateTemplate
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TemplateId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WhatsAppTemplate"
+              description: Full template object to update
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+    delete:
+      tags: [Templates]
+      summary: Delete template
+      operationId: deleteTemplate
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TemplateId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/v1/templates/{id}/submit:
+    post:
+      tags: [Templates]
+      summary: Submit template for WhatsApp approval
+      operationId: submitTemplate
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TemplateId"
+      responses:
+        "200":
+          description: Submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/v1/templates/send:
+    post:
+      tags: [Templates]
+      summary: Send template message
+      operationId: sendTemplate
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, chat_id, template_id]
+              properties:
+                session_id:
+                  type: string
+                chat_id:
+                  type: string
+                template_id:
+                  type: string
+                variables:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: "Template variable replacements, e.g. {\"1\": \"John\", \"2\": \"12345\"}"
+      responses:
+        "200":
+          description: Template sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/v1/templates/common:
+    get:
+      tags: [Templates]
+      summary: Get common template suggestions
+      operationId: getCommonTemplates
+      responses:
+        "200":
+          description: Common template presets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      type: object
+
+  # ══════════════════════════════════════════════════════════
+  #  WHATSAPP CAMPAIGNS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/whatsapp/campaigns/broadcast:
+    post:
+      tags: [WhatsApp Campaigns]
+      summary: Broadcast campaign message
+      operationId: broadcastCampaign
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, recipients]
+              properties:
+                campaign_id:
+                  type: string
+                session_id:
+                  type: string
+                message:
+                  type: string
+                recipients:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  description: Phone numbers
+                template_id:
+                  type: string
+                  description: Alternative to message — send a template
+      responses:
+        "200":
+          description: Broadcast started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  recipients:
+                    type: integer
+
+  /api/v1/whatsapp/campaigns/{campaignID}/analytics:
+    get:
+      tags: [WhatsApp Campaigns]
+      summary: Campaign analytics
+      operationId: campaignAnalytics
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignIdPath"
+      responses:
+        "200":
+          description: Campaign analytics data
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ══════════════════════════════════════════════════════════
+  #  WHATSAPP MEDIA
+  # ══════════════════════════════════════════════════════════
+  /api/v1/chats/conversations/{id}/media:
+    post:
+      tags: [WhatsApp Media]
+      summary: Upload media to conversation
+      description: |
+        Multipart form upload. Max 10 MB. Allowed types: jpg, jpeg, png, gif, webp, pdf, mp3, ogg, wav, mp4, mov.
+      operationId: uploadMedia
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  file_url:
+                    type: string
+                  filename:
+                    type: string
+                  size:
+                    type: integer
+                    format: int64
+    get:
+      tags: [WhatsApp Media]
+      summary: List media in conversation
+      operationId: listConversationMedia
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Media list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  media:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MediaMessage"
+
+  /api/v1/chats/conversations/media/{mediaID}:
+    get:
+      tags: [WhatsApp Media]
+      summary: Get media file
+      description: Returns the raw file. Path traversal is blocked.
+      operationId: getMedia
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MediaId"
+      responses:
+        "200":
+          description: Raw file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Media not found
+
+  /api/v1/chats/conversations/media/{mediaID}/thumbnail:
+    get:
+      tags: [WhatsApp Media]
+      summary: Get media thumbnail
+      description: Returns thumbnail if available, otherwise falls back to original.
+      operationId: getMediaThumbnail
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MediaId"
+      responses:
+        "200":
+          description: Thumbnail file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  # ══════════════════════════════════════════════════════════
+  #  WHATSAPP ADMIN
+  # ══════════════════════════════════════════════════════════
+  /api/v1/whatsapp/admin/queue/stats:
+    get:
+      tags: [WhatsApp Admin]
+      summary: Message queue statistics
+      operationId: queueStats
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Queue stats
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/whatsapp/admin/sessions:
+    get:
+      tags: [WhatsApp Admin]
+      summary: List managed WhatsApp sessions
+      operationId: listManagedSessions
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Sessions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      type: object
+
+  /api/v1/whatsapp/admin/sessions/{sessionID}/metrics:
+    get:
+      tags: [WhatsApp Admin]
+      summary: Session metrics
+      operationId: sessionMetrics
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionID"
+      responses:
+        "200":
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/whatsapp/admin/sessions/{sessionID}/reconnect:
+    post:
+      tags: [WhatsApp Admin]
+      summary: Force reconnect session
+      operationId: forceReconnect
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionID"
+      responses:
+        "200":
+          description: Reconnect initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  # ══════════════════════════════════════════════════════════
+  #  WHATSAPP INTERACTIVE
+  # ══════════════════════════════════════════════════════════
+  /api/v1/whatsapp/interactive/list:
+    post:
+      tags: [WhatsApp Interactive]
+      summary: Send list message
+      operationId: sendListMessage
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, chat_id, body, items]
+              properties:
+                session_id:
+                  type: string
+                chat_id:
+                  type: string
+                header:
+                  type: string
+                body:
+                  type: string
+                footer:
+                  type: string
+                button_text:
+                  type: string
+                  example: "Choose an option"
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      title:
+                        type: string
+                      description:
+                        type: string
+                      row_id:
+                        type: string
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/v1/whatsapp/interactive/buttons:
+    post:
+      tags: [WhatsApp Interactive]
+      summary: Send buttons message
+      operationId: sendButtonsMessage
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, chat_id, body, buttons]
+              properties:
+                session_id:
+                  type: string
+                chat_id:
+                  type: string
+                body:
+                  type: string
+                buttons:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      text:
+                        type: string
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  # ══════════════════════════════════════════════════════════
+  #  DB MANAGER (Admin)
+  # ══════════════════════════════════════════════════════════
+  /api/v1/db-manager/tasks:
+    get:
+      tags: [DB Manager]
+      summary: List available cleanup tasks
+      operationId: listCleanupTasks
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Tasks list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        description:
+                          type: string
+
+  /api/v1/db-manager/config:
+    get:
+      tags: [DB Manager]
+      summary: Get cleanup configuration
+      operationId: getCleanupConfig
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Config
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config:
+                    type: object
+                    description: Default cleanup day-thresholds for each task
+
+  /api/v1/db-manager/run-all:
+    post:
+      tags: [DB Manager]
+      summary: Run all cleanup tasks
+      operationId: runAllCleanups
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Cleanup report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report:
+                    $ref: "#/components/schemas/CleanupReport"
+
+  /api/v1/db-manager/run:
+    post:
+      tags: [DB Manager]
+      summary: Run a single cleanup task
+      operationId: runCleanupTask
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_name]
+              properties:
+                task_name:
+                  type: string
+                  description: |
+                    One of: `old_resolved_conversations`, `abandoned_conversations`,
+                    `orphaned_messages`, `stale_unknown_questions`, `expired_handoffs`,
+                    `old_audit_logs`, `old_notifications`, `stale_inactive_integrations`,
+                    `expired_trials`, `expired_credits`, `stale_credit_purchases`,
+                    `completed_campaigns`
+                days:
+                  type: integer
+                  description: Override default retention period (days)
+      responses:
+        "200":
+          description: Task result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      status:
+                        type: string
+                      deleted:
+                        type: integer
+
+  # ══════════════════════════════════════════════════════════
+  #  BACKGROUND WORKER (Admin)
+  # ══════════════════════════════════════════════════════════
+  /api/v1/background/submit:
+    post:
+      tags: [Background Worker]
+      summary: Submit background task
+      operationId: submitBackgroundTask
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_name]
+              properties:
+                task_name:
+                  type: string
+                payload:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "202":
+          description: Task submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id:
+                    type: string
+                  status:
+                    type: string
+                    example: submitted
+
+  /api/v1/background/tasks:
+    get:
+      tags: [Background Worker]
+      summary: List background tasks
+      operationId: listBackgroundTasks
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Tasks list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BackgroundTask"
+                  count:
+                    type: integer
+
+  /api/v1/background/tasks/{id}:
+    get:
+      tags: [Background Worker]
+      summary: Get task status
+      operationId: getBackgroundTaskStatus
+      security:
+        - CookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BackgroundTaskId"
+      responses:
+        "200":
+          description: Task detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    $ref: "#/components/schemas/BackgroundTask"
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /api/v1/background/stats:
+    get:
+      tags: [Background Worker]
+      summary: Worker pool statistics
+      operationId: workerStats
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stats:
+                    type: object
+
+  # ══════════════════════════════════════════════════════════
+  #  ASSISTANT
+  # ══════════════════════════════════════════════════════════
+  /api/v1/assistant/chat:
+    post:
+      tags: [Assistant]
+      summary: Chat with onboarding assistant
+      operationId: assistantChat
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  example: "How do I set up my first FAQ category?"
+      responses:
+        "200":
+          description: Assistant response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantResponse"
+
+  # ══════════════════════════════════════════════════════════
+  #  ONBOARDING
+  # ══════════════════════════════════════════════════════════
+  /api/v1/onboarding/status:
+    get:
+      tags: [Onboarding]
+      summary: Get onboarding status
+      operationId: getOnboardingStatus
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Onboarding progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnboardingStatus"
+
+  /api/v1/onboarding/step:
+    post:
+      tags: [Onboarding]
+      summary: Complete onboarding step
+      operationId: completeOnboardingStep
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [step]
+              properties:
+                step:
+                  type: string
+                  description: Step identifier (e.g. "profile", "industry", "categories", "integration")
+                industry:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: Step completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  step:
+                    type: string
+
+  /api/v1/onboarding/categories/auto-create:
+    post:
+      tags: [Onboarding]
+      summary: Auto-create categories from industry template
+      operationId: autoCreateCategories
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [industry_id]
+              properties:
+                industry_id:
+                  type: string
+      responses:
+        "201":
+          description: Categories created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  categories:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Category"
+                  count:
+                    type: integer
+
+  /api/v1/onboarding/industry-templates:
+    get:
+      tags: [Onboarding]
+      summary: List industry templates
+      operationId: getIndustryTemplates
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Industry templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  industries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/IndustryTemplate"
+
+  # ══════════════════════════════════════════════════════════
+  #  PUSH NOTIFICATIONS
+  # ══════════════════════════════════════════════════════════
+  /api/v1/push/subscribe:
+    post:
+      tags: [Push Notifications]
+      summary: Subscribe to push notifications
+      operationId: pushSubscribe
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscriptionRequest"
+      responses:
+        "200":
+          description: Subscribed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/v1/push/unsubscribe:
+    post:
+      tags: [Push Notifications]
+      summary: Unsubscribe from push notifications
+      operationId: pushUnsubscribe
+      security:
+        - CookieAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                endpoint:
+                  type: string
+                  format: uri
+                  description: If omitted, all subscriptions for the user are removed
+      responses:
+        "200":
+          description: Unsubscribed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"

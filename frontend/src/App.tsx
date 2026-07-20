@@ -70,7 +70,11 @@ const router = createBrowserRouter([
       // Public landing page
       {
         path: '/',
-        element: <LandingPage />,
+        element: (
+          <RouteErrorBoundary pageName="Home">
+            <LandingPage />
+          </RouteErrorBoundary>
+        ),
       },
       // Auth routes - guest protection
       {
@@ -80,7 +84,7 @@ const router = createBrowserRouter([
             <AuthLayout />
           </GuestRoute>
         ),
-        children: [{ index: true, element: <LoginPage /> }],
+        children: [{ index: true, element: <RouteErrorBoundary pageName="Login"><LoginPage /></RouteErrorBoundary> }],
       },
       {
         path: '/signup',
@@ -89,7 +93,7 @@ const router = createBrowserRouter([
             <AuthLayout />
           </GuestRoute>
         ),
-        children: [{ index: true, element: <SignupPage /> }],
+        children: [{ index: true, element: <RouteErrorBoundary pageName="Signup"><SignupPage /></RouteErrorBoundary> }],
       },
       {
         path: '/forgot-password',
@@ -98,7 +102,7 @@ const router = createBrowserRouter([
             <AuthLayout />
           </GuestRoute>
         ),
-        children: [{ index: true, element: <ForgotPasswordPage /> }],
+        children: [{ index: true, element: <RouteErrorBoundary pageName="Forgot Password"><ForgotPasswordPage /></RouteErrorBoundary> }],
       },
       {
         path: '/reset-password',
@@ -107,7 +111,7 @@ const router = createBrowserRouter([
             <AuthLayout />
           </GuestRoute>
         ),
-        children: [{ index: true, element: <ResetPasswordPage /> }],
+        children: [{ index: true, element: <RouteErrorBoundary pageName="Reset Password"><ResetPasswordPage /></RouteErrorBoundary> }],
       },
       {
         path: '/verify-email',
@@ -116,7 +120,7 @@ const router = createBrowserRouter([
             <AuthLayout />
           </GuestRoute>
         ),
-        children: [{ index: true, element: <VerifyEmailPage /> }],
+        children: [{ index: true, element: <RouteErrorBoundary pageName="Verify Email"><VerifyEmailPage /></RouteErrorBoundary> }],
       },
       // Dashboard routes - protected
       {
@@ -133,23 +137,23 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
         children: [
-          { path: 'dashboard', element: <OverviewPage /> },
-          { path: 'chats', element: <ChatsPage /> },
+          { path: 'dashboard', element: <RouteErrorBoundary pageName="Overview"><OverviewPage /></RouteErrorBoundary> },
+          { path: 'chats', element: <RouteErrorBoundary pageName="Chats"><ChatsPage /></RouteErrorBoundary> },
           { path: 'teach', children: [
-            { index: true, element: <TeachPage /> },
-            { path: 'unknown', element: <UnknownQuestionsPage /> },
+            { index: true, element: <RouteErrorBoundary pageName="Teach"><TeachPage /></RouteErrorBoundary> },
+            { path: 'unknown', element: <RouteErrorBoundary pageName="Unknown Questions"><UnknownQuestionsPage /></RouteErrorBoundary> },
           ]},
-          { path: 'insights', element: <InsightsPage /> },
-          { path: 'channels', element: <ChannelsPage /> },
+          { path: 'insights', element: <RouteErrorBoundary pageName="Insights"><InsightsPage /></RouteErrorBoundary> },
+          { path: 'channels', element: <RouteErrorBoundary pageName="Channels"><ChannelsPage /></RouteErrorBoundary> },
 
-          { path: 'settings', element: <SettingsPage /> },
-          { path: 'notifications', element: <NotificationsPage /> },
-          { path: 'billing', element: <BillingPage /> },
-          { path: 'team', element: <TeamPage /> },
-          { path: 'widget', element: <WidgetPage /> },
-          { path: 'leads', element: <LeadsPage /> },
-          { path: 'inventory', element: <InventoryPage /> },
-          { path: 'onboarding', element: <OnboardingPage /> },
+          { path: 'settings', element: <RouteErrorBoundary pageName="Settings"><SettingsPage /></RouteErrorBoundary> },
+          { path: 'notifications', element: <RouteErrorBoundary pageName="Notifications"><NotificationsPage /></RouteErrorBoundary> },
+          { path: 'billing', element: <RouteErrorBoundary pageName="Billing"><BillingPage /></RouteErrorBoundary> },
+          { path: 'team', element: <RouteErrorBoundary pageName="Team"><TeamPage /></RouteErrorBoundary> },
+          { path: 'widget', element: <RouteErrorBoundary pageName="Widget"><WidgetPage /></RouteErrorBoundary> },
+          { path: 'leads', element: <RouteErrorBoundary pageName="Leads"><LeadsPage /></RouteErrorBoundary> },
+          { path: 'inventory', element: <RouteErrorBoundary pageName="Inventory"><InventoryPage /></RouteErrorBoundary> },
+          { path: 'onboarding', element: <RouteErrorBoundary pageName="Onboarding"><OnboardingPage /></RouteErrorBoundary> },
         ],
       },
       { path: '*', element: <Navigate to='/' replace /> },

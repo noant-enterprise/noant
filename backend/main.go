@@ -259,6 +259,7 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
+	router.Use(infrastructure.PrometheusMiddleware())
 
 	router.GET("/metrics", middleware.RequireAdminMiddleware(), gin.WrapH(promhttp.Handler()))
 	router.GET("/health", healthHandler.Check)
