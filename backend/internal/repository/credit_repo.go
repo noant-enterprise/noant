@@ -68,7 +68,7 @@ func (r *CreditRepository) Deduct(ctx context.Context, userID string, amount int
 		if err != nil {
 			return fmt.Errorf("begin tx: %w", err)
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Get current credit record FOR UPDATE to prevent concurrent overspend
 		var currentBalance int
@@ -114,7 +114,7 @@ func (r *CreditRepository) GetExpiring(ctx context.Context, days int) ([]domain.
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var uc domain.UserCredit
@@ -144,7 +144,7 @@ func (r *CreditRepository) GetPurchaseHistory(ctx context.Context, userID string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var purchases []domain.CreditPurchase
 	for rows.Next() {
 		var p domain.CreditPurchase

@@ -19,8 +19,8 @@ type ChatHandler struct {
 	wsHub   *WebSocketHub
 }
 
-func NewChatHandler(service *service.ChatService, logger *infrastructure.Logger, wsHub *WebSocketHub) *ChatHandler {
-	return &ChatHandler{service: service, logger: logger, wsHub: wsHub}
+func NewChatHandler(svc *service.ChatService, logger *infrastructure.Logger, wsHub *WebSocketHub) *ChatHandler {
+	return &ChatHandler{service: svc, logger: logger, wsHub: wsHub}
 }
 
 func (h *ChatHandler) DirectChat(c *gin.Context) {

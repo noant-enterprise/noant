@@ -118,16 +118,40 @@ func Load() *Config {
 	}
 	port := getEnv("PORT", "5000")
 
-	cacheTTL, _ := strconv.Atoi(getEnv("CACHE_TTL", "300"))
-	cacheMaxKeys, _ := strconv.Atoi(getEnv("CACHE_MAX_KEYS", "10000"))
-	smtpPort, _ := strconv.Atoi(getEnv("SMTP_PORT", "587"))
+	cacheTTL, err := strconv.Atoi(getEnv("CACHE_TTL", "300"))
+	if err != nil {
+		cacheTTL = 300
+	}
+	cacheMaxKeys, err := strconv.Atoi(getEnv("CACHE_MAX_KEYS", "10000"))
+	if err != nil {
+		cacheMaxKeys = 10000
+	}
+	smtpPort, err := strconv.Atoi(getEnv("SMTP_PORT", "587"))
+	if err != nil {
+		smtpPort = 587
+	}
 
-	tidbPort, _ := strconv.Atoi(getEnv("TIDB_PORT", "4000"))
-	dbPoolSize, _ := strconv.Atoi(getEnv("DB_POOL_SIZE", "200"))
+	tidbPort, err := strconv.Atoi(getEnv("TIDB_PORT", "4000"))
+	if err != nil {
+		tidbPort = 4000
+	}
+	dbPoolSize, err := strconv.Atoi(getEnv("DB_POOL_SIZE", "200"))
+	if err != nil {
+		dbPoolSize = 200
+	}
 
-	redisPort, _ := strconv.Atoi(getEnv("REDIS_PORT", "6379"))
-	redisSSL, _ := strconv.ParseBool(getEnv("REDIS_SSL", "true"))
-	redisShortTTL, _ := strconv.Atoi(getEnv("REDIS_SHORT_TTL", "259200"))
+	redisPort, err := strconv.Atoi(getEnv("REDIS_PORT", "6379"))
+	if err != nil {
+		redisPort = 6379
+	}
+	redisSSL, err := strconv.ParseBool(getEnv("REDIS_SSL", "true"))
+	if err != nil {
+		redisSSL = true
+	}
+	redisShortTTL, err := strconv.Atoi(getEnv("REDIS_SHORT_TTL", "259200"))
+	if err != nil {
+		redisShortTTL = 259200
+	}
 
 	var groqKeys []string
 	if raw := strings.TrimSpace(os.Getenv("GROQ_API_KEY")); raw != "" {
@@ -265,7 +289,7 @@ func atoiDefault(s string) int {
 	return v
 }
 
-func parseCSVEnv(key string, fallback string) []string {
+func parseCSVEnv(key, fallback string) []string {
 	raw := strings.TrimSpace(getEnv(key, ""))
 	if raw == "" {
 		return []string{fallback}

@@ -31,7 +31,7 @@ func (r *HandoffRepository) Create(ctx context.Context, h *domain.Handoff) error
 	return err
 }
 
-func (r *HandoffRepository) GetByID(ctx context.Context, id string, userID string) (*domain.Handoff, error) {
+func (r *HandoffRepository) GetByID(ctx context.Context, id, userID string) (*domain.Handoff, error) {
 	h := &domain.Handoff{}
 	row := r.db.QueryRowContext(ctx, `SELECT id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, final_price, owner_notes, owner_notified_at, reminder_count, next_reminder_at, created_at, updated_at FROM handoffs WHERE id = ? AND user_id = ?`, id, userID)
 	err := row.Scan(&h.ID, &h.UserID, &h.ConversationID, &h.CustomerName, &h.CustomerPhone, &h.CustomerWhatsapp, &h.CustomerLocation, &h.ProductName, &h.OriginalPrice, &h.AgreedPrice, &h.Quantity, &h.Status, &h.FinalPrice, &h.OwnerNotes, &h.OwnerNotifiedAt, &h.ReminderCount, &h.NextReminderAt, &h.CreatedAt, &h.UpdatedAt)
@@ -44,7 +44,7 @@ func (r *HandoffRepository) GetByID(ctx context.Context, id string, userID strin
 	return h, nil
 }
 
-func (r *HandoffRepository) List(ctx context.Context, userID string, status string, limit int) ([]domain.Handoff, error) {
+func (r *HandoffRepository) List(ctx context.Context, userID, status string, limit int) ([]domain.Handoff, error) {
 	query := `SELECT id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, final_price, owner_notes, owner_notified_at, reminder_count, next_reminder_at, created_at, updated_at FROM handoffs WHERE user_id = ?`
 	args := []interface{}{userID}
 	if status != "" {
@@ -60,7 +60,7 @@ func (r *HandoffRepository) List(ctx context.Context, userID string, status stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var handoffs []domain.Handoff
 	for rows.Next() {
 		var h domain.Handoff
@@ -72,7 +72,7 @@ func (r *HandoffRepository) List(ctx context.Context, userID string, status stri
 	return handoffs, nil
 }
 
-func (r *HandoffRepository) UpdateStatus(ctx context.Context, id string, userID string, status string, notes string) error {
+func (r *HandoffRepository) UpdateStatus(ctx context.Context, id, userID, status, notes string) error {
 	query := `UPDATE handoffs SET status=?, owner_notes=?, updated_at=NOW() WHERE id=? AND user_id=?`
 	_, err := r.db.ExecContext(ctx, query, status, notes, id, userID)
 	return err
@@ -88,7 +88,7 @@ func (r *HandoffRepository) GetReadyForReminder(ctx context.Context) ([]domain.H
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var handoffs []domain.Handoff
 	for rows.Next() {
 		var h domain.Handoff

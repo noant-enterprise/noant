@@ -15,8 +15,8 @@ type PaymentHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewPaymentHandler(service *service.PaymentService, logger *infrastructure.Logger) *PaymentHandler {
-	return &PaymentHandler{service: service, logger: logger}
+func NewPaymentHandler(svc *service.PaymentService, logger *infrastructure.Logger) *PaymentHandler {
+	return &PaymentHandler{service: svc, logger: logger}
 }
 
 func (h *PaymentHandler) ListPlans(c *gin.Context) {

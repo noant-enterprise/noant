@@ -90,7 +90,7 @@ func (s *ChatService) beginAIReply(conversationID, message string) bool {
 	return true
 }
 
-func (s *ChatService) completeAIReply(conversationID string, message string) {
+func (s *ChatService) completeAIReply(conversationID, message string) {
 	key := normalizeReplyKey(message)
 	s.replyMu.Lock()
 	defer s.replyMu.Unlock()
@@ -269,7 +269,7 @@ func cleanWhatsAppID(raw string) string {
 	return CleanPhoneNumber(raw)
 }
 
-func (s *ChatService) ResolveWhatsAppIdentity(ctx context.Context, userID string, sessionID string, msg *OpenWAMessageData) (*WhatsAppIdentity, error) {
+func (s *ChatService) ResolveWhatsAppIdentity(ctx context.Context, userID, sessionID string, msg *OpenWAMessageData) (*WhatsAppIdentity, error) {
 	if msg == nil {
 		return nil, fmt.Errorf("message is required")
 	}
@@ -341,7 +341,7 @@ func (s *ChatService) ResolveWhatsAppIdentity(ctx context.Context, userID string
 	return identity, nil
 }
 
-func (s *ChatService) ListConversations(ctx context.Context, userID string, status string, page, limit int) ([]domain.Conversation, int, error) {
+func (s *ChatService) ListConversations(ctx context.Context, userID, status string, page, limit int) ([]domain.Conversation, int, error) {
 	offset := (page - 1) * limit
 	conversations, total, err := s.repos.Conversation.List(ctx, userID, status, limit, offset)
 	if err != nil {

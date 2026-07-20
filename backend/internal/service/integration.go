@@ -50,13 +50,13 @@ func (s *IntegrationService) List(ctx context.Context, userID string) ([]domain.
 	return s.repos.Integration.ListByUser(ctx, userID)
 }
 
-func (s *IntegrationService) Connect(ctx context.Context, userID, channel string, config map[string]interface{}) (*domain.Integration, error) {
+func (s *IntegrationService) Connect(ctx context.Context, userID, channel string, cfg map[string]interface{}) (*domain.Integration, error) {
 	existing, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, channel)
 	if err != nil {
 		return nil, err
 	}
 
-	mergedConfig := mergeIntegrationConfig(nil, config)
+	mergedConfig := mergeIntegrationConfig(nil, cfg)
 	var integration *domain.Integration
 	if existing != nil {
 		existing.Status = "active"
@@ -74,7 +74,7 @@ func (s *IntegrationService) Connect(ctx context.Context, userID, channel string
 	}
 
 	if channel == "telegram" {
-		updated, err := s.configureTelegramIntegration(ctx, integration, config)
+		updated, err := s.configureTelegramIntegration(ctx, integration, cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -144,12 +144,13 @@ func (s *IntegrationService) SyncTelegramWebhooks(ctx context.Context) error {
 		return err
 	}
 
-	for _, integration := range integrations {
+	for i := range integrations {
+		integration := &integrations[i]
 		if integration.Channel != "telegram" {
 			continue
 		}
 
-		updated, err := s.configureTelegramIntegration(ctx, &integration, integration.Config)
+		updated, err := s.configureTelegramIntegration(ctx, integration, integration.Config)
 		if err != nil {
 			s.logger.Warn("Failed to sync Telegram webhook", "integrationID", integration.ID, "userID", integration.UserID, "error", err)
 			continue
@@ -164,14 +165,14 @@ func (s *IntegrationService) SyncTelegramWebhooks(ctx context.Context) error {
 	return nil
 }
 
-func (s *IntegrationService) configureTelegramIntegration(ctx context.Context, integration *domain.Integration, config map[string]interface{}) (*domain.Integration, error) {
+func (s *IntegrationService) configureTelegramIntegration(ctx context.Context, integration *domain.Integration, cfg map[string]interface{}) (*domain.Integration, error) {
 	if s.telegram == nil {
 		return nil, fmt.Errorf("telegram service is not available")
 	}
 
 	token := ""
-	if config != nil {
-		if v, ok := config["bot_token"].(string); ok {
+	if cfg != nil {
+		if v, ok := cfg["bot_token"].(string); ok {
 			token = strings.TrimSpace(v)
 		}
 	}
@@ -188,8 +189,8 @@ func (s *IntegrationService) configureTelegramIntegration(ctx context.Context, i
 	}
 
 	secret := ""
-	if config != nil {
-		if v, ok := config["webhook_secret"].(string); ok {
+	if cfg != nil {
+		if v, ok := cfg["webhook_secret"].(string); ok {
 			secret = strings.TrimSpace(v)
 		}
 	}
@@ -203,8 +204,8 @@ func (s *IntegrationService) configureTelegramIntegration(ctx context.Context, i
 	}
 
 	webhookURL := strings.TrimSpace(s.cfg.TelegramWebhookURL)
-	if config != nil {
-		if v, ok := config["webhook_url"].(string); ok && strings.TrimSpace(v) != "" {
+	if cfg != nil {
+		if v, ok := cfg["webhook_url"].(string); ok && strings.TrimSpace(v) != "" {
 			webhookURL = strings.TrimSpace(v)
 		}
 	}
@@ -493,12 +494,12 @@ func (s *IntegrationService) persistTelegramPollingOffset(ctx context.Context, i
 	}
 }
 
-func getConfigInt64(config map[string]interface{}, key string) int64 {
-	if config == nil {
+func getConfigInt64(cfgMap map[string]interface{}, key string) int64 {
+	if cfgMap == nil {
 		return 0
 	}
 
-	value, ok := config[key]
+	value, ok := cfgMap[key]
 	if !ok {
 		return 0
 	}
@@ -531,15 +532,15 @@ func getConfigInt64(config map[string]interface{}, key string) int64 {
 	return 0
 }
 
-func (s *IntegrationService) Test(ctx context.Context, channel string, config map[string]interface{}) (bool, string) {
+func (s *IntegrationService) Test(ctx context.Context, channel string, cfg map[string]interface{}) (ok bool, msg string) {
 	client := &http.Client{Timeout: 10 * time.Second}
 
 	switch channel {
 	case "telegram":
 		// Prefer token from the provided config, fall back to environment config
 		token := ""
-		if config != nil {
-			if t, ok := config["bot_token"].(string); ok {
+		if cfg != nil {
+			if t, ok := cfg["bot_token"].(string); ok {
 				token = t
 			}
 		}
@@ -549,12 +550,12 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 		if token == "" {
 			return false, "No Telegram Bot Token provided"
 		}
-		url := fmt.Sprintf("https://api.telegram.org/bot%s/getMe", token)
-		resp, err := client.Get(url)
+		apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/getMe", token)
+		resp, err := client.Get(apiURL)
 		if err != nil {
 			return false, fmt.Sprintf("Connection failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		var result struct {
 			OK     bool `json:"ok"`
 			Result struct {
@@ -575,21 +576,21 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 		toEmail := ""
 		subject := "NOANT email integration test"
 		body := "If you received this, your SMTP/Gmail email integration is working."
-		if config != nil {
-			if v, ok := config["to_email"].(string); ok {
+		if cfg != nil {
+			if v, ok := cfg["to_email"].(string); ok {
 				toEmail = v
 			}
-			if v, ok := config["subject"].(string); ok && strings.TrimSpace(v) != "" {
+			if v, ok := cfg["subject"].(string); ok && strings.TrimSpace(v) != "" {
 				subject = v
 			}
-			if v, ok := config["body"].(string); ok && strings.TrimSpace(v) != "" {
+			if v, ok := cfg["body"].(string); ok && strings.TrimSpace(v) != "" {
 				body = v
 			}
 		}
 		if strings.TrimSpace(toEmail) == "" {
 			return false, "Recipient email (to_email) is required"
 		}
-		settings := smtpSettingsFromConfig(s.cfg, config)
+		settings := smtpSettingsFromConfig(s.cfg, cfg)
 		if _, err := sendSMTPMessage(ctx, settings, toEmail, subject, fmt.Sprintf("<html><body><p>%s</p></body></html>", html.EscapeString(body))); err != nil {
 			return false, fmt.Sprintf("Email test failed: %v", err)
 		}
@@ -606,11 +607,11 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 
 		phoneNumberID := ""
 		accessToken := ""
-		if config != nil {
-			if v, ok := config["phone_number_id"].(string); ok {
+		if cfg != nil {
+			if v, ok := cfg["phone_number_id"].(string); ok {
 				phoneNumberID = v
 			}
-			if v, ok := config["access_token"].(string); ok {
+			if v, ok := cfg["access_token"].(string); ok {
 				accessToken = v
 			}
 		}
@@ -622,8 +623,8 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 				return false, "Phone Number ID and Access Token are required"
 			}
 		}
-		url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s", phoneNumberID)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		apiURL := fmt.Sprintf("https://graph.facebook.com/v21.0/%s", phoneNumberID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, http.NoBody)
 		if err != nil {
 			return false, "Failed to create request"
 		}
@@ -632,7 +633,7 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 		if err != nil {
 			return false, fmt.Sprintf("Connection failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		var result struct {
 			ID          string `json:"id"`
 			DisplayName string `json:"display_phone_number"`
@@ -651,11 +652,11 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 	case "facebook":
 		pageID := ""
 		pageToken := ""
-		if config != nil {
-			if v, ok := config["page_id"].(string); ok {
+		if cfg != nil {
+			if v, ok := cfg["page_id"].(string); ok {
 				pageID = v
 			}
-			if v, ok := config["page_access_token"].(string); ok {
+			if v, ok := cfg["page_access_token"].(string); ok {
 				pageToken = v
 			}
 		}
@@ -667,12 +668,12 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 				return false, "Page ID and Page Access Token are required"
 			}
 		}
-		url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s?fields=id,name&access_token=%s", pageID, pageToken)
-		resp, err := client.Get(url)
+		apiURL := fmt.Sprintf("https://graph.facebook.com/v21.0/%s?fields=id,name&access_token=%s", pageID, pageToken)
+		resp, err := client.Get(apiURL)
 		if err != nil {
 			return false, fmt.Sprintf("Connection failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		var result struct {
 			ID    string `json:"id"`
 			Name  string `json:"name"`
@@ -691,11 +692,11 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 	case "instagram":
 		instagramID := ""
 		pageToken := ""
-		if config != nil {
-			if v, ok := config["instagram_id"].(string); ok {
+		if cfg != nil {
+			if v, ok := cfg["instagram_id"].(string); ok {
 				instagramID = v
 			}
-			if v, ok := config["page_access_token"].(string); ok {
+			if v, ok := cfg["page_access_token"].(string); ok {
 				pageToken = v
 			}
 		}
@@ -707,12 +708,12 @@ func (s *IntegrationService) Test(ctx context.Context, channel string, config ma
 				return false, "Instagram Account ID and Page Access Token are required"
 			}
 		}
-		url := fmt.Sprintf("https://graph.facebook.com/v21.0/%s?fields=id,username&access_token=%s", instagramID, pageToken)
-		resp, err := client.Get(url)
+		apiURL := fmt.Sprintf("https://graph.facebook.com/v21.0/%s?fields=id,username&access_token=%s", instagramID, pageToken)
+		resp, err := client.Get(apiURL)
 		if err != nil {
 			return false, fmt.Sprintf("Connection failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		var result struct {
 			ID       string `json:"id"`
 			Username string `json:"username"`

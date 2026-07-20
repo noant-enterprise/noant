@@ -75,15 +75,15 @@ func (s *HandoffService) Create(ctx context.Context, h *domain.Handoff) error {
 	return nil
 }
 
-func (s *HandoffService) List(ctx context.Context, userID string, status string) ([]domain.Handoff, error) {
+func (s *HandoffService) List(ctx context.Context, userID, status string) ([]domain.Handoff, error) {
 	return s.repos.Handoff.List(ctx, userID, status, 100)
 }
 
-func (s *HandoffService) GetByID(ctx context.Context, id string, userID string) (*domain.Handoff, error) {
+func (s *HandoffService) GetByID(ctx context.Context, id, userID string) (*domain.Handoff, error) {
 	return s.repos.Handoff.GetByID(ctx, id, userID)
 }
 
-func (s *HandoffService) UpdateStatus(ctx context.Context, id string, userID string, status string, notes string, finalPrice *float64) error {
+func (s *HandoffService) UpdateStatus(ctx context.Context, id, userID, status, notes string, finalPrice *float64) error {
 	if err := s.repos.Handoff.UpdateStatus(ctx, id, userID, status, notes); err != nil {
 		return err
 	}
@@ -105,7 +105,8 @@ func (s *HandoffService) ProcessReminders(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, h := range handoffs {
+	for i := range handoffs {
+		h := &handoffs[i]
 		if h.ReminderCount >= 3 {
 			_ = s.repos.Handoff.Expire(ctx, h.ID)
 			// Auto-reply to customer

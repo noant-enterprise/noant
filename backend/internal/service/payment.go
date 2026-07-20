@@ -81,7 +81,6 @@ func (s *PaymentService) Subscribe(ctx context.Context, userID, planID string) (
 	planName := planID
 	switch planID {
 	case "pulse", "pro", "enterprise":
-		planName = planID
 	default:
 		return "", fmt.Errorf("invalid plan ID: %s", planID)
 	}
@@ -270,8 +269,8 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte, headers ma
 
 		// Handle cancellation / non-active status
 		status := "active"
-		if subData.Status == "canceled" || subData.Status == "revoked" || subData.Status == "cancelled" {
-			status = "cancelled"
+	if subData.Status == "canceled" || subData.Status == "revoked" || subData.Status == "cancelled" { //nolint:misspell // external API status values
+		status = "cancelled" //nolint:misspell // DB status value
 		}
 
 		sub := &domain.Subscription{
@@ -288,7 +287,7 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte, headers ma
 		}
 
 		userPlan := planID
-		if status == "cancelled" {
+		if status == "cancelled" { //nolint:misspell // DB status value
 			userPlan = "free"
 		}
 
@@ -323,7 +322,7 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte, headers ma
 			if err := s.repos.User.UpdatePlan(ctx, userID, "free"); err != nil {
 				s.logger.Error("Failed to downgrade user plan", "error", err)
 			}
-			s.logger.Info("Subscription revoked/cancelled via webhook", "user", userID, "subID", subData.ID)
+			s.logger.Info("Subscription revoked/canceled via webhook", "user", userID, "subID", subData.ID)
 		}
 
 	default:

@@ -40,7 +40,7 @@ func (r *MessageRepository) Create(ctx context.Context, msg *domain.Message) err
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Get next sequence number for this conversation (atomic within transaction)
 	var maxSeq sql.NullInt64
@@ -72,7 +72,7 @@ func (r *MessageRepository) ListByConversation(ctx context.Context, conversation
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var messages []domain.Message
 	for rows.Next() {
 		var msg domain.Message
@@ -125,7 +125,7 @@ func (r *MessageRepository) ListByConversationPaginated(ctx context.Context, con
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var messages []domain.Message
 	for rows.Next() {
 		var msg domain.Message

@@ -56,7 +56,7 @@ type BroadcastRequest struct {
 }
 
 // ExecuteCampaign runs a campaign broadcast
-func (cb *CampaignBridge) ExecuteCampaign(ctx context.Context, req BroadcastRequest) error {
+func (cb *CampaignBridge) ExecuteCampaign(ctx context.Context, req *BroadcastRequest) error {
 	if len(req.Recipients) == 0 {
 		return fmt.Errorf("no recipients specified")
 	}
@@ -105,7 +105,7 @@ func (cb *CampaignBridge) ExecuteCampaign(ctx context.Context, req BroadcastRequ
 
 			if req.TemplateID != "" {
 				entry.MsgType = MsgTypeTemplate
-				entry.Content = fmt.Sprintf(`{"template":"%s","variables":%v}`, req.TemplateID, req.Variables)
+				entry.Content = fmt.Sprintf(`{"template":%q,"variables":%v}`, req.TemplateID, req.Variables)
 			}
 
 			if err := cb.queue.Enqueue(entry); err != nil {
@@ -155,9 +155,9 @@ func (cb *CampaignBridge) GetCampaignAnalytics(ctx context.Context, campaignID s
 	}
 
 	var total, sent, delivered, read, failed, blocked, optedOut int
-	for _, r := range recipients {
+	for i := range recipients {
 		total++
-		switch r.Status {
+		switch recipients[i].Status {
 		case "sent":
 			sent++
 		case "delivered":

@@ -99,16 +99,16 @@ func (r *RedisClient) RateLimit(ctx context.Context, key string, limit int, wind
 	return incr.Val() <= int64(limit), nil
 }
 
-func (r *RedisClient) RateLimitWithRemaining(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error) {
+func (r *RedisClient) RateLimitWithRemaining(ctx context.Context, key string, limit int, window time.Duration) (allowed bool, remaining int, err error) {
 	pipe := r.client.Pipeline()
 	incr := pipe.Incr(ctx, key)
 	pipe.Expire(ctx, key, window)
-	_, err := pipe.Exec(ctx)
+	_, err = pipe.Exec(ctx)
 	if err != nil {
 		return false, 0, err
 	}
 	val := incr.Val()
-	remaining := limit - int(val)
+	remaining = limit - int(val)
 	if remaining < 0 {
 		remaining = 0
 	}

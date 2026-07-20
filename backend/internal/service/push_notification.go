@@ -126,7 +126,7 @@ func (s *PushNotificationService) sendPush(sub *domain.PushSubscription, payload
 		return err
 	}
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	return nil
 }

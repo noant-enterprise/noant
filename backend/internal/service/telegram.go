@@ -155,24 +155,24 @@ func (u *TelegramUpdate) IncomingMessage() (*TelegramIncomingMessage, bool) {
 	}, true
 }
 
-func (s *TelegramService) request(ctx context.Context, botToken, apiMethod, httpMethod string, payload interface{}) ([]byte, int, error) {
+func (s *TelegramService) request(ctx context.Context, botToken, apiMethod, httpMethod string, payload interface{}) (body []byte, statusCode int, err error) {
 	if strings.TrimSpace(botToken) == "" {
 		return nil, 0, fmt.Errorf("telegram bot token is required")
 	}
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/%s", botToken, apiMethod)
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/%s", botToken, apiMethod)
 
-	var body io.Reader
+	var reqBody io.Reader
 	contentType := ""
 	if payload != nil {
 		if formBody, formType, err := encodeTelegramPayload(payload); err == nil {
-			body = formBody
+			reqBody = formBody
 			contentType = formType
 		} else {
 			jsonPayload, marshalErr := json.Marshal(payload)
 			if marshalErr != nil {
 				return nil, 0, marshalErr
 			}
-			body = bytes.NewBuffer(jsonPayload)
+			reqBody = bytes.NewBuffer(jsonPayload)
 			contentType = "application/json"
 		}
 	}
@@ -180,7 +180,7 @@ func (s *TelegramService) request(ctx context.Context, botToken, apiMethod, http
 	if httpMethod == "" {
 		httpMethod = http.MethodPost
 	}
-	req, err := http.NewRequestWithContext(ctx, httpMethod, url, body)
+	req, err := http.NewRequestWithContext(ctx, httpMethod, apiURL, reqBody)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -192,7 +192,7 @@ func (s *TelegramService) request(ctx context.Context, botToken, apiMethod, http
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	return respBody, resp.StatusCode, nil
@@ -303,7 +303,7 @@ func (s *TelegramService) GetUpdates(ctx context.Context, botToken string, offse
 		endpoint += "?" + encoded
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +312,7 @@ func (s *TelegramService) GetUpdates(ctx context.Context, botToken string, offse
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {

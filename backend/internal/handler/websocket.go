@@ -25,12 +25,6 @@ func (c *wsClient) writeMessage(messageType int, data []byte) error {
 	return c.conn.WriteMessage(messageType, data)
 }
 
-func (c *wsClient) writeJSON(v interface{}) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.conn.WriteJSON(v)
-}
-
 func (c *wsClient) writeLoop() {
 	for data := range c.send {
 		c.mu.Lock()
@@ -108,7 +102,7 @@ func (h *WebSocketHub) Run() {
 			h.mutex.Lock()
 			delete(h.clients, client.conn.RemoteAddr().String())
 			h.mutex.Unlock()
-			client.closeOnce.Do(func() { close(client.send); client.close() })
+			client.closeOnce.Do(func() { close(client.send); _ = client.close() })
 			h.logger.Info("WebSocket client disconnected", "addr", client.conn.RemoteAddr().String())
 
 		case msg := <-h.broadcast:

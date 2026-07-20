@@ -550,7 +550,7 @@ func (h *OpenWAHandler) GetWhatsAppStatus(c *gin.Context) {
 		for {
 			select {
 			case <-c.Request.Context().Done():
-				h.logger.Info("Long-polling WhatsApp status cancelled by client connection close", "sessionID", sessionID)
+				h.logger.Info("Long-polling WhatsApp status canceled by client connection close", "sessionID", sessionID)
 				return
 			case <-timeout:
 				h.logger.Info("Long-polling WhatsApp status timed out (no change)", "sessionID", sessionID)

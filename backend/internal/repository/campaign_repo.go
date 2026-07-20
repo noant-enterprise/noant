@@ -37,7 +37,7 @@ func (r *CampaignRepository) ListByUser(ctx context.Context, userID string) ([]d
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var c domain.CampaignSchedule
@@ -59,7 +59,7 @@ func (r *CampaignRepository) GetScheduledForToday(ctx context.Context) ([]domain
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var c domain.CampaignSchedule
@@ -81,7 +81,7 @@ func (r *CampaignRepository) GetEndingToday(ctx context.Context) ([]domain.Campa
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var c domain.CampaignSchedule
@@ -93,7 +93,7 @@ func (r *CampaignRepository) GetEndingToday(ctx context.Context) ([]domain.Campa
 	return campaigns, nil
 }
 
-func (r *CampaignRepository) UpdateStatus(ctx context.Context, id string, status string) error {
+func (r *CampaignRepository) UpdateStatus(ctx context.Context, id, status string) error {
 	_, err := r.db.ExecContext(ctx, 
 		`UPDATE campaign_schedules SET status = ?, updated_at = NOW() WHERE id = ?`, 
 		status, id)

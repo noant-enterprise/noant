@@ -41,7 +41,7 @@ func (r *IntegrationRepository) ListByUser(ctx context.Context, userID string) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var integrations []domain.Integration
 	for rows.Next() {
 		var i domain.Integration
@@ -66,7 +66,7 @@ func (r *IntegrationRepository) ListActive(ctx context.Context) ([]domain.Integr
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var integrations []domain.Integration
 	for rows.Next() {
 		var i domain.Integration
@@ -91,7 +91,7 @@ func (r *IntegrationRepository) ListByChannel(ctx context.Context, channel strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var integrations []domain.Integration
 	for rows.Next() {
 		var i domain.Integration
@@ -110,7 +110,7 @@ func (r *IntegrationRepository) ListByChannel(ctx context.Context, channel strin
 	return integrations, nil
 }
 
-func (r *IntegrationRepository) UpdateStatus(ctx context.Context, id string, status string, lastError *string) error {
+func (r *IntegrationRepository) UpdateStatus(ctx context.Context, id, status string, lastError *string) error {
 	query := `UPDATE integrations SET status = ?, last_error = ? WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, status, lastError, id)
 	return err
@@ -164,7 +164,7 @@ func (r *IntegrationRepository) GetByChannelAndWebhookSecret(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var i domain.Integration

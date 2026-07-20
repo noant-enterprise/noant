@@ -22,8 +22,8 @@ type TrainingHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewTrainingHandler(service *service.TrainingService, logger *infrastructure.Logger) *TrainingHandler {
-	return &TrainingHandler{service: service, logger: logger}
+func NewTrainingHandler(svc *service.TrainingService, logger *infrastructure.Logger) *TrainingHandler {
+	return &TrainingHandler{service: svc, logger: logger}
 }
 
 func (h *TrainingHandler) ListCategories(c *gin.Context) {
@@ -99,7 +99,7 @@ func (h *TrainingHandler) UploadCSV(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// 1. File Size Guard: limit to 2 MB to prevent OOM / Denial of Service
 	const maxFileSize = 2 * 1024 * 1024 // 2 MB

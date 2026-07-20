@@ -67,7 +67,7 @@ func (h *TemplateHandler) Create(c *gin.Context) {
 		return
 	}
 	utils.SanitizeStruct(&req)
-	tpl, err := h.templateSvc.Create(c.Request.Context(), userID, req)
+	tpl, err := h.templateSvc.Create(c.Request.Context(), userID, &req)
 	if err != nil {
 		h.logger.Error("Failed to create template", "error", err)
 		utils.RespondInternalError(c, "Failed to create template")
@@ -226,7 +226,7 @@ func (h *OpenWAHandler) BroadcastCampaign(c *gin.Context) {
 	}
 
 	bridge := service.NewCampaignBridge(h.cfg, h.openwa, nil, h.logger, nil, nil, nil, nil, nil)
-	err := bridge.ExecuteCampaign(c.Request.Context(), service.BroadcastRequest{
+	err := bridge.ExecuteCampaign(c.Request.Context(), &service.BroadcastRequest{
 		CampaignID: req.CampaignID,
 		UserID:     userID,
 		SessionID:  req.SessionID,
@@ -280,7 +280,7 @@ func (h *OpenWAHandler) UploadMedia(c *gin.Context) {
 		utils.RespondValidationError(c, "File required")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	allowedMIMETypes := map[string]bool{
 		"image/jpeg":         true,
@@ -330,7 +330,7 @@ func (h *OpenWAHandler) UploadMedia(c *gin.Context) {
 	}
 
 	mediaDir := h.cfg.OpenWAMediaDir
-	if err := os.MkdirAll(mediaDir, 0750); err != nil {
+	if err := os.MkdirAll(mediaDir, 0o750); err != nil {
 		utils.RespondInternalError(c, "Failed to create media directory")
 		return
 	}
@@ -343,7 +343,7 @@ func (h *OpenWAHandler) UploadMedia(c *gin.Context) {
 		utils.RespondInternalError(c, "Failed to save file")
 		return
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	if _, err := io.Copy(out, file); err != nil {
 		utils.RespondInternalError(c, "Failed to write file")

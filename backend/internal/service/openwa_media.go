@@ -8,7 +8,6 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
-	_ "image/png"
 	"io"
 	"net/http"
 	"os"
@@ -41,29 +40,6 @@ var supportedImageFormats = map[string]bool{
 	"image/gif":  true,
 }
 
-var supportedDocumentFormats = map[string]bool{
-	"application/pdf":                                                                                     true,
-	"application/vnd.openxmlformats-officedocument.wordprocessingml.document":                             true,
-	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":                                   true,
-	"text/csv":  true,
-	"text/plain": true,
-}
-
-var supportedAudioFormats = map[string]bool{
-	"audio/ogg":  true,
-	"audio/mpeg": true,
-	"audio/mp3":  true,
-	"audio/wav":  true,
-	"audio/webm": true,
-}
-
-var supportedVideoFormats = map[string]bool{
-	"video/mp4":       true,
-	"video/3gpp":      true,
-	"video/webm":      true,
-	"video/quicktime": true,
-}
-
 // ========== MEDIA HANDLER ==========
 
 type MediaHandler struct {
@@ -87,7 +63,7 @@ func NewMediaHandler(cfg *config.Config, openwa *OpenWAService, redis *infrastru
 }
 
 func (mh *MediaHandler) EnsureMediaDir() error {
-	return os.MkdirAll(mh.cfg.OpenWAMediaDir, 0750)
+	return os.MkdirAll(mh.cfg.OpenWAMediaDir, 0o750)
 }
 
 // DownloadMedia downloads a file from OpenWA media URL and stores it locally
@@ -100,7 +76,7 @@ func (mh *MediaHandler) DownloadMedia(ctx context.Context, sessionID, mediaURL, 
 		return "", "", 0, fmt.Errorf("failed to create media dir: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", mediaURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", mediaURL, http.NoBody)
 	if err != nil {
 		return "", "", 0, fmt.Errorf("failed to create download request: %w", err)
 	}
@@ -113,7 +89,7 @@ func (mh *MediaHandler) DownloadMedia(ctx context.Context, sessionID, mediaURL, 
 	if err != nil {
 		return "", "", 0, fmt.Errorf("failed to download media: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", "", 0, fmt.Errorf("media download returned status %d", resp.StatusCode)
@@ -130,7 +106,7 @@ func (mh *MediaHandler) DownloadMedia(ctx context.Context, sessionID, mediaURL, 
 	filename := fmt.Sprintf("%s_%d%s", sessionID, time.Now().UnixNano(), ext)
 	filePath = filepath.Join(mh.cfg.OpenWAMediaDir, filename)
 
-	if err := os.WriteFile(filePath, data, 0640); err != nil {
+	if err := os.WriteFile(filePath, data, 0o640); err != nil {
 		return "", "", 0, fmt.Errorf("failed to write media file: %w", err)
 	}
 
@@ -145,7 +121,7 @@ func (mh *MediaHandler) DownloadMedia(ctx context.Context, sessionID, mediaURL, 
 	return filePath, thumbPath, fileSize, nil
 }
 
-func (mh *MediaHandler) HandleIncomingMedia(ctx context.Context, sessionID, userID string, media *OpenWAMediaData) (*string, *string, error) {
+func (mh *MediaHandler) HandleIncomingMedia(ctx context.Context, sessionID, userID string, media *OpenWAMediaData) (filePath, thumbPath *string, err error) {
 	if !media.HasMedia || media.MediaURL == "" {
 		return nil, nil, fmt.Errorf("no media data in message")
 	}
@@ -250,7 +226,7 @@ func generateThumbnail(filePath, filename string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	img, _, err := image.Decode(f)
 	if err != nil {
@@ -284,7 +260,7 @@ func generateThumbnail(filePath, filename string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer outF.Close()
+	defer func() { _ = outF.Close() }()
 
 	if err := png.Encode(outF, thumb); err != nil {
 		return "", err

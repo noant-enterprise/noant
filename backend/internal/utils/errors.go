@@ -16,7 +16,7 @@ type ErrorResponse struct {
 	Retryable bool      `json:"retryable"`
 }
 
-func RespondError(c *gin.Context, status int, code string, message string, retryable bool) {
+func RespondError(c *gin.Context, status int, code, message string, retryable bool) {
 	requestID, _ := c.Get("requestID")
 	if requestID == nil {
 		requestID = "unknown"

@@ -15,8 +15,8 @@ type ArchiveHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewArchiveHandler(service *service.ArchiveService, logger *infrastructure.Logger) *ArchiveHandler {
-	return &ArchiveHandler{service: service, logger: logger}
+func NewArchiveHandler(svc *service.ArchiveService, logger *infrastructure.Logger) *ArchiveHandler {
+	return &ArchiveHandler{service: svc, logger: logger}
 }
 
 func (h *ArchiveHandler) ListFolders(c *gin.Context) {

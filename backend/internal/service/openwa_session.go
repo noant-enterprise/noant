@@ -273,7 +273,7 @@ func (sm *SessionManager) reconnectLoop(sh *SessionHealth) {
 	for attempt < maxAttempts {
 		select {
 		case <-sh.StopReconnect:
-			sm.logger.Info("Reconnect cancelled", "sessionID", sh.SessionID)
+			sm.logger.Info("Reconnect canceled", "sessionID", sh.SessionID)
 			return
 		default:
 		}

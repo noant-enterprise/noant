@@ -1,10 +1,8 @@
-run:
-  timeout: 5m
+version: "2"
 
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
@@ -15,23 +13,22 @@ linters:
     - misspell
     - prealloc
 
-linters-settings:
-  errcheck:
-    check-blank: true
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-  misspell:
-    locale: US
+  settings:
+    errcheck:
+      check-blank: false
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+    misspell:
+      locale: US
 
-issues:
-  exclude-use-default: false
-  max-issues-per-linter: 0
-  max-same-issues: 0
-  exclude-rules:
-    - path: _test\.go$
-      linters:
-        - errcheck
-        - gocritic
+  exclusions:
+    rules:
+      - path: _test\.go$
+        linters:
+          - errcheck
+          - gocritic
+    max-issues-per-linter: 0
+    max-same-issues: 0

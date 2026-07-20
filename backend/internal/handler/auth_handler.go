@@ -19,8 +19,8 @@ type AuthHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewAuthHandler(service *service.AuthService, logger *infrastructure.Logger) *AuthHandler {
-	return &AuthHandler{service: service, logger: logger}
+func NewAuthHandler(svc *service.AuthService, logger *infrastructure.Logger) *AuthHandler {
+	return &AuthHandler{service: svc, logger: logger}
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {

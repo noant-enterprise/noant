@@ -76,7 +76,7 @@ func (s *PlanService) GetLimits(planID string) domain.PlanLimit {
 }
 
 // CanGenerateResponse checks if the user can generate an AI response based on their plan
-func (s *PlanService) CanGenerateResponse(ctx context.Context, userID, planID string) (bool, string, error) {
+func (s *PlanService) CanGenerateResponse(ctx context.Context, userID, planID string) (canGenerate bool, reason string, err error) {
 	switch planID {
 	case "free":
 		// Check weekly free counter in Redis
@@ -133,7 +133,7 @@ func (s *PlanService) CanGenerateResponse(ctx context.Context, userID, planID st
 }
 
 // CanCreateHandoff checks if the user can create a handoff and whether they get notifications
-func (s *PlanService) CanCreateHandoff(ctx context.Context, userID, planID string) (canHandoff bool, hasNotification bool, err error) {
+func (s *PlanService) CanCreateHandoff(ctx context.Context, userID, planID string) (canHandoff, hasNotification bool, err error) {
 	switch planID {
 	case "free":
 		// Free plan allows handoffs but does NOT send notifications (conversion friction)
@@ -147,7 +147,7 @@ func (s *PlanService) CanCreateHandoff(ctx context.Context, userID, planID strin
 }
 
 // CanAddInventory checks if the user can add another inventory item based on their plan
-func (s *PlanService) CanAddInventory(ctx context.Context, userID string, planID string) (bool, int, error) {
+func (s *PlanService) CanAddInventory(ctx context.Context, userID, planID string) (allowed bool, remaining int, err error) {
 	switch planID {
 	case "free":
 		// Free plan limited to 10 inventory items

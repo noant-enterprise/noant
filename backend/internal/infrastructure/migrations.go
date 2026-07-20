@@ -75,18 +75,18 @@ func RunMigrations(db *sql.DB, migrationsDir string) error {
 }
 
 // splitSQLStatements splits a SQL script into individual statements
-func splitSQLStatements(sql string) []string {
+func splitSQLStatements(sqlText string) []string {
 	var statements []string
 	var current strings.Builder
 	inString := false
 	stringChar := rune(0)
 
-	for i, ch := range sql {
+	for i, ch := range sqlText {
 		if inString {
 			current.WriteRune(ch)
 			if ch == stringChar {
 				// Check for escaped quote
-				if i > 0 && rune(sql[i-1]) != '\\' {
+				if i > 0 && rune(sqlText[i-1]) != '\\' {
 					inString = false
 				}
 			}

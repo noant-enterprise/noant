@@ -44,7 +44,7 @@ func (s *CreditService) PurchasePack(ctx context.Context, userID, packType strin
 	}
 
 	if urlStr == "" {
-		return "", fmt.Errorf("Polar checkout URL not configured for pack type: %s", packType)
+		return "", fmt.Errorf("polar checkout URL not configured for pack type: %s", packType)
 	}
 
 	// Append user_id and pack_type to static checkout URL
@@ -161,7 +161,7 @@ func (s *CreditService) CheckAndNotifyExpiry(ctx context.Context) error {
 	// For each expiring credit, notify the user
 	for _, credit := range expiringCredits {
 		if credit.Balance > 0 && credit.ExpiresAt != nil {
-			daysLeft := int(credit.ExpiresAt.Sub(time.Now()).Hours() / 24)
+			daysLeft := int(time.Until(*credit.ExpiresAt).Hours() / 24)
 			if daysLeft <= 3 && daysLeft > 0 {
 				s.logger.Info("Credit expiry notification", "userID", credit.UserID, "daysLeft", daysLeft, "balance", credit.Balance)
 				// In a full implementation, we would send an email here using EmailService

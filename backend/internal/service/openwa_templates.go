@@ -68,7 +68,7 @@ type OpenWATemplatePayload struct {
 	Variables       map[string]string      `json:"variables,omitempty"`
 }
 
-func (ts *TemplateService) Create(ctx context.Context, userID string, req CreateTemplateRequest) (*domain.WhatsAppTemplate, error) {
+func (ts *TemplateService) Create(ctx context.Context, userID string, req *CreateTemplateRequest) (*domain.WhatsAppTemplate, error) {
 	tpl := &domain.WhatsAppTemplate{
 		UserID:     userID,
 		Name:       req.Name,
@@ -202,7 +202,7 @@ type ReplyButton struct {
 }
 
 // SendInteractiveMessage sends an interactive message (list, buttons) via OpenWA
-func (ts *TemplateService) SendInteractiveMessage(sessionID, chatID string, msg InteractiveMessage) error {
+func (ts *TemplateService) SendInteractiveMessage(sessionID, chatID string, msg *InteractiveMessage) error {
 	url := fmt.Sprintf("%s/api/sessions/%s/messages/send-interactive",
 		ts.cfg.OpenWABaseURL, sessionID)
 
@@ -233,7 +233,7 @@ func (ts *TemplateService) SendListMessage(sessionID, chatID, header, body, foot
 		}
 	}
 
-	return ts.SendInteractiveMessage(sessionID, chatID, InteractiveMessage{
+	return ts.SendInteractiveMessage(sessionID, chatID, &InteractiveMessage{
 		Type:   "list",
 		Header: header,
 		Body:   body,
@@ -252,7 +252,7 @@ func (ts *TemplateService) SendButtonsMessage(sessionID, chatID, body string, bu
 		}
 	}
 
-	return ts.SendInteractiveMessage(sessionID, chatID, InteractiveMessage{
+	return ts.SendInteractiveMessage(sessionID, chatID, &InteractiveMessage{
 		Type:  "buttons",
 		Body:  body,
 		Items: itemsPayload,

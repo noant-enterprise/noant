@@ -35,7 +35,7 @@ func (r *MediaMessageRepository) GetByConversation(ctx context.Context, conversa
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var m domain.MediaMessage
 		if err := rows.Scan(&m.ID, &m.UserID, &m.ConversationID, &m.MessageID, &m.SessionID, &m.MediaType, &m.MimeType, &m.FileSize, &m.FileName, &m.FilePath, &m.ThumbPath, &m.Width, &m.Height, &m.Duration, &m.Caption, &m.RemoteURL, &m.CreatedAt, &m.ExpiresAt); err != nil {

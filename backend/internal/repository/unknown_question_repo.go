@@ -28,7 +28,7 @@ func (r *UnknownQuestionRepository) Create(ctx context.Context, uq *domain.Unkno
 	return err
 }
 
-func (r *UnknownQuestionRepository) GetByIDAndUser(ctx context.Context, id string, userID string) (*domain.UnknownQuestion, error) {
+func (r *UnknownQuestionRepository) GetByIDAndUser(ctx context.Context, id, userID string) (*domain.UnknownQuestion, error) {
 	query := `SELECT id, user_id, question, conversation_id, channel, status, suggested_answer, category_id, created_at FROM unknown_questions WHERE id = ? AND user_id = ?`
 	row := r.db.QueryRowContext(ctx, query, id, userID)
 	uq := &domain.UnknownQuestion{}
@@ -42,7 +42,7 @@ func (r *UnknownQuestionRepository) GetByIDAndUser(ctx context.Context, id strin
 	return uq, nil
 }
 
-func (r *UnknownQuestionRepository) List(ctx context.Context, userID string, status string, limit int, offset int) ([]domain.UnknownQuestion, error) {
+func (r *UnknownQuestionRepository) List(ctx context.Context, userID, status string, limit, offset int) ([]domain.UnknownQuestion, error) {
 	query := `SELECT id, question, conversation_id, channel, status, suggested_answer, category_id, created_at FROM unknown_questions WHERE user_id = ?`
 	args := []interface{}{userID}
 	if status != "" {
@@ -55,7 +55,7 @@ func (r *UnknownQuestionRepository) List(ctx context.Context, userID string, sta
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	questions := make([]domain.UnknownQuestion, 0)
 	for rows.Next() {
 		var uq domain.UnknownQuestion
@@ -73,7 +73,7 @@ func (r *UnknownQuestionRepository) BatchTrain(ctx context.Context, userID, answ
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, id := range ids {
 		var question string
@@ -99,7 +99,7 @@ func (r *UnknownQuestionRepository) BatchIgnore(ctx context.Context, userID stri
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, id := range ids {
 		_, err := tx.ExecContext(ctx, `UPDATE unknown_questions SET status = 'ignored' WHERE id = ? AND user_id = ?`, id, userID)
@@ -110,7 +110,7 @@ func (r *UnknownQuestionRepository) BatchIgnore(ctx context.Context, userID stri
 	return tx.Commit()
 }
 
-func (r *UnknownQuestionRepository) ExistsPending(ctx context.Context, userID string, question string) (bool, error) {
+func (r *UnknownQuestionRepository) ExistsPending(ctx context.Context, userID, question string) (bool, error) {
 	var count int
 	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM unknown_questions WHERE user_id = ? AND LOWER(question) = ? AND status = 'pending'`, userID, strings.ToLower(question)).Scan(&count)
 	if err != nil {
@@ -119,7 +119,7 @@ func (r *UnknownQuestionRepository) ExistsPending(ctx context.Context, userID st
 	return count > 0, nil
 }
 
-func (r *UnknownQuestionRepository) UpdateStatus(ctx context.Context, id string, userID string, status string, answer *string, categoryID *string) error {
+func (r *UnknownQuestionRepository) UpdateStatus(ctx context.Context, id, userID, status string, answer, categoryID *string) error {
 	query := `UPDATE unknown_questions SET status = ?, suggested_answer = ?, category_id = ? WHERE id = ? AND user_id = ?`
 	_, err := r.db.ExecContext(ctx, query, status, answer, categoryID, id, userID)
 	return err
@@ -136,7 +136,7 @@ func (r *UnknownQuestionRepository) CountByStatus(ctx context.Context, userID st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := map[string]int{"pending": 0, "trained": 0, "ignored": 0}
 	for rows.Next() {
 		var status string
@@ -154,7 +154,7 @@ func (r *UnknownQuestionRepository) MostPopular(ctx context.Context, userID stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var question string
@@ -166,7 +166,7 @@ func (r *UnknownQuestionRepository) MostPopular(ctx context.Context, userID stri
 	return result, nil
 }
 
-func (r *UnknownQuestionRepository) CountByFilter(ctx context.Context, userID string, status string) (int, error) {
+func (r *UnknownQuestionRepository) CountByFilter(ctx context.Context, userID, status string) (int, error) {
 	query := `SELECT COUNT(*) FROM unknown_questions WHERE user_id = ?`
 	args := []interface{}{userID}
 	if status != "" {
@@ -187,7 +187,7 @@ func (r *UnknownQuestionRepository) CountByDate(ctx context.Context, userID stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var dateStr string

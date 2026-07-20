@@ -16,8 +16,8 @@ type InventoryHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewInventoryHandler(service *service.InventoryService, logger *infrastructure.Logger) *InventoryHandler {
-	return &InventoryHandler{service: service, logger: logger}
+func NewInventoryHandler(svc *service.InventoryService, logger *infrastructure.Logger) *InventoryHandler {
+	return &InventoryHandler{service: svc, logger: logger}
 }
 
 func (h *InventoryHandler) Create(c *gin.Context) {

@@ -40,7 +40,7 @@ The logo is modeled after an advanced conversation-loop icon:
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **Backend** | Go 1.23, Gin | HTTP API server, WebSocket hub, business logic |
+| **Backend** | Go 1.25, Gin | HTTP API server, WebSocket hub, business logic |
 | **Frontend** | React 18, TypeScript, Vite | Single-page application dashboard |
 | **AI** | Groq Llama 3.3 (via REST API) | Natural language understanding & response generation |
 | **Database** | TiDB Cloud (MySQL-compatible) | Distributed SQL for conversations, users, training data |
@@ -174,7 +174,7 @@ graph TD
         SANITIZE[XSS Sanitizer]
     end
 
-    subgraph Backend ["Go 1.23 App Service (Gin)"]
+    subgraph Backend ["Go 1.25 App Service (Gin)"]
         H_CHATS[ChatHandler]
         H_INTEG[IntegrationHandler]
         H_TRAIN[TrainingHandler]
@@ -726,7 +726,7 @@ All configuration is via environment variables. Copy `backend/.env.example` to `
 
 ### Prerequisites
 
-- Go 1.23+
+- Go 1.25+
 - Node.js 22+ (with npm)
 - MySQL client or TiDB Cloud access
 - Redis (Upstash or self-hosted)

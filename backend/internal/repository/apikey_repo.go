@@ -33,7 +33,7 @@ func (r *APIKeyRepository) ListByUser(ctx context.Context, userID string) ([]dom
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var keys []domain.APIKey
 	for rows.Next() {
 		var k domain.APIKey
@@ -46,7 +46,7 @@ func (r *APIKeyRepository) ListByUser(ctx context.Context, userID string) ([]dom
 	return keys, nil
 }
 
-func (r *APIKeyRepository) Revoke(ctx context.Context, id string, userID string) error {
+func (r *APIKeyRepository) Revoke(ctx context.Context, id, userID string) error {
 	query := `UPDATE api_keys SET is_active = false WHERE id = ? AND user_id = ?`
 	_, err := r.db.ExecContext(ctx, query, id, userID)
 	return err

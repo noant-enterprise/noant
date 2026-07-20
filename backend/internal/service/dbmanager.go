@@ -42,18 +42,6 @@ func (s *DBManagerService) measure(fn func() (int64, error)) (int64, error) {
 	return affected, err
 }
 
-func (s *DBManagerService) recordResult(results *[]CleanupResult, name string, affected int64, err error) {
-	r := CleanupResult{
-		Task:         name,
-		RowsAffected: affected,
-		DurationMs:   time.Now().UnixMilli(),
-	}
-	if err != nil {
-		r.Error = err.Error()
-	}
-	*results = append(*results, r)
-}
-
 func (s *DBManagerService) CleanupOldResolvedConversations(ctx context.Context, days int) (int64, error) {
 	return s.measure(func() (int64, error) {
 		return s.repos.Conversation.CleanupOldResolved(ctx, days)

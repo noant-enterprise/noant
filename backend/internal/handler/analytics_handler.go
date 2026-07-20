@@ -15,8 +15,8 @@ type AnalyticsHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewAnalyticsHandler(service *service.AnalyticsService, logger *infrastructure.Logger) *AnalyticsHandler {
-	return &AnalyticsHandler{service: service, logger: logger}
+func NewAnalyticsHandler(svc *service.AnalyticsService, logger *infrastructure.Logger) *AnalyticsHandler {
+	return &AnalyticsHandler{service: svc, logger: logger}
 }
 
 func (h *AnalyticsHandler) Overview(c *gin.Context) {

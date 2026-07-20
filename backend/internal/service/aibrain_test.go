@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -92,14 +93,14 @@ func TestLocalPlatformAnswerNilWhenNoData(t *testing.T) {
 
 func TestAllowGroqCallNoRedis(t *testing.T) {
 	brain := &AIBrain{redis: nil}
-	if !brain.allowGroqCall(nil, "u1") {
+	if !brain.allowGroqCall(context.TODO(), "u1") {
 		t.Fatal("expected allow when redis is nil")
 	}
 }
 
 func TestAllowGroqCallEmptyUserID(t *testing.T) {
 	brain := &AIBrain{redis: nil}
-	if !brain.allowGroqCall(nil, "") {
+	if !brain.allowGroqCall(context.TODO(), "") {
 		t.Fatal("expected allow when userID is empty")
 	}
 }

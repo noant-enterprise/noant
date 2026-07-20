@@ -15,8 +15,8 @@ type SettingsHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewSettingsHandler(service *service.SettingsService, logger *infrastructure.Logger) *SettingsHandler {
-	return &SettingsHandler{service: service, logger: logger}
+func NewSettingsHandler(svc *service.SettingsService, logger *infrastructure.Logger) *SettingsHandler {
+	return &SettingsHandler{service: svc, logger: logger}
 }
 
 func (h *SettingsHandler) GetProfile(c *gin.Context) {

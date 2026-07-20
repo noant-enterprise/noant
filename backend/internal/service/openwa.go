@@ -310,7 +310,7 @@ type OpenWAStatusData struct {
 }
 
 // SendTextMessage sends a text reply to a customer via OpenWA
-func (s *OpenWAService) SendTextMessage(sessionID string, chatID string, text string) error {
+func (s *OpenWAService) SendTextMessage(sessionID, chatID, text string) error {
 	if !s.cfg.OpenWAEnabled {
 		s.logger.Warn("OpenWA is disabled, skipping message send")
 		return nil
@@ -345,7 +345,7 @@ func (s *OpenWAService) SendTextMessage(sessionID string, chatID string, text st
 		s.logger.Error("OpenWA send failed", "error", err, "chatID", chatID, "sessionID", sessionID)
 		return fmt.Errorf("openwa request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
@@ -360,7 +360,7 @@ func (s *OpenWAService) SendTextMessage(sessionID string, chatID string, text st
 }
 
 // SendMediaMessage sends an image/document via OpenWA
-func (s *OpenWAService) SendMediaMessage(sessionID string, chatID string, mediaURL string, caption string) error {
+func (s *OpenWAService) SendMediaMessage(sessionID, chatID, mediaURL, caption string) error {
 	if !s.cfg.OpenWAEnabled {
 		return nil
 	}
@@ -393,7 +393,7 @@ func (s *OpenWAService) SendMediaMessage(sessionID string, chatID string, mediaU
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
@@ -414,7 +414,7 @@ func (s *OpenWAService) GetSessionStatus() (string, error) {
 	url := fmt.Sprintf("%s/api/sessions/%s",
 		s.cfg.OpenWABaseURL, s.cfg.OpenWASessionID)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		return "", err
 	}
@@ -427,7 +427,7 @@ func (s *OpenWAService) GetSessionStatus() (string, error) {
 	if err != nil {
 		return "disconnected", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Status string `json:"status"`
@@ -448,7 +448,7 @@ func (s *OpenWAService) RestartSession() error {
 	url := fmt.Sprintf("%s/api/sessions/%s/restart",
 		s.cfg.OpenWABaseURL, s.cfg.OpenWASessionID)
 
-	req, err := http.NewRequest("POST", url, nil)
+	req, err := http.NewRequest("POST", url, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -461,7 +461,7 @@ func (s *OpenWAService) RestartSession() error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -518,7 +518,7 @@ func (s *OpenWAService) ParseStatusData(data json.RawMessage) (*OpenWAStatusData
 // ========== INTERNAL SEND METHODS (used by queue worker) ==========
 
 // sendTextMessageInternal sends a text message and tracks rate limit headers
-func (s *OpenWAService) sendTextMessageInternal(sessionID string, chatID string, text string) error {
+func (s *OpenWAService) sendTextMessageInternal(sessionID, chatID, text string) error {
 	if s.circuitBreaker.IsOpen() {
 		return fmt.Errorf("circuit breaker open for OpenWA API calls")
 	}
@@ -541,7 +541,7 @@ func (s *OpenWAService) sendTextMessageInternal(sessionID string, chatID string,
 		s.circuitBreaker.RecordFailure()
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Track rate limit headers
 	remaining := resp.Header.Get("X-RateLimit-Remaining")
@@ -567,7 +567,7 @@ func (s *OpenWAService) sendTextMessageInternal(sessionID string, chatID string,
 }
 
 // sendMediaMessageInternal sends a media message internally (used by queue worker)
-func (s *OpenWAService) sendMediaMessageInternal(sessionID string, chatID string, mediaURL string, caption string) error {
+func (s *OpenWAService) sendMediaMessageInternal(sessionID, chatID, mediaURL, caption string) error {
 	if s.circuitBreaker.IsOpen() {
 		return fmt.Errorf("circuit breaker open for OpenWA API calls")
 	}
@@ -590,7 +590,7 @@ func (s *OpenWAService) sendMediaMessageInternal(sessionID string, chatID string
 		s.circuitBreaker.RecordFailure()
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.circuitBreaker.RecordFailure()
@@ -607,7 +607,7 @@ func (s *OpenWAService) sendMediaMessageInternal(sessionID string, chatID string
 }
 
 // sendTemplateMessageInternal sends a template message via OpenWA
-func (s *OpenWAService) sendTemplateMessageInternal(sessionID string, chatID string, params map[string]interface{}) error {
+func (s *OpenWAService) sendTemplateMessageInternal(sessionID, chatID string, params map[string]interface{}) error {
 	if s.circuitBreaker.IsOpen() {
 		return fmt.Errorf("circuit breaker open for OpenWA API calls")
 	}
@@ -654,7 +654,7 @@ func (s *OpenWAService) sendRawMessage(url string, payload map[string]interface{
 		s.circuitBreaker.RecordFailure()
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.circuitBreaker.RecordFailure()
@@ -750,7 +750,7 @@ type sessionInfo struct {
 func (s *OpenWAService) Ping() error {
 	url := fmt.Sprintf("%s/api/sessions", s.cfg.OpenWABaseURL)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -760,9 +760,9 @@ func (s *OpenWAService) Ping() error {
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("OpenWA not reachable: %w", err)
+		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("OpenWA server error: %d", resp.StatusCode)
@@ -775,7 +775,7 @@ func (s *OpenWAService) Ping() error {
 func (s *OpenWAService) findSessionByName(name string) (string, error) {
 	url := fmt.Sprintf("%s/api/sessions", s.cfg.OpenWABaseURL)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		return "", err
 	}
@@ -787,7 +787,7 @@ func (s *OpenWAService) findSessionByName(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var sessions []struct {
 		ID   string `json:"id"`
@@ -825,7 +825,7 @@ func (s *OpenWAService) CreateSession(sessionName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 
@@ -863,7 +863,7 @@ func (s *OpenWAService) CreateSession(sessionName string) (string, error) {
 func (s *OpenWAService) StartSession(sessionID string) error {
 	url := fmt.Sprintf("%s/api/sessions/%s/start", s.cfg.OpenWABaseURL, sessionID)
 
-	req, err := http.NewRequest("POST", url, nil)
+	req, err := http.NewRequest("POST", url, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -875,7 +875,7 @@ func (s *OpenWAService) StartSession(sessionID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to start session: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(resp.Body)
@@ -893,7 +893,7 @@ func (s *OpenWAService) StartSession(sessionID string) error {
 func (s *OpenWAService) GetQRCode(sessionID string) (string, error) {
 	url := fmt.Sprintf("%s/api/sessions/%s/qr", s.cfg.OpenWABaseURL, sessionID)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		return "", err
 	}
@@ -905,7 +905,7 @@ func (s *OpenWAService) GetQRCode(sessionID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get QR: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	s.logger.Info("OpenWA QR response", "status", resp.StatusCode, "body", string(body)[:min(500, len(body))])
@@ -938,15 +938,16 @@ func (s *OpenWAService) GetQRCode(sessionID string) (string, error) {
 
 	// Check all possible fields
 	var rawQR string
-	if result.Image != "" {
+	switch {
+	case result.Image != "":
 		rawQR = result.Image
-	} else if result.QR != "" {
+	case result.QR != "":
 		rawQR = result.QR
-	} else if result.QRCode != "" {
+	case result.QRCode != "":
 		rawQR = result.QRCode
-	} else if result.Data != "" {
+	case result.Data != "":
 		rawQR = result.Data
-	} else if result.Base64 != "" {
+	case result.Base64 != "":
 		rawQR = result.Base64
 	}
 
@@ -1040,7 +1041,7 @@ func (s *OpenWAService) OverlayLogo(qrBase64 string) string {
 
 	// Encode back to base64
 	var buf bytes.Buffer
-	png.Encode(&buf, output)
+	_ = png.Encode(&buf, output)
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
@@ -1048,7 +1049,7 @@ func (s *OpenWAService) OverlayLogo(qrBase64 string) string {
 func (s *OpenWAService) GetSessionStatusByID(sessionID string) (string, error) {
 	url := fmt.Sprintf("%s/api/sessions/%s", s.cfg.OpenWABaseURL, sessionID)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		return "", err
 	}
@@ -1060,7 +1061,7 @@ func (s *OpenWAService) GetSessionStatusByID(sessionID string) (string, error) {
 	if err != nil {
 		return "disconnected", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// 404 = session no longer exists in OpenWA (QR expired / session dropped)
 	if resp.StatusCode == http.StatusNotFound {
@@ -1081,7 +1082,7 @@ func (s *OpenWAService) GetSessionStatusByID(sessionID string) (string, error) {
 }
 
 // CheckNumberExists checks if a phone number exists on WhatsApp
-func (s *OpenWAService) CheckNumberExists(sessionID string, phone string) (bool, error) {
+func (s *OpenWAService) CheckNumberExists(sessionID, phone string) (bool, error) {
 	if !s.cfg.OpenWAEnabled {
 		return false, nil
 	}
@@ -1089,7 +1090,7 @@ func (s *OpenWAService) CheckNumberExists(sessionID string, phone string) (bool,
 	cleaned := CleanPhoneNumber(phone)
 	url := fmt.Sprintf("%s/api/sessions/%s/contacts/check/%s", s.cfg.OpenWABaseURL, sessionID, cleaned)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		return false, err
 	}
@@ -1101,7 +1102,7 @@ func (s *OpenWAService) CheckNumberExists(sessionID string, phone string) (bool,
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -1128,14 +1129,14 @@ type OpenWAContact struct {
 
 // GetContactInfo retrieves the contact information (pushname and avatar) from OpenWA.
 // contactID must be in the format: number@c.us (use FormatContactID to convert a phone number).
-func (s *OpenWAService) GetContactInfo(sessionID string, contactID string) (*OpenWAContact, error) {
+func (s *OpenWAService) GetContactInfo(sessionID, contactID string) (*OpenWAContact, error) {
 	if !s.cfg.OpenWAEnabled {
 		return nil, fmt.Errorf("OpenWA is disabled")
 	}
 
 	url := fmt.Sprintf("%s/api/sessions/%s/contacts/%s", s.cfg.OpenWABaseURL, sessionID, contactID)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -1147,7 +1148,7 @@ func (s *OpenWAService) GetContactInfo(sessionID string, contactID string) (*Ope
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -1162,14 +1163,14 @@ func (s *OpenWAService) GetContactInfo(sessionID string, contactID string) (*Ope
 	// If no profilePicUrl in contact response, try the dedicated profile-picture endpoint
 	if contact.ProfilePicUrl == "" {
 		picURL := fmt.Sprintf("%s/api/sessions/%s/contacts/%s/profile-picture", s.cfg.OpenWABaseURL, sessionID, contactID)
-		picReq, err2 := http.NewRequest("GET", picURL, nil)
+		picReq, err2 := http.NewRequest("GET", picURL, http.NoBody)
 		if err2 == nil {
 			if s.cfg.OpenWAApiKey != "" {
 				picReq.Header.Set("X-API-Key", s.cfg.OpenWAApiKey)
 			}
 			picResp, err2 := s.httpClient.Do(picReq)
 			if err2 == nil {
-				defer picResp.Body.Close()
+				defer func() { _ = picResp.Body.Close() }()
 				if picResp.StatusCode == http.StatusOK {
 					var picResult struct {
 						URL string `json:"url"`
@@ -1218,7 +1219,7 @@ func normalizeSessionStatus(status string) string {
 func (s *OpenWAService) RestartSessionByID(sessionID string) error {
 	url := fmt.Sprintf("%s/api/sessions/%s/restart", s.cfg.OpenWABaseURL, sessionID)
 
-	req, err := http.NewRequest("POST", url, nil)
+	req, err := http.NewRequest("POST", url, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -1230,7 +1231,7 @@ func (s *OpenWAService) RestartSessionByID(sessionID string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -1244,7 +1245,7 @@ func (s *OpenWAService) RestartSessionByID(sessionID string) error {
 func (s *OpenWAService) DeleteSession(sessionID string) error {
 	url := fmt.Sprintf("%s/api/sessions/%s", s.cfg.OpenWABaseURL, sessionID)
 
-	req, err := http.NewRequest("DELETE", url, nil)
+	req, err := http.NewRequest("DELETE", url, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -1256,7 +1257,7 @@ func (s *OpenWAService) DeleteSession(sessionID string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
@@ -1270,7 +1271,7 @@ func (s *OpenWAService) DeleteSession(sessionID string) error {
 func (s *OpenWAService) LogoutSession(sessionID string) error {
 	url := fmt.Sprintf("%s/api/sessions/%s/logout", s.cfg.OpenWABaseURL, sessionID)
 
-	req, err := http.NewRequest("POST", url, nil)
+	req, err := http.NewRequest("POST", url, http.NoBody)
 	if err != nil {
 		return err
 	}
@@ -1282,7 +1283,7 @@ func (s *OpenWAService) LogoutSession(sessionID string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
 		body, _ := io.ReadAll(resp.Body)
@@ -1313,7 +1314,7 @@ func (s *OpenWAService) DeleteAllSessions() error {
 func (s *OpenWAService) ListSessions() ([]sessionInfo, error) {
 	url := fmt.Sprintf("%s/api/sessions", s.cfg.OpenWABaseURL)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -1325,7 +1326,7 @@ func (s *OpenWAService) ListSessions() ([]sessionInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var sessions []sessionInfo
 	if err := json.NewDecoder(resp.Body).Decode(&sessions); err != nil {
@@ -1361,10 +1362,10 @@ func (s *OpenWAService) ConfigureWebhook(sessionID, webhookURL, secret string) e
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		s.logger.Error("Webhook config request failed", "error", err)
+		s.circuitBreaker.RecordFailure()
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	s.logger.Info("Webhook config response", "status", resp.StatusCode, "body", string(body))

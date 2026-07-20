@@ -38,11 +38,11 @@ func (s *InventoryService) Create(ctx context.Context, userID string, item *doma
 	return nil
 }
 
-func (s *InventoryService) List(ctx context.Context, userID string, itemType string) ([]domain.InventoryItem, error) {
+func (s *InventoryService) List(ctx context.Context, userID, itemType string) ([]domain.InventoryItem, error) {
 	return s.repos.Inventory.List(ctx, userID, itemType, false)
 }
 
-func (s *InventoryService) GetByID(ctx context.Context, id string, userID string) (*domain.InventoryItem, error) {
+func (s *InventoryService) GetByID(ctx context.Context, id, userID string) (*domain.InventoryItem, error) {
 	return s.repos.Inventory.GetByID(ctx, id, userID)
 }
 
@@ -56,7 +56,7 @@ func (s *InventoryService) Update(ctx context.Context, item *domain.InventoryIte
 	return nil
 }
 
-func (s *InventoryService) Delete(ctx context.Context, id string, userID string) error {
+func (s *InventoryService) Delete(ctx context.Context, id, userID string) error {
 	if err := s.repos.Inventory.Delete(ctx, id, userID); err != nil {
 		return err
 	}
@@ -66,6 +66,6 @@ func (s *InventoryService) Delete(ctx context.Context, id string, userID string)
 	return nil
 }
 
-func (s *InventoryService) Search(ctx context.Context, userID string, query string) ([]domain.InventoryItem, error) {
+func (s *InventoryService) Search(ctx context.Context, userID, query string) ([]domain.InventoryItem, error) {
 	return s.repos.Inventory.Search(ctx, userID, query)
 }

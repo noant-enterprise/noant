@@ -67,7 +67,7 @@ func NewBottleneck(opts ...BottleneckOption) *Bottleneck {
 	return b
 }
 
-// Acquire blocks until a slot is available or context is cancelled
+// Acquire blocks until a slot is available or context is canceled
 func (b *Bottleneck) Acquire(ctx context.Context) error {
 	atomic.AddInt64(&b.waiting, 1)
 

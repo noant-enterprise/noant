@@ -34,7 +34,7 @@ func (r *WhatsAppTemplateRepository) ListByUser(ctx context.Context, userID stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var t domain.WhatsAppTemplate
 		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Language, &t.Category, &t.Status, &t.HeaderType, &t.HeaderValue, &t.BodyText, &t.FooterText, &t.Buttons, &t.Namespace, &t.RejectionReason, &t.CreatedAt, &t.UpdatedAt); err != nil {
@@ -83,7 +83,7 @@ func (r *WhatsAppTemplateRepository) GetByStatus(ctx context.Context, status str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var t domain.WhatsAppTemplate
 		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Language, &t.Category, &t.Status, &t.HeaderType, &t.HeaderValue, &t.BodyText, &t.FooterText, &t.Buttons, &t.Namespace, &t.RejectionReason, &t.CreatedAt, &t.UpdatedAt); err != nil {

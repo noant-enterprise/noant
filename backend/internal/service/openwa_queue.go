@@ -84,7 +84,7 @@ func NewMessageRateLimiter(cfg *config.Config) *MessageRateLimiter {
 	}
 }
 
-func (rl *MessageRateLimiter) Allow(sessionID string, msgType string) (bool, int) {
+func (rl *MessageRateLimiter) Allow(sessionID, msgType string) (allowed bool, retryAfter int) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
@@ -301,29 +301,30 @@ func (sq *SendQueue) Fail(entryID string, err error) {
 	defer sq.mu.Unlock()
 
 	for i, entry := range sq.entries {
-		if entry.ID == entryID {
-			entry.RetryCount++
-			entry.LastError = err.Error()
+		if entry.ID != entryID {
+			continue
+		}
+		entry.RetryCount++
+		entry.LastError = err.Error()
 
-			if entry.RetryCount > MaxRetries {
-				entry.Status = QueueStatusDeadLetter
-				sq.logger.Error("Message moved to dead letter queue", "id", entryID, "session", entry.SessionID, "error", entry.LastError)
-				sq.removeEntry(i, entry)
-				return
-			}
-
-			entry.Status = QueueStatusFailed
-			delay := retryDelays[min(entry.RetryCount, len(retryDelays)-1)]
-			nextRetry := time.Now().Add(delay)
-			entry.NextRetry = &nextRetry
-
-			sq.logger.Warn("Message queued for retry", "id", entryID, "attempt", entry.RetryCount, "nextRetry", nextRetry)
-
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			sq.persist(ctx, entry)
+		if entry.RetryCount > MaxRetries {
+			entry.Status = QueueStatusDeadLetter
+			sq.logger.Error("Message moved to dead letter queue", "id", entryID, "session", entry.SessionID, "error", entry.LastError)
+			sq.removeEntry(i, entry)
 			return
 		}
+
+		entry.Status = QueueStatusFailed
+		delay := retryDelays[min(entry.RetryCount, len(retryDelays)-1)]
+		nextRetry := time.Now().Add(delay)
+		entry.NextRetry = &nextRetry
+
+		sq.logger.Warn("Message queued for retry", "id", entryID, "attempt", entry.RetryCount, "nextRetry", nextRetry)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		sq.persist(ctx, entry)
+		cancel()
+		return
 	}
 }
 

@@ -127,7 +127,7 @@ type MessageTurn struct {
 	Content string `json:"content"`
 }
 
-func (b *AIBrain) BuildPrompt(template PromptTemplate) []MessageTurn {
+func (b *AIBrain) BuildPrompt(template *PromptTemplate) []MessageTurn {
 	var messages []MessageTurn
 	systemContent := template.SystemPrompt
 	if systemContent == "" {
@@ -337,12 +337,12 @@ func (b *AIBrain) searchKnowledgeBase(ctx context.Context, userID, query string,
 
 	seen := make(map[string]struct{})
 	merged := make([]domain.QAPair, 0, limit)
-	for _, qa := range results {
-		if _, ok := seen[qa.ID]; ok {
+	for i := range results {
+		if _, ok := seen[results[i].ID]; ok {
 			continue
 		}
-		seen[qa.ID] = struct{}{}
-		merged = append(merged, qa)
+		seen[results[i].ID] = struct{}{}
+		merged = append(merged, results[i])
 		if len(merged) >= limit {
 			return merged
 		}
@@ -358,12 +358,12 @@ func (b *AIBrain) searchKnowledgeBase(ctx context.Context, userID, query string,
 		if err != nil {
 			continue
 		}
-		for _, qa := range more {
-			if _, ok := seen[qa.ID]; ok {
+		for i := range more {
+			if _, ok := seen[more[i].ID]; ok {
 				continue
 			}
-			seen[qa.ID] = struct{}{}
-			merged = append(merged, qa)
+			seen[more[i].ID] = struct{}{}
+			merged = append(merged, more[i])
 			if len(merged) >= limit {
 				return merged
 			}
@@ -400,12 +400,12 @@ func (b *AIBrain) searchInventoryContext(ctx context.Context, userID, query stri
 
 	seen := make(map[string]struct{})
 	merged := make([]domain.InventoryItem, 0, limit)
-	for _, item := range items {
-		if _, ok := seen[item.ID]; ok {
+	for i := range items {
+		if _, ok := seen[items[i].ID]; ok {
 			continue
 		}
-		seen[item.ID] = struct{}{}
-		merged = append(merged, item)
+		seen[items[i].ID] = struct{}{}
+		merged = append(merged, items[i])
 		if len(merged) >= limit {
 			return merged
 		}
@@ -420,12 +420,12 @@ func (b *AIBrain) searchInventoryContext(ctx context.Context, userID, query stri
 		if err != nil {
 			continue
 		}
-		for _, item := range more {
-			if _, ok := seen[item.ID]; ok {
+		for i := range more {
+			if _, ok := seen[more[i].ID]; ok {
 				continue
 			}
-			seen[item.ID] = struct{}{}
-			merged = append(merged, item)
+			seen[more[i].ID] = struct{}{}
+			merged = append(merged, more[i])
 			if len(merged) >= limit {
 				return merged
 			}
@@ -489,11 +489,11 @@ func (b *AIBrain) localPlatformAnswer(userID, query string, qaPairs []domain.QAP
 	if len(inventory) > 0 {
 		if len(inventory) > 1 && isBroadInventoryQuery(query) && !isNegotiation {
 			var lines []string
-			for i, item := range inventory {
+			for i := range inventory {
 				if i >= 3 {
 					break
 				}
-				lines = append(lines, "- "+inventorySummaryLine(item))
+				lines = append(lines, "- "+inventorySummaryLine(&inventory[i]))
 			}
 			return &AIResponse{
 				Content:    fmt.Sprintf("I found a few good options for you:\n%s\n\nWhich one should I break down for you?", strings.Join(lines, "\n")),
@@ -544,7 +544,7 @@ func (b *AIBrain) localPlatformAnswer(userID, query string, qaPairs []domain.QAP
 }
 
 // validateResponse checks if the AI response hallucinates prices or products
-func (b *AIBrain) validateResponse(ctx context.Context, _ string, response string, _ []domain.QAPair, inventory []domain.InventoryItem) (string, float64) {
+func (b *AIBrain) validateResponse(ctx context.Context, _, response string, _ []domain.QAPair, inventory []domain.InventoryItem) (resp string, conf float64) {
 	if response == "" {
 		return response, 0
 	}
@@ -568,7 +568,7 @@ func (b *AIBrain) validateResponse(ctx context.Context, _ string, response strin
 
 	// Extract price claims (e.g. "₦1,500", "₦50000") and validate against inventory
 	if len(inventory) > 0 {
-		re := regexp.MustCompile(`₦\s*([0-9,]+(?:\.[0-9]{1,2})?)`)
+		re := regexp.MustCompile(`₦\s*([\d,]+(?:\.\d{1,2})?)`)
 		matches := re.FindAllStringSubmatch(response, -1)
 		for _, match := range matches {
 			priceStr := strings.ReplaceAll(match[1], ",", "")
@@ -577,8 +577,8 @@ func (b *AIBrain) validateResponse(ctx context.Context, _ string, response strin
 				continue
 			}
 			found := false
-			for _, item := range inventory {
-				if item.Price == claimedPrice || (item.MinPrice != nil && *item.MinPrice <= claimedPrice && claimedPrice <= item.Price) {
+			for i := range inventory {
+				if inventory[i].Price == claimedPrice || (inventory[i].MinPrice != nil && *inventory[i].MinPrice <= claimedPrice && claimedPrice <= inventory[i].Price) {
 					found = true
 					break
 				}
@@ -598,7 +598,7 @@ func (b *AIBrain) validateResponse(ctx context.Context, _ string, response strin
 }
 
 // findSimilarForUnknown suggests similar Q&As when escalating an unknown question
-func (b *AIBrain) findSimilarForUnknown(ctx context.Context, userID string, query string) []domain.QAPair {
+func (b *AIBrain) findSimilarForUnknown(ctx context.Context, userID, query string) []domain.QAPair {
 	if b.embeddings == nil {
 		return nil
 	}
@@ -694,16 +694,20 @@ func (b *AIBrain) semanticFallback(ctx context.Context, userID, userQuery string
 }
 
 // handleSalesMode searches inventory and builds a sales-oriented response
-func (b *AIBrain) handleSalesMode(ctx context.Context, userID string, conversation *domain.Conversation, query string, language string, history []MessageTurn) (*AIResponse, error) {
+func (b *AIBrain) handleSalesMode(ctx context.Context, userID string, conversation *domain.Conversation, query, language string, history []MessageTurn) (*AIResponse, error) {
 	inventory := b.searchInventoryContext(ctx, userID, query, 5)
-	user, _ := b.repos.User.GetByID(ctx, userID)
+	user, err := b.repos.User.GetByID(ctx, userID)
+	if err != nil {
+		b.logger.Warn("Failed to get user in sales mode", "error", err)
+	}
 	var contextMessages []MessageTurn
 	if len(inventory) > 0 {
 		contextMessages = append(contextMessages, MessageTurn{
 			Role:    "system",
 			Content: "Available products/services from the store:",
 		})
-		for _, item := range inventory[:min(5, len(inventory))] {
+		for i := range inventory[:min(5, len(inventory))] {
+			item := &inventory[i]
 			stockInfo := ""
 			if item.StockQuantity != nil {
 				stockInfo = fmt.Sprintf(" (Stock: %d)", *item.StockQuantity)
@@ -724,21 +728,25 @@ func (b *AIBrain) handleSalesMode(ctx context.Context, userID string, conversati
 			Content: "CRITICAL: No matching products or services found in inventory. Do NOT invent products or prices. Offer to connect the customer with a human agent.",
 		})
 	}
-	contextMessages = append(contextMessages, b.buildSalesCoachMessage(conversation, user, query, history, inventory, nil))
-	contextMessages = append(contextMessages, salesVoiceExamplesMessage(query, inventory))
-	contextMessages = append(contextMessages, MessageTurn{
-		Role:    "system",
-		Content: salesReplyStyleLine(query),
-	})
+	contextMessages = append(contextMessages,
+		b.buildSalesCoachMessage(conversation, user, query, history, inventory, nil),
+		salesVoiceExamplesMessage(query, inventory),
+		MessageTurn{
+			Role:    "system",
+			Content: salesReplyStyleLine(query),
+		},
+	)
 	contextMessages = append(contextMessages, history...)
 	ownerName := ""
 	ownerWhatsApp := ""
 	if user != nil {
 		ownerName = user.FirstName
-		whatsapp, _ := b.repos.User.GetOwnerWhatsApp(ctx, userID)
-		ownerWhatsApp = whatsapp
+		whatsapp, err := b.repos.User.GetOwnerWhatsApp(ctx, userID)
+		if err == nil {
+			ownerWhatsApp = whatsapp
+		}
 	}
-	prompt := b.BuildPrompt(PromptTemplate{
+	prompt := b.BuildPrompt(&PromptTemplate{
 		SystemPrompt: fmt.Sprintf(`You are a friendly sales assistant for %s. You work for %s (the owner). You sell products and negotiate prices naturally — like a real shop assistant texting a customer.
 
 Owner: %s | WhatsApp: %s
@@ -771,9 +779,9 @@ Be warm, short, and natural.`, user.CompanyName, ownerName, ownerName, ownerWhat
 		b.logger.Error("Groq API failed in sales mode", "error", err)
 		// Local fallback — if we have inventory, show it directly
 		if len(inventory) > 0 {
-			var items []string
-			for _, item := range inventory[:min(3, len(inventory))] {
-				items = append(items, "- "+inventorySummaryLine(item))
+			items := make([]string, 0, min(3, len(inventory)))
+			for i := range inventory[:min(3, len(inventory))] {
+				items = append(items, "- "+inventorySummaryLine(&inventory[i]))
 			}
 			return &AIResponse{
 				Content:    fmt.Sprintf("Here's what we have:\n%s\n\nAsk me about any item for more details.", strings.Join(items, "\n")),
@@ -803,8 +811,11 @@ Be warm, short, and natural.`, user.CompanyName, ownerName, ownerName, ownerWhat
 }
 
 // handleHandoff creates a handoff record and notifies the owner
-func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, userID string, query string) (*AIResponse, error) {
-	conv, _ := b.repos.Conversation.GetByID(ctx, conversationID)
+func (b *AIBrain) handleHandoff(ctx context.Context, conversationID, userID, query string) (*AIResponse, error) {
+	conv, err := b.repos.Conversation.GetByID(ctx, conversationID)
+	if err != nil {
+		b.logger.Warn("Failed to get conversation in handoff", "error", err)
+	}
 	customerName := ""
 	customerPhone := ""
 	if conv != nil {
@@ -843,10 +854,16 @@ func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, user
 	}
 
 	// Check if this plan gets notifications
-	user, _ := b.repos.User.GetByID(ctx, userID)
+	user, err := b.repos.User.GetByID(ctx, userID)
+	if err != nil {
+		b.logger.Warn("Failed to get user in handoff", "error", err)
+	}
 	var hasNotification bool
 	if user != nil {
-		_, hasNotification, _ = b.planSvc.CanCreateHandoff(ctx, userID, user.PlanID)
+		_, hasNotification, err = b.planSvc.CanCreateHandoff(ctx, userID, user.PlanID)
+		if err != nil {
+			b.logger.Warn("Failed to check handoff plan", "error", err)
+		}
 		// For free plan specifically, we know it doesn't get notifications
 		if user.PlanID == "free" {
 			hasNotification = false
@@ -860,8 +877,10 @@ func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, user
 	var ownerWhatsApp string
 	if user != nil {
 		ownerName = user.FirstName
-		whatsapp, _ := b.repos.User.GetOwnerWhatsApp(ctx, userID)
-		ownerWhatsApp = whatsapp
+		whatsapp, err := b.repos.User.GetOwnerWhatsApp(ctx, userID)
+		if err == nil {
+			ownerWhatsApp = whatsapp
+		}
 
 		// Notify owner via WebSocket only if plan allows it
 		if hasNotification && b.broadcastFn != nil {
@@ -906,11 +925,10 @@ func (b *AIBrain) handleHandoff(ctx context.Context, conversationID string, user
 }
 
 // parseAIMetadata extracts [SENTIMENT], [LANGUAGE], [SUGGESTIONS] tags from AI response
-func parseAIMetadata(content string) (string, string, string, []string) {
-	clean := content
-	sentiment := "neutral"
-	language := "en"
-	var suggestions []string
+func parseAIMetadata(content string) (clean, sentiment, language string, suggestions []string) {
+	clean = content
+	sentiment = "neutral"
+	language = "en"
 
 	re := regexp.MustCompile(`(?m)^\[SENTIMENT:([^\]]+)\]$`)
 	if m := re.FindStringSubmatch(clean); len(m) > 1 {
@@ -947,9 +965,10 @@ func (b *AIBrain) summarizeConversation(ctx context.Context, query string, turns
 	// Build conversation text
 	var parts []string
 	for _, t := range turns {
-		if t.Role == "user" {
+		switch t.Role {
+		case "user":
 			parts = append(parts, "Customer: "+t.Content)
-		} else if t.Role == "assistant" {
+		case "assistant":
 			parts = append(parts, "AI: "+t.Content)
 		}
 	}
@@ -981,11 +1000,11 @@ func (b *AIBrain) humanizeResponse(ctx context.Context, answer, query string, qa
 		return answer, nil
 	}
 	var contextItems []string
-	for i, qa := range qaPairs {
+	for i := range qaPairs {
 		if i >= 3 {
 			break
 		}
-		contextItems = append(contextItems, fmt.Sprintf("Q: %s\nA: %s", qa.Question, qa.Answer))
+		contextItems = append(contextItems, fmt.Sprintf("Q: %s\nA: %s", qaPairs[i].Question, qaPairs[i].Answer))
 	}
 	var contextBuf string
 	if len(contextItems) > 0 {
@@ -1022,24 +1041,28 @@ RULES:
 	return strings.TrimSpace(humanized), nil
 }
 
-func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, userQuery string, language string) (aiResp *AIResponse, aiErr error) {
+func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID, userQuery, language string) (aiResp *AIResponse, aiErr error) {
 	startTime := time.Now()
-	var status string = "success"
+	status := "success"
 	defer func() {
 		duration := time.Since(startTime).Seconds()
-		if aiErr != nil {
+		switch {
+		case aiErr != nil:
 			status = "error"
-		} else if aiResp != nil && aiResp.Escalate {
+		case aiResp != nil && aiResp.Escalate:
 			status = "escalated"
-		} else if aiResp != nil && aiResp.Source == "plan_limit" {
+		case aiResp != nil && aiResp.Source == "plan_limit":
 			status = "plan_limited"
-		} else if aiResp != nil && aiResp.Source == "greeting" {
+		case aiResp != nil && aiResp.Source == "greeting":
 			status = "greeting"
 		}
 		infrastructure.AICallsTotal.WithLabelValues("llama-3.3-70b-versatile", status).Inc()
 		infrastructure.AIDuration.WithLabelValues("llama-3.3-70b-versatile").Observe(duration)
 	}()
-	conv, _ := b.repos.Conversation.GetByID(ctx, conversationID)
+	conv, err := b.repos.Conversation.GetByID(ctx, conversationID)
+	if err != nil {
+		b.logger.Warn("Failed to get conversation", "error", err)
+	}
 	userID := ""
 	var user *domain.User
 	if conv != nil {
@@ -1056,7 +1079,9 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	recentTurns := b.recentConversationTurns(ctx, conversationID, userQuery, 8)
 	finalize := func(resp *AIResponse) (*AIResponse, error) {
 		if resp != nil {
-			_ = b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content)
+			if err := b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content); err != nil {
+				b.logger.Warn("Failed to store conversation turn", "error", err)
+			}
 		}
 		return resp, nil
 	}
@@ -1064,10 +1089,16 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	// Plan limit check (before intent classification)
 	if userID != "" {
 		if user == nil {
-			user, _ = b.repos.User.GetByID(ctx, userID)
+			user, err = b.repos.User.GetByID(ctx, userID)
+			if err != nil {
+				b.logger.Warn("Failed to get user for plan check", "error", err)
+			}
 		}
 		if user != nil {
-			canRespond, reason, _ := b.planSvc.CanGenerateResponse(ctx, userID, user.PlanID)
+			canRespond, reason, err := b.planSvc.CanGenerateResponse(ctx, userID, user.PlanID)
+			if err != nil {
+				b.logger.Warn("Failed to check plan limit", "error", err)
+			}
 			if !canRespond {
 				return finalize(&AIResponse{Content: reason, Source: "plan_limit"})
 			}
@@ -1101,7 +1132,9 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		resp, err := b.handleHandoff(ctx, conversationID, userID, userQuery)
 		b.logger.Info("AI request completed (handoff)", "traceID", traceID, "duration", time.Since(startTime))
 		if err == nil && resp != nil {
-			_ = b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content)
+			if err := b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content); err != nil {
+				b.logger.Warn("Failed to store conversation turn", "error", err)
+			}
 		}
 		return resp, err
 	}
@@ -1111,7 +1144,9 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		resp, err := b.handleSalesMode(ctx, userID, conv, userQuery, language, recentTurns)
 		b.logger.Info("AI request completed (sales)", "traceID", traceID, "duration", time.Since(startTime))
 		if err == nil && resp != nil {
-			_ = b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content)
+			if err := b.storeConversationTurn(ctx, conversationID, userQuery, resp.Content); err != nil {
+				b.logger.Warn("Failed to store conversation turn", "error", err)
+			}
 		}
 		return resp, err
 	}
@@ -1226,11 +1261,11 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 	escalationMsg := "I don't have that information yet, but I'll escalate this to a human agent who can help you."
 	if len(similar) > 0 {
 		escalationMsg += "\n\nDid you mean:"
-		for i, qa := range similar {
+		for i := range similar {
 			if i >= 3 {
 				break
 			}
-			escalationMsg += "\n• " + qa.Question
+			escalationMsg += "\n• " + similar[i].Question
 		}
 	}
 
@@ -1238,7 +1273,7 @@ func (b *AIBrain) GenerateResponse(ctx context.Context, conversationID string, u
 		UserID: userID,
 		Type:   "unknown_question",
 		Title:  "New Unknown Question",
-		Body:   fmt.Sprintf("AI could not answer: \"%s\"", userQuery),
+		Body:   fmt.Sprintf("AI could not answer: %q", userQuery),
 		Link:   "/teach?tab=unknown",
 		IsRead: false,
 	}
@@ -1276,7 +1311,7 @@ type AIResponse struct {
 	Summary     string            `json:"summary,omitempty"`     // conversation summary (set on handoff)
 }
 
-func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTurn) (string, float64, error) {
+func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTurn) (content string, confidence float64, err error) {
 	if !b.cb.Allow() {
 		return "", 0, fmt.Errorf("circuit breaker open: Groq API temporarily unavailable")
 	}
@@ -1292,7 +1327,10 @@ func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTu
 		"max_tokens":  500,
 		"top_p":       0.9,
 	}
-	jsonPayload, _ := json.Marshal(payload)
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to marshal request payload: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		return "", 0, err
@@ -1304,15 +1342,19 @@ func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTu
 		b.cb.RecordFailure()
 		return "", 0, err
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		b.cb.RecordFailure()
+		return "", 0, fmt.Errorf("failed to read response body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		b.cb.RecordFailure()
 		snippet := string(body)
 		if len(snippet) > 500 {
 			snippet = snippet[:500]
 		}
-		return "", 0, fmt.Errorf("Groq API error: %s - %s", resp.Status, snippet)
+		return "", 0, fmt.Errorf("groq API error: %s - %s", resp.Status, snippet)
 	}
 	var result struct {
 		Choices []struct {
@@ -1334,9 +1376,9 @@ func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTu
 		b.cb.RecordFailure()
 		return "", 0, fmt.Errorf("no response from Groq")
 	}
-	content := result.Choices[0].Message.Content
+	content = result.Choices[0].Message.Content
 	b.cb.RecordSuccess()
-	confidence := 0.85
+	confidence = 0.85
 	if result.Choices[0].FinishReason != "stop" {
 		confidence = 0.5
 	}
@@ -1369,19 +1411,20 @@ func (b *AIBrain) storeConversationTurn(ctx context.Context, conversationID, use
 	if b.redis == nil {
 		return nil
 	}
-	history, _ := b.getConversationHistory(ctx, conversationID)
-	history = append(history, MessageTurn{Role: "user", Content: userQuery})
-	history = append(history, MessageTurn{Role: "assistant", Content: aiResponse})
+	history, err := b.getConversationHistory(ctx, conversationID)
+	if err != nil {
+		b.logger.Warn("Failed to get conversation history for storage", "error", err)
+	}
+	history = append(history,
+		MessageTurn{Role: "user", Content: userQuery},
+		MessageTurn{Role: "assistant", Content: aiResponse},
+	)
 	if len(history) > 10 {
 		history = history[len(history)-10:]
 	}
-	historyJSON, _ := json.Marshal(history)
-	return b.redis.Set(ctx, fmt.Sprintf("conv:%s:history", conversationID), string(historyJSON), b.cfg.RedisShortTTL)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
+	historyJSON, err := json.Marshal(history)
+	if err != nil {
+		return fmt.Errorf("failed to marshal history: %w", err)
 	}
-	return b
+	return b.redis.Set(ctx, fmt.Sprintf("conv:%s:history", conversationID), string(historyJSON), b.cfg.RedisShortTTL)
 }

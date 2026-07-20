@@ -27,7 +27,7 @@ func (r *InventoryRepository) Create(ctx context.Context, item *domain.Inventory
 	return err
 }
 
-func (r *InventoryRepository) GetByID(ctx context.Context, id string, userID string) (*domain.InventoryItem, error) {
+func (r *InventoryRepository) GetByID(ctx context.Context, id, userID string) (*domain.InventoryItem, error) {
 	item := &domain.InventoryItem{}
 	row := r.db.QueryRowContext(ctx, `SELECT id, user_id, type, name, description, price, min_price, stock_quantity, image_url, is_active, created_at, updated_at FROM inventory_items WHERE id = ? AND user_id = ?`, id, userID)
 	err := row.Scan(&item.ID, &item.UserID, &item.Type, &item.Name, &item.Description, &item.Price, &item.MinPrice, &item.StockQuantity, &item.ImageURL, &item.IsActive, &item.CreatedAt, &item.UpdatedAt)
@@ -40,7 +40,7 @@ func (r *InventoryRepository) GetByID(ctx context.Context, id string, userID str
 	return item, nil
 }
 
-func (r *InventoryRepository) List(ctx context.Context, userID string, itemType string, activeOnly bool) ([]domain.InventoryItem, error) {
+func (r *InventoryRepository) List(ctx context.Context, userID, itemType string, activeOnly bool) ([]domain.InventoryItem, error) {
 	query := `SELECT id, user_id, type, name, description, price, min_price, stock_quantity, image_url, is_active, created_at, updated_at FROM inventory_items WHERE user_id = ?`
 	args := []interface{}{userID}
 	if itemType != "" {
@@ -55,7 +55,7 @@ func (r *InventoryRepository) List(ctx context.Context, userID string, itemType 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var items []domain.InventoryItem
 	for rows.Next() {
 		var item domain.InventoryItem
@@ -67,14 +67,14 @@ func (r *InventoryRepository) List(ctx context.Context, userID string, itemType 
 	return items, nil
 }
 
-func (r *InventoryRepository) Search(ctx context.Context, userID string, q string) ([]domain.InventoryItem, error) {
+func (r *InventoryRepository) Search(ctx context.Context, userID, q string) ([]domain.InventoryItem, error) {
 	query := `SELECT id, user_id, type, name, description, price, min_price, stock_quantity, image_url, is_active, created_at, updated_at FROM inventory_items WHERE user_id = ? AND is_active = TRUE AND (name LIKE ? OR description LIKE ?) ORDER BY name LIMIT 10`
 	like := "%" + q + "%"
 	rows, err := r.db.QueryContext(ctx, query, userID, like, like)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var items []domain.InventoryItem
 	for rows.Next() {
 		var item domain.InventoryItem
@@ -92,7 +92,7 @@ func (r *InventoryRepository) Update(ctx context.Context, item *domain.Inventory
 	return err
 }
 
-func (r *InventoryRepository) Delete(ctx context.Context, id string, userID string) error {
+func (r *InventoryRepository) Delete(ctx context.Context, id, userID string) error {
 	_, err := r.db.ExecContext(ctx, "DELETE FROM inventory_items WHERE id=? AND user_id=?", id, userID)
 	return err
 }

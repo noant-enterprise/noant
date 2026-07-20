@@ -15,8 +15,8 @@ type PushHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewPushHandler(service *service.PushNotificationService, logger *infrastructure.Logger) *PushHandler {
-	return &PushHandler{service: service, logger: logger}
+func NewPushHandler(svc *service.PushNotificationService, logger *infrastructure.Logger) *PushHandler {
+	return &PushHandler{service: svc, logger: logger}
 }
 
 func (h *PushHandler) Subscribe(c *gin.Context) {
@@ -50,7 +50,7 @@ func (h *PushHandler) Unsubscribe(c *gin.Context) {
 	var req struct {
 		Endpoint string `json:"endpoint"`
 	}
-	c.ShouldBindJSON(&req)
+	_ = c.ShouldBindJSON(&req)
 
 	if req.Endpoint != "" {
 		if err := h.service.Unsubscribe(c.Request.Context(), userID.(string), req.Endpoint); err != nil {

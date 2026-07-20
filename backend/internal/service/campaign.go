@@ -76,15 +76,15 @@ func (s *CampaignService) List(ctx context.Context, userID string) ([]domain.Cam
 }
 
 // Cancel cancels a campaign by ID
-func (s *CampaignService) Cancel(ctx context.Context, id string, userID string) error {
+func (s *CampaignService) Cancel(ctx context.Context, id, userID string) error {
 	// First verify the campaign belongs to the user
 	campaigns, err := s.repos.Campaign.ListByUser(ctx, userID)
 	if err != nil {
 		return err
 	}
-	for _, c := range campaigns {
-		if c.ID == id {
-			return s.repos.Campaign.UpdateStatus(ctx, id, "cancelled")
+	for i := range campaigns {
+		if campaigns[i].ID == id {
+			return s.repos.Campaign.UpdateStatus(ctx, id, "cancelled") //nolint:misspell // DB status value
 		}
 	}
 	return apperrors.ErrCampaign
@@ -99,12 +99,13 @@ func (s *CampaignService) ProcessStarting(ctx context.Context) error {
 	}
 
 	// For each campaign, activate it by purchasing credits
-	for _, campaign := range campaigns {
-		s.logger.Info("Activating campaign", "campaignID", campaign.ID, "userID", campaign.UserID, "name", campaign.Name)
+	for i := range campaigns {
+		c := &campaigns[i]
+		s.logger.Info("Activating campaign", "campaignID", c.ID, "userID", c.UserID, "name", c.Name)
 
 		// Calculate duration in days
-		startDate, _ := time.Parse("2006-01-02", campaign.StartDate)
-		endDate, _ := time.Parse("2006-01-02", campaign.EndDate)
+		startDate, _ := time.Parse("2006-01-02", c.StartDate)
+		endDate, _ := time.Parse("2006-01-02", c.EndDate)
 		_ = int(endDate.Sub(startDate).Hours()/24) + 1 // inclusive
 
 		// For simplicity, we'll purchase a medium pack for demonstration
@@ -113,20 +114,20 @@ func (s *CampaignService) ProcessStarting(ctx context.Context) error {
 
 		// Purchase the pack via Polar (this would normally be done by the user)
 		// For activation, we simulate a successful purchase
-		checkoutID := fmt.Sprintf("campaign_%s_%d", campaign.ID, time.Now().Unix())
+		checkoutID := fmt.Sprintf("campaign_%s_%d", c.ID, time.Now().Unix())
 		
 		// Activate the purchase (add credits and set expiry)
-		if err := s.credit.ActivatePurchase(ctx, checkoutID, campaign.UserID, packType); err != nil {
-			s.logger.Error("Failed to activate campaign purchase", "error", err, "campaignID", campaign.ID)
+		if err := s.credit.ActivatePurchase(ctx, checkoutID, c.UserID, packType); err != nil {
+			s.logger.Error("Failed to activate campaign purchase", "error", err, "campaignID", c.ID)
 			continue // Continue with other campaigns
 		}
 
 		// Update campaign status to active
-		if err := s.repos.Campaign.UpdateStatus(ctx, campaign.ID, "active"); err != nil {
-			s.logger.Error("Failed to update campaign status", "error", err, "campaignID", campaign.ID)
+		if err := s.repos.Campaign.UpdateStatus(ctx, c.ID, "active"); err != nil {
+			s.logger.Error("Failed to update campaign status", "error", err, "campaignID", c.ID)
 		}
 
-		s.logger.Info("Campaign activated successfully", "campaignID", campaign.ID)
+		s.logger.Info("Campaign activated successfully", "campaignID", c.ID)
 	}
 
 	return nil
@@ -141,7 +142,8 @@ func (s *CampaignService) ProcessEnding(ctx context.Context) error {
 	}
 
 	// For each campaign, mark as completed
-	for _, campaign := range campaigns {
+	for i := range campaigns {
+		campaign := &campaigns[i]
 		s.logger.Info("Completing campaign", "campaignID", campaign.ID, "userID", campaign.UserID, "name", campaign.Name)
 
 		if err := s.repos.Campaign.UpdateStatus(ctx, campaign.ID, "completed"); err != nil {

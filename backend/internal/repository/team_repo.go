@@ -24,7 +24,7 @@ func (r *TeamRepository) ListByUser(ctx context.Context, ownerID string) ([]doma
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var members []domain.TeamMember
 	for rows.Next() {
 		var m domain.TeamMember

@@ -27,7 +27,7 @@ func (r *ArchiveRepository) CreateFolder(ctx context.Context, folder *domain.Arc
 	return err
 }
 
-func (r *ArchiveRepository) ListFolders(ctx context.Context, userID string, folderType string) ([]domain.ArchiveFolder, error) {
+func (r *ArchiveRepository) ListFolders(ctx context.Context, userID, folderType string) ([]domain.ArchiveFolder, error) {
 	query := `SELECT id, user_id, name, type, color, item_count, created_at FROM archive_folders WHERE user_id = ?`
 	args := []interface{}{userID}
 	if folderType != "" {
@@ -39,7 +39,7 @@ func (r *ArchiveRepository) ListFolders(ctx context.Context, userID string, fold
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var folders []domain.ArchiveFolder
 	for rows.Next() {
 		var f domain.ArchiveFolder
@@ -52,7 +52,7 @@ func (r *ArchiveRepository) ListFolders(ctx context.Context, userID string, fold
 	return folders, nil
 }
 
-func (r *ArchiveRepository) MoveChat(ctx context.Context, conversationID string, userID string, folderID string) error {
+func (r *ArchiveRepository) MoveChat(ctx context.Context, conversationID, userID, folderID string) error {
 	query := `UPDATE conversations SET folder_id = ? WHERE id = ? AND user_id = ?`
 	_, err := r.db.ExecContext(ctx, query, folderID, conversationID, userID)
 	return err

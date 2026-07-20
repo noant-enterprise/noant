@@ -125,7 +125,7 @@ func (s *ResendService) SendPasswordReset(ctx context.Context, toEmail, resetTok
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -135,11 +135,12 @@ func (s *ResendService) SendPasswordReset(ctx context.Context, toEmail, resetTok
 				Message string `json:"message"`
 				Error   string `json:"error"`
 			}
-			if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Message != "" {
+			switch {
+			case json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Message != "":
 				detail = ": " + errResp.Message
-			} else if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "" {
+			case json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "":
 				detail = ": " + errResp.Error
-			} else {
+			default:
 				snippet := strings.TrimSpace(string(bodyBytes))
 				if len(snippet) > 200 {
 					snippet = snippet[:200]
@@ -187,7 +188,7 @@ func (s *ResendService) SendNotificationEmail(ctx context.Context, toEmail, subj
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -197,11 +198,12 @@ func (s *ResendService) SendNotificationEmail(ctx context.Context, toEmail, subj
 				Message string `json:"message"`
 				Error   string `json:"error"`
 			}
-			if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Message != "" {
+			switch {
+			case json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Message != "":
 				detail = ": " + errResp.Message
-			} else if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "" {
+			case json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "":
 				detail = ": " + errResp.Error
-			} else {
+			default:
 				snippet := strings.TrimSpace(string(bodyBytes))
 				if len(snippet) > 200 {
 					snippet = snippet[:200]
@@ -249,7 +251,7 @@ func (s *ResendService) SendHTMLEmail(ctx context.Context, toEmail, subject, htm
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -259,11 +261,12 @@ func (s *ResendService) SendHTMLEmail(ctx context.Context, toEmail, subject, htm
 				Message string `json:"message"`
 				Error   string `json:"error"`
 			}
-			if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Message != "" {
+			switch {
+			case json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Message != "":
 				detail = ": " + errResp.Message
-			} else if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "" {
+			case json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "":
 				detail = ": " + errResp.Error
-			} else {
+			default:
 				snippet := strings.TrimSpace(string(bodyBytes))
 				if len(snippet) > 200 {
 					snippet = snippet[:200]
@@ -362,7 +365,7 @@ func (s *ResendService) SendVerificationEmail(ctx context.Context, toEmail, code
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return "", fmt.Errorf("resend API error: %s", resp.Status)

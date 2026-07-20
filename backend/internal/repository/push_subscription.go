@@ -29,7 +29,7 @@ func (r *PushSubscriptionRepository) Create(ctx context.Context, sub *domain.Pus
 	return err
 }
 
-func (r *PushSubscriptionRepository) Delete(ctx context.Context, userID string, endpoint string) error {
+func (r *PushSubscriptionRepository) Delete(ctx context.Context, userID, endpoint string) error {
 	_, err := r.db.ExecContext(ctx, `
 		DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?`, userID, endpoint)
 	return err
@@ -48,7 +48,7 @@ func (r *PushSubscriptionRepository) ListByUser(ctx context.Context, userID stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []*domain.PushSubscription
 	for rows.Next() {
@@ -79,7 +79,7 @@ func (r *PushSubscriptionRepository) ListByUserIDs(ctx context.Context, userIDs 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []*domain.PushSubscription
 	for rows.Next() {

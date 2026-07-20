@@ -52,7 +52,10 @@ func (s *ArchiveService) RemoveFromArchive(ctx context.Context, userID, conversa
 }
 
 func (s *ArchiveService) GetStatus(ctx context.Context, userID string) (map[string]interface{}, error) {
-	folders, _ := s.repos.Archive.ListFolders(ctx, userID, "")
+	folders, err := s.repos.Archive.ListFolders(ctx, userID, "")
+	if err != nil {
+		return nil, err
+	}
 	return map[string]interface{}{
 		"folders":     len(folders),
 		"total_items": 0,

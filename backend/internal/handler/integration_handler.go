@@ -15,8 +15,8 @@ type IntegrationHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewIntegrationHandler(service *service.IntegrationService, logger *infrastructure.Logger) *IntegrationHandler {
-	return &IntegrationHandler{service: service, logger: logger}
+func NewIntegrationHandler(svc *service.IntegrationService, logger *infrastructure.Logger) *IntegrationHandler {
+	return &IntegrationHandler{service: svc, logger: logger}
 }
 
 func (h *IntegrationHandler) List(c *gin.Context) {
@@ -71,7 +71,7 @@ func (h *IntegrationHandler) Test(c *gin.Context) {
 		Config map[string]interface{} `json:"config"`
 	}
 	// Ignore bind errors – the body is optional
-	c.ShouldBindJSON(&req)
+	_ = c.ShouldBindJSON(&req)
 	utils.SanitizeStruct(&req)
 
 	success, message := h.service.Test(c.Request.Context(), channel, req.Config)

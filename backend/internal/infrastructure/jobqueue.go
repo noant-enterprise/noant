@@ -225,8 +225,8 @@ func (jq *JobQueue) GetJobStatus(jobID string) *Job {
 	if !exists {
 		return nil
 	}
-	copy := *job
-	return &copy
+	copied := *job
+	return &copied
 }
 
 func (jq *JobQueue) Shutdown() {
@@ -265,11 +265,8 @@ func (jq *JobQueue) ScheduleRecurring(jobType string, payload map[string]interfa
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				jq.Enqueue(jobType, payload, opts...)
-			}
+		for range ticker.C {
+			jq.Enqueue(jobType, payload, opts...)
 		}
 	}()
 }

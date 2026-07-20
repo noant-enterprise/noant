@@ -17,7 +17,7 @@ func NewVectorSearch(repos*repository.Repositories) *VectorSearch {
 }
 
 // Search uses keyword matching as fallback until vector DB is integrated
-func (v *VectorSearch) Search(ctx context.Context, userID string, query string, limit int) ([]domain.QAPair, error) {
+func (v *VectorSearch) Search(ctx context.Context, userID, query string, limit int) ([]domain.QAPair, error) {
     // TODO: Integrate Pinecone/Weaviate for semantic search
     results, err := v.repos.QAPair.Search(ctx, userID, query)
     if err != nil {
@@ -36,16 +36,16 @@ func (v *VectorSearch) Search(ctx context.Context, userID string, query string, 
 		if len(longWords) > 0 {
 			combined := strings.Join(longWords, " ")
 			more, _ := v.repos.QAPair.Search(ctx, userID, combined)
-			for _, qa := range more {
+			for i := range more {
 				exists := false
-				for _, existing := range results {
-					if existing.ID == qa.ID {
+				for j := range results {
+					if results[j].ID == more[i].ID {
 						exists = true
 						break
 					}
 				}
 				if !exists {
-					results = append(results, qa)
+					results = append(results, more[i])
 				}
 			}
 		}

@@ -49,7 +49,7 @@ func (r *CategoryRepository) List(ctx context.Context, userID string) ([]domain.
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var categories []domain.Category
 	for rows.Next() {
 		var cat domain.Category
@@ -62,12 +62,12 @@ func (r *CategoryRepository) List(ctx context.Context, userID string) ([]domain.
 	return categories, nil
 }
 
-func (r *CategoryRepository) Delete(ctx context.Context, id string, userID string) error {
+func (r *CategoryRepository) Delete(ctx context.Context, id, userID string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// 1. Delete all associated Q&As
 	_, err = tx.ExecContext(ctx, `DELETE FROM qa_pairs WHERE category_id = ? AND user_id = ?`, id, userID)

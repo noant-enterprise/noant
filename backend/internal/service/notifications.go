@@ -113,7 +113,7 @@ func (s *WidgetService) Upsert(ctx context.Context, cfg *domain.WidgetConfig) er
 	return s.repos.WidgetConfig.Upsert(ctx, cfg)
 }
 
-func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message string, conversationID string) (string, string, error) {
+func (s *WidgetService) PublicChat(ctx context.Context, apiKey, message, conversationID string) (aiResp, convID string, err error) {
 	cfg, err := s.repos.WidgetConfig.GetByAPIKey(ctx, apiKey)
 	if err != nil {
 		return "", "", err
@@ -167,10 +167,10 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 	}
 
 	// Generate response
-	aiResp, err := s.aiBrain.GenerateResponse(ctx, conv.ID, message, "en")
+	aiResult, err := s.aiBrain.GenerateResponse(ctx, conv.ID, message, "en")
 	if err != nil {
 		s.logger.Error("Widget AI generation failed", "error", err)
-		aiResp = &AIResponse{
+		aiResult = &AIResponse{
 			Content:    "I apologize, I am having trouble processing your request. A human agent will assist you shortly.",
 			Confidence: 0,
 			Escalate:   true,
@@ -181,10 +181,10 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 	aiMsg := &domain.Message{
 		ConversationID: conv.ID,
 		Role:           "ai",
-		Content:        aiResp.Content,
+		Content:        aiResult.Content,
 		IsRead:         false,
 		Metadata: &domain.MessageMetadata{
-			Confidence: aiResp.Confidence,
+			Confidence: aiResult.Confidence,
 			Language:   "en",
 		},
 	}
@@ -192,7 +192,7 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 		s.logger.Error("Widget: failed to save AI message", "error", err, "conv_id", conv.ID)
 	}
 
-	if aiResp.Escalate {
+	if aiResult.Escalate {
 		if err := s.repos.Conversation.UpdateStatus(ctx, conv.ID, "escalated", userID); err != nil {
 			s.logger.Error("Widget: failed to escalate conversation", "error", err, "conv_id", conv.ID)
 		}
@@ -233,7 +233,7 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey string, message s
 		}
 	}
 
-	return aiResp.Content, conv.ID, nil
+	return aiResult.Content, conv.ID, nil
 }
 
 func generateRandomString(n int) string {

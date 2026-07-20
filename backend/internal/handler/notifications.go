@@ -18,8 +18,8 @@ type NotificationHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewNotificationHandler(service *service.NotificationService, logger *infrastructure.Logger) *NotificationHandler {
-	return &NotificationHandler{service: service, logger: logger}
+func NewNotificationHandler(svc *service.NotificationService, logger *infrastructure.Logger) *NotificationHandler {
+	return &NotificationHandler{service: svc, logger: logger}
 }
 
 func (h *NotificationHandler) List(c *gin.Context) {
@@ -86,8 +86,8 @@ type WidgetHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewWidgetHandler(service *service.WidgetService, logger *infrastructure.Logger) *WidgetHandler {
-	return &WidgetHandler{service: service, logger: logger}
+func NewWidgetHandler(svc *service.WidgetService, logger *infrastructure.Logger) *WidgetHandler {
+	return &WidgetHandler{service: svc, logger: logger}
 }
 
 func (h *WidgetHandler) Get(c *gin.Context) {

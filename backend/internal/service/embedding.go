@@ -72,8 +72,7 @@ func (s *EmbeddingService) GenerateEmbedding(ctx context.Context, text string) (
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("embedding API error: %s", string(body)[:min(200, len(body))])
@@ -118,8 +117,7 @@ func (s *EmbeddingService) GenerateEmbeddings(ctx context.Context, texts []strin
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("batch embedding error: %s", string(body)[:min(200, len(body))])
@@ -183,7 +181,7 @@ func CosineSimilarity(a, b []float32) float32 {
 }
 
 // SemanticSearchQAPairs searches Q&A pairs using embeddings + cosine similarity
-func (s *EmbeddingService) SemanticSearchQAPairs(ctx context.Context, userID string, query string, limit int, threshold float32) ([]SemanticResult, error) {
+func (s *EmbeddingService) SemanticSearchQAPairs(ctx context.Context, userID, query string, limit int, threshold float32) ([]SemanticResult, error) {
 	// Generate embedding for the query
 	queryEmbedding, err := s.GenerateEmbedding(ctx, query)
 	if err != nil {
@@ -231,7 +229,7 @@ func (s *EmbeddingService) SemanticSearchQAPairs(ctx context.Context, userID str
 }
 
 // SemanticSearchInventory searches inventory using embeddings
-func (s *EmbeddingService) SemanticSearchInventory(ctx context.Context, userID string, query string, limit int, threshold float32) ([]SemanticResult, error) {
+func (s *EmbeddingService) SemanticSearchInventory(ctx context.Context, userID, query string, limit int, threshold float32) ([]SemanticResult, error) {
 	queryEmbedding, err := s.GenerateEmbedding(ctx, query)
 	if err != nil {
 		return nil, err
@@ -282,10 +280,10 @@ func (s *EmbeddingService) getOrCreateCache(ctx context.Context, userID string) 
 
 	// Batch generate embeddings
 	texts := make([]string, len(qas))
-	for i, qa := range qas {
-		texts[i] = qa.Question
-		if len(qa.Answer) > 100 {
-			texts[i] += " " + qa.Answer[:100]
+	for i := range qas {
+		texts[i] = qas[i].Question
+		if len(qas[i].Answer) > 100 {
+			texts[i] += " " + qas[i].Answer[:100]
 		}
 	}
 
@@ -298,11 +296,11 @@ func (s *EmbeddingService) getOrCreateCache(ctx context.Context, userID string) 
 	// Build cache
 	now := time.Now()
 	cached := make([]cachedEmbedding, 0, len(qas))
-	for i, qa := range qas {
+	for i := range qas {
 		if i < len(embeddings) && embeddings[i] != nil {
 			cached = append(cached, cachedEmbedding{
-				ID:        qa.ID,
-				Text:      qa.Question,
+				ID:        qas[i].ID,
+				Text:      qas[i].Question,
 				Embedding: embeddings[i],
 				CreatedAt: now,
 			})
@@ -333,10 +331,10 @@ func (s *EmbeddingService) getInventoryCache(ctx context.Context, userID string)
 	}
 
 	texts := make([]string, len(items))
-	for i, item := range items {
-		texts[i] = item.Name
-		if item.Description != "" {
-			texts[i] += " " + item.Description
+	for i := range items {
+		texts[i] = items[i].Name
+		if items[i].Description != "" {
+			texts[i] += " " + items[i].Description
 		}
 	}
 
@@ -347,11 +345,11 @@ func (s *EmbeddingService) getInventoryCache(ctx context.Context, userID string)
 
 	now := time.Now()
 	cached := make([]cachedEmbedding, 0, len(items))
-	for i, item := range items {
+	for i := range items {
 		if i < len(embeddings) && embeddings[i] != nil {
 			cached = append(cached, cachedEmbedding{
-				ID:        item.ID,
-				Text:      item.Name,
+				ID:        items[i].ID,
+				Text:      items[i].Name,
 				Embedding: embeddings[i],
 				CreatedAt: now,
 			})
@@ -374,13 +372,13 @@ func (s *EmbeddingService) InvalidateCache(userID string) {
 }
 
 // FindSimilarQA finds the most similar Q&A pairs for a given query (used for unknown question suggestions)
-func (s *EmbeddingService) FindSimilarQA(ctx context.Context, userID string, query string, limit int) ([]domain.QAPair, float32) {
+func (s *EmbeddingService) FindSimilarQA(ctx context.Context, userID, query string, limit int) (qas []domain.QAPair, bestScore float32) {
 	results, err := s.SemanticSearchQAPairs(ctx, userID, query, limit, 0.5)
 	if err != nil || len(results) == 0 {
 		return nil, 0
 	}
 
-	qas := make([]domain.QAPair, len(results))
+	qas = make([]domain.QAPair, len(results))
 	for i, r := range results {
 		qas[i] = domain.QAPair{
 			ID:       r.ID,

@@ -33,7 +33,7 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to connect to TiDB", "error", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Auto-generate VAPID keys if not configured
 	if cfg.VAPIDPublicKey == "" || cfg.VAPIDPrivateKey == "" {
@@ -61,7 +61,7 @@ func main() {
 		logger.Warn("Redis unavailable — running in offline mode", "error", err)
 	} else {
 		logger.Info("Redis connected")
-		defer redisClient.Close()
+		defer func() { _ = redisClient.Close() }()
 	}
 
 	repos := repository.NewRepositories(db, redisClient)
@@ -126,55 +126,55 @@ func main() {
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_old_conversations", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupOldResolvedConversations(ctx, dbCleanupCfg.OldConversationsDays)
+		_, _ = services.DBManager.CleanupOldResolvedConversations(ctx, dbCleanupCfg.OldConversationsDays)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_abandoned", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupAbandonedConversations(ctx, dbCleanupCfg.AbandonedConversationsDays)
+		_, _ = services.DBManager.CleanupAbandonedConversations(ctx, dbCleanupCfg.AbandonedConversationsDays)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_orphaned_msgs", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupOrphanedMessages(ctx)
+		_, _ = services.DBManager.CleanupOrphanedMessages(ctx)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_unknown_questions", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupStaleUnknownQuestions(ctx, dbCleanupCfg.UnknownQuestionsDays)
+		_, _ = services.DBManager.CleanupStaleUnknownQuestions(ctx, dbCleanupCfg.UnknownQuestionsDays)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_expired_handoffs", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupExpiredHandoffs(ctx, dbCleanupCfg.HandoffsDays)
+		_, _ = services.DBManager.CleanupExpiredHandoffs(ctx, dbCleanupCfg.HandoffsDays)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_audit_logs", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupOldAuditLogs(ctx, dbCleanupCfg.AuditLogsDays)
+		_, _ = services.DBManager.CleanupOldAuditLogs(ctx, dbCleanupCfg.AuditLogsDays)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_notifications", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupOldNotifications(ctx, dbCleanupCfg.NotificationsDays)
+		_, _ = services.DBManager.CleanupOldNotifications(ctx, dbCleanupCfg.NotificationsDays)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_integrations", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupStaleInactiveIntegrations(ctx, dbCleanupCfg.InactiveIntegrationDays)
+		_, _ = services.DBManager.CleanupStaleInactiveIntegrations(ctx, dbCleanupCfg.InactiveIntegrationDays)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_expired_trials", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupExpiredTrials(ctx, dbCleanupCfg.ExpiredTrialDays)
+		_, _ = services.DBManager.CleanupExpiredTrials(ctx, dbCleanupCfg.ExpiredTrialDays)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_expired_credits", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupExpiredCredits(ctx)
+		_, _ = services.DBManager.CleanupExpiredCredits(ctx)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_credit_purchases", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupStaleCreditPurchases(ctx, dbCleanupCfg.CreditPurchasesDays)
+		_, _ = services.DBManager.CleanupStaleCreditPurchases(ctx, dbCleanupCfg.CreditPurchasesDays)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_campaigns", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupCompletedCampaigns(ctx, dbCleanupCfg.CompletedCampaignsDays)
+		_, _ = services.DBManager.CleanupCompletedCampaigns(ctx, dbCleanupCfg.CompletedCampaignsDays)
 		return nil
 	})
 	jobQueue.RegisterHandler("db_cleanup_expired_media", func(ctx context.Context, job *infrastructure.Job) error {
-		services.DBManager.CleanupExpiredMediaMessages(ctx)
+		_, _ = services.DBManager.CleanupExpiredMediaMessages(ctx)
 		return nil
 	})
 	jobQueue.RegisterHandler("openwa_media_cleanup", func(ctx context.Context, job *infrastructure.Job) error {
@@ -199,8 +199,8 @@ func main() {
 			"http://172.19.0.1:8080/api/v1/openwa/webhook",
 			"http://localhost:8080/api/v1/openwa/webhook",
 		}
-		for _, integration := range integrations {
-			sessionID, ok := integration.Config["session_id"].(string)
+		for i := range integrations {
+			sessionID, ok := integrations[i].Config["session_id"].(string)
 			if !ok || sessionID == "" {
 				continue
 			}
@@ -273,325 +273,267 @@ func main() {
 		// Auth mutation endpoints: strict rate limiting (10 req/min per IP)
 		auth := api.Group("/auth")
 		auth.Use(middleware.RateLimitMiddleware(redisClient, 10, time.Minute))
-		{
-			auth.POST("/register", handlers.Auth.Register)
-			auth.POST("/login", handlers.Auth.Login)
-			auth.POST("/logout", handlers.Auth.Logout)
-			auth.POST("/change-password", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.ChangePassword)
-			auth.POST("/forgot-password", handlers.Auth.ForgotPassword)
-			auth.POST("/reset-password", handlers.Auth.ResetPassword)
-			auth.POST("/verify", handlers.Auth.VerifyEmail)
-			auth.POST("/resend-verification", handlers.Auth.ResendVerification)
-		}
+		auth.POST("/register", handlers.Auth.Register)
+		auth.POST("/login", handlers.Auth.Login)
+		auth.POST("/logout", handlers.Auth.Logout)
+		auth.POST("/change-password", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.ChangePassword)
+		auth.POST("/forgot-password", handlers.Auth.ForgotPassword)
+		auth.POST("/reset-password", handlers.Auth.ResetPassword)
+		auth.POST("/verify", handlers.Auth.VerifyEmail)
+		auth.POST("/resend-verification", handlers.Auth.ResendVerification)
 
 		// Session check endpoints: relaxed rate limiting (120 req/min per IP)
 		// These are called automatically on every page load / token expiry.
 		authSession := api.Group("/auth")
 		authSession.Use(middleware.RateLimitMiddleware(redisClient, 120, time.Minute))
-		{
-			authSession.POST("/refresh", handlers.Auth.RefreshToken)
-			authSession.GET("/me", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.Me)
-		}
+		authSession.POST("/refresh", handlers.Auth.RefreshToken)
+		authSession.GET("/me", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.Me)
 
 		chats := api.Group("/chats")
 		chats.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		chats.Use(middleware.RateLimitByUserMiddleware(redisClient, 500, time.Minute))
 		chats.Use(middleware.AuditMiddleware(auditRepo, logger))
-		{
-			chats.POST("/direct-chat", handlers.Chat.DirectChat)
-			chats.GET("/conversations", handlers.Chat.ListConversations)
-			chats.GET("/conversations/:id", handlers.Chat.GetConversation)
-			chats.POST("/conversations/:id/messages", handlers.Chat.SendMessage)
-			chats.PUT("/conversations/:id/takeover", handlers.Chat.HumanTakeover)
-			chats.POST("/conversations/:id/escalate", handlers.Chat.Escalate)
-			chats.POST("/conversations/:id/rate", handlers.Chat.RateConversation)
-			chats.DELETE("/clear", handlers.Chat.ClearChats)
-		}
+		chats.POST("/direct-chat", handlers.Chat.DirectChat)
+		chats.GET("/conversations", handlers.Chat.ListConversations)
+		chats.GET("/conversations/:id", handlers.Chat.GetConversation)
+		chats.POST("/conversations/:id/messages", handlers.Chat.SendMessage)
+		chats.PUT("/conversations/:id/takeover", handlers.Chat.HumanTakeover)
+		chats.POST("/conversations/:id/escalate", handlers.Chat.Escalate)
+		chats.POST("/conversations/:id/rate", handlers.Chat.RateConversation)
+		chats.DELETE("/clear", handlers.Chat.ClearChats)
 
 		training := api.Group("/training")
 		training.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		training.Use(middleware.RateLimitByUserMiddleware(redisClient, 300, time.Minute))
 		training.Use(middleware.AuditMiddleware(auditRepo, logger))
-		{
-			training.GET("/search", handlers.Training.SearchQAPairs)
-			training.GET("/categories", handlers.Training.ListCategories)
-			training.POST("/categories", handlers.Training.CreateCategory)
-			training.DELETE("/categories/:id", handlers.Training.DeleteCategory)
-			training.GET("/categories/:id/qa", handlers.Training.ListQAPairs)
-			training.POST("/qa", handlers.Training.CreateQAPair)
-			training.PUT("/qa/:id", handlers.Training.UpdateQAPair)
-			training.DELETE("/qa/:id", handlers.Training.DeleteQAPair)
-			training.POST("/bulk-qa", handlers.Training.BulkImport)
-			training.GET("/unknown-questions", handlers.Training.ListUnknownQuestions)
-			training.POST("/unknown-questions/:id/train", handlers.Training.TrainUnknown)
-			training.POST("/unknown-questions/:id/ignore", handlers.Training.IgnoreUnknown)
-			training.POST("/unknown-questions/batch-train", handlers.Training.BatchTrainUnknown)
-			training.POST("/unknown-questions/batch-ignore", handlers.Training.BatchIgnoreUnknown)
-			training.DELETE("/unknown-questions/clear", handlers.Training.ClearUnknown)
-			training.POST("/csv-upload", handlers.Training.UploadCSV)
-		}
+		training.GET("/search", handlers.Training.SearchQAPairs)
+		training.GET("/categories", handlers.Training.ListCategories)
+		training.POST("/categories", handlers.Training.CreateCategory)
+		training.DELETE("/categories/:id", handlers.Training.DeleteCategory)
+		training.GET("/categories/:id/qa", handlers.Training.ListQAPairs)
+		training.POST("/qa", handlers.Training.CreateQAPair)
+		training.PUT("/qa/:id", handlers.Training.UpdateQAPair)
+		training.DELETE("/qa/:id", handlers.Training.DeleteQAPair)
+		training.POST("/bulk-qa", handlers.Training.BulkImport)
+		training.GET("/unknown-questions", handlers.Training.ListUnknownQuestions)
+		training.POST("/unknown-questions/:id/train", handlers.Training.TrainUnknown)
+		training.POST("/unknown-questions/:id/ignore", handlers.Training.IgnoreUnknown)
+		training.POST("/unknown-questions/batch-train", handlers.Training.BatchTrainUnknown)
+		training.POST("/unknown-questions/batch-ignore", handlers.Training.BatchIgnoreUnknown)
+		training.DELETE("/unknown-questions/clear", handlers.Training.ClearUnknown)
+		training.POST("/csv-upload", handlers.Training.UploadCSV)
 
 		analytics := api.Group("/analytics")
 		analytics.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		analytics.Use(middleware.RateLimitByUserMiddleware(redisClient, 60, time.Minute))
 		analytics.Use(middleware.AuditMiddleware(auditRepo, logger))
-		{
-			analytics.GET("/overview", handlers.Analytics.Overview)
-			analytics.GET("/channels", handlers.Analytics.ChannelDistribution)
-			analytics.GET("/insights", handlers.Analytics.Insights)
-			analytics.GET("/trends", handlers.Analytics.Trends)
-			analytics.GET("/satisfaction", handlers.Analytics.Satisfaction)
-			analytics.GET("/unknown-questions", handlers.Analytics.UnknownQuestions)
-			analytics.GET("/popular-questions", handlers.Analytics.PopularQuestions)
-			analytics.GET("/messages-trend", handlers.Analytics.MessagesTrend)
-			analytics.GET("/uptime", handlers.Analytics.Uptime)
-		}
+		analytics.GET("/overview", handlers.Analytics.Overview)
+		analytics.GET("/channels", handlers.Analytics.ChannelDistribution)
+		analytics.GET("/insights", handlers.Analytics.Insights)
+		analytics.GET("/trends", handlers.Analytics.Trends)
+		analytics.GET("/satisfaction", handlers.Analytics.Satisfaction)
+		analytics.GET("/unknown-questions", handlers.Analytics.UnknownQuestions)
+		analytics.GET("/popular-questions", handlers.Analytics.PopularQuestions)
+		analytics.GET("/messages-trend", handlers.Analytics.MessagesTrend)
+		analytics.GET("/uptime", handlers.Analytics.Uptime)
 
 		integrations := api.Group("/integrations")
 		integrations.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		integrations.Use(middleware.RateLimitByUserMiddleware(redisClient, 300, time.Minute))
 		integrations.Use(middleware.AuditMiddleware(auditRepo, logger))
-		{
-			integrations.GET("/list", handlers.Integration.List)
-			integrations.POST("/connect", handlers.Integration.Connect)
-			integrations.POST("/disconnect/:channel", handlers.Integration.Disconnect)
-			integrations.POST("/test/:channel", handlers.Integration.Test)
-		}
+		integrations.GET("/list", handlers.Integration.List)
+		integrations.POST("/connect", handlers.Integration.Connect)
+		integrations.POST("/disconnect/:channel", handlers.Integration.Disconnect)
+		integrations.POST("/test/:channel", handlers.Integration.Test)
 
 		settings := api.Group("/settings")
 		settings.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		settings.Use(middleware.RateLimitByUserMiddleware(redisClient, 60, time.Minute))
 		settings.Use(middleware.AuditMiddleware(auditRepo, logger))
-		{
-			settings.GET("/profile", handlers.Settings.GetProfile)
-			settings.PUT("/profile", handlers.Settings.UpdateProfile)
-			settings.GET("/api-keys", handlers.Settings.ListAPIKeys)
-			settings.POST("/api-keys", handlers.Settings.CreateAPIKey)
-			settings.DELETE("/api-keys/:id", handlers.Settings.RevokeAPIKey)
-			settings.GET("/team", handlers.Settings.ListTeam)
-			settings.POST("/team/invite", handlers.Settings.InviteTeamMember)
-			settings.DELETE("/team/:id", handlers.Settings.RemoveTeamMember)
-			settings.GET("/audit-logs", handlers.Audit.ListLogs)
-			settings.GET("/notifications", handlers.Settings.GetNotifPrefs)
-			settings.PUT("/notifications", handlers.Settings.UpdateNotifPrefs)
-			settings.DELETE("/account", handlers.Settings.DeleteAccount)
-			settings.GET("/account/export", handlers.Settings.ExportData)
-		}
+		settings.GET("/profile", handlers.Settings.GetProfile)
+		settings.PUT("/profile", handlers.Settings.UpdateProfile)
+		settings.GET("/api-keys", handlers.Settings.ListAPIKeys)
+		settings.POST("/api-keys", handlers.Settings.CreateAPIKey)
+		settings.DELETE("/api-keys/:id", handlers.Settings.RevokeAPIKey)
+		settings.GET("/team", handlers.Settings.ListTeam)
+		settings.POST("/team/invite", handlers.Settings.InviteTeamMember)
+		settings.DELETE("/team/:id", handlers.Settings.RemoveTeamMember)
+		settings.GET("/audit-logs", handlers.Audit.ListLogs)
+		settings.GET("/notifications", handlers.Settings.GetNotifPrefs)
+		settings.PUT("/notifications", handlers.Settings.UpdateNotifPrefs)
+		settings.DELETE("/account", handlers.Settings.DeleteAccount)
+		settings.GET("/account/export", handlers.Settings.ExportData)
 
 		notifications := api.Group("/notifications")
 		notifications.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
-		{
-			notifications.GET("", handlers.Notification.List)
-			notifications.GET("/unread-count", handlers.Notification.UnreadCount)
-			notifications.POST("/:id/read", handlers.Notification.MarkRead)
-			notifications.POST("/read-all", handlers.Notification.MarkAllRead)
-		}
+		notifications.GET("", handlers.Notification.List)
+		notifications.GET("/unread-count", handlers.Notification.UnreadCount)
+		notifications.POST("/:id/read", handlers.Notification.MarkRead)
+		notifications.POST("/read-all", handlers.Notification.MarkAllRead)
 
 		widget := api.Group("/widget")
-		{
-			configGroup := widget.Group("/config")
-			configGroup.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
-			{
-				configGroup.GET("", handlers.Widget.Get)
-				configGroup.POST("", handlers.Widget.Upsert)
-			}
-			widget.GET("/public/config", handlers.Widget.GetPublic)
-			widget.POST("/public/chat", handlers.Widget.PublicChat)
-		}
+		configGroup := widget.Group("/config")
+		configGroup.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+		configGroup.GET("", handlers.Widget.Get)
+		configGroup.POST("", handlers.Widget.Upsert)
+		widget.GET("/public/config", handlers.Widget.GetPublic)
+		widget.POST("/public/chat", handlers.Widget.PublicChat)
 
 		archive := api.Group("/archive")
 		archive.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		archive.Use(middleware.AuditMiddleware(auditRepo, logger))
-		{
-			archive.GET("/folders", handlers.Archive.ListFolders)
-			archive.POST("/folders", handlers.Archive.CreateFolder)
-			archive.DELETE("/folders/:id", handlers.Archive.DeleteFolder)
-			archive.POST("/move", handlers.Archive.MoveChat)
-			archive.POST("/remove", handlers.Archive.RemoveFromArchive)
-			archive.GET("/status", handlers.Archive.GetStatus)
-		}
+		archive.GET("/folders", handlers.Archive.ListFolders)
+		archive.POST("/folders", handlers.Archive.CreateFolder)
+		archive.DELETE("/folders/:id", handlers.Archive.DeleteFolder)
+		archive.POST("/move", handlers.Archive.MoveChat)
+		archive.POST("/remove", handlers.Archive.RemoveFromArchive)
+		archive.GET("/status", handlers.Archive.GetStatus)
 
 		payments := api.Group("/payments")
-		{
-			payments.GET("/plans", handlers.Payment.ListPlans)
-			payments.POST("/subscribe", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), middleware.AuditMiddleware(auditRepo, logger), handlers.Payment.Subscribe)
-			payments.POST("/webhook", middleware.RateLimitMiddleware(redisClient, 500, time.Minute), handlers.Payment.Webhook)
-			payments.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Payment.Status)
-		}
+		payments.GET("/plans", handlers.Payment.ListPlans)
+		payments.POST("/subscribe", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), middleware.AuditMiddleware(auditRepo, logger), handlers.Payment.Subscribe)
+		payments.POST("/webhook", middleware.RateLimitMiddleware(redisClient, 500, time.Minute), handlers.Payment.Webhook)
+		payments.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Payment.Status)
 
 		inventory := api.Group("/inventory")
 		inventory.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		inventory.Use(middleware.RateLimitByUserMiddleware(redisClient, 60, time.Minute))
 		inventory.Use(middleware.AuditMiddleware(auditRepo, logger))
-		{
-			inventory.GET("", handlers.Inventory.List)
-			inventory.POST("", handlers.Inventory.Create)
-			inventory.GET("/search", handlers.Inventory.Search)
-			inventory.GET("/:id", handlers.Inventory.GetByID)
-			inventory.PUT("/:id", handlers.Inventory.Update)
-			inventory.DELETE("/:id", handlers.Inventory.Delete)
-		}
+		inventory.GET("", handlers.Inventory.List)
+		inventory.POST("", handlers.Inventory.Create)
+		inventory.GET("/search", handlers.Inventory.Search)
+		inventory.GET("/:id", handlers.Inventory.GetByID)
+		inventory.PUT("/:id", handlers.Inventory.Update)
+		inventory.DELETE("/:id", handlers.Inventory.Delete)
 
 		handoffs := api.Group("/handoffs")
 		handoffs.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		handoffs.Use(middleware.RateLimitByUserMiddleware(redisClient, 60, time.Minute))
 		handoffs.Use(middleware.AuditMiddleware(auditRepo, logger))
-		{
-			handoffs.GET("", handlers.Handoff.List)
-			handoffs.GET("/:id", handlers.Handoff.GetByID)
-			handoffs.PUT("/status", handlers.Handoff.UpdateStatus)
-		}
+		handoffs.GET("", handlers.Handoff.List)
+		handoffs.GET("/:id", handlers.Handoff.GetByID)
+		handoffs.PUT("/status", handlers.Handoff.UpdateStatus)
 
 		openwa := api.Group("/openwa")
-		{
-			// Webhook endpoint — no auth (verified by HMAC signature), rate-limited
-			openwa.POST("/webhook", middleware.RateLimitMiddleware(redisClient, 1000, time.Minute), handlers.OpenWA.WhatsAppWebhook)
-			// Session management — auth required
-			openwa.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.OpenWA.GetSessionStatus)
-			openwa.POST("/restart", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.OpenWA.RestartSession)
-		}
+		// Webhook endpoint — no auth (verified by HMAC signature), rate-limited
+		openwa.POST("/webhook", middleware.RateLimitMiddleware(redisClient, 1000, time.Minute), handlers.OpenWA.WhatsAppWebhook)
+		// Session management — auth required
+		openwa.GET("/status", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.OpenWA.GetSessionStatus)
+		openwa.POST("/restart", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.OpenWA.RestartSession)
 
 		// Simplified WhatsApp channel endpoints
 		telegram := api.Group("/telegram")
-		{
-			telegram.POST("/webhook", middleware.RateLimitMiddleware(redisClient, 1000, time.Minute), handlers.Telegram.Webhook)
-		}
+		telegram.POST("/webhook", middleware.RateLimitMiddleware(redisClient, 1000, time.Minute), handlers.Telegram.Webhook)
 
 	channels := api.Group("/channels")
 	channels.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
-	{
-		channels.POST("/whatsapp/connect", handlers.OpenWA.ConnectWhatsApp)
-		channels.GET("/whatsapp/status/:sessionId", handlers.OpenWA.GetWhatsAppStatus)
-		channels.POST("/whatsapp/refresh/:sessionId", handlers.OpenWA.RefreshWhatsAppQR)
-		channels.POST("/whatsapp/disconnect", handlers.OpenWA.DisconnectWhatsApp)
-		channels.POST("/whatsapp/ping", handlers.OpenWA.PhonePing)
-		channels.POST("/whatsapp/check", handlers.OpenWA.CheckNumber)
-		channels.GET("/whatsapp/health", handlers.OpenWA.HealthCheck)
-	}
+	channels.POST("/whatsapp/connect", handlers.OpenWA.ConnectWhatsApp)
+	channels.GET("/whatsapp/status/:sessionId", handlers.OpenWA.GetWhatsAppStatus)
+	channels.POST("/whatsapp/refresh/:sessionId", handlers.OpenWA.RefreshWhatsAppQR)
+	channels.POST("/whatsapp/disconnect", handlers.OpenWA.DisconnectWhatsApp)
+	channels.POST("/whatsapp/ping", handlers.OpenWA.PhonePing)
+	channels.POST("/whatsapp/check", handlers.OpenWA.CheckNumber)
+	channels.GET("/whatsapp/health", handlers.OpenWA.HealthCheck)
 
 	// Credit endpoints (30 req/min per user)
 	credits := api.Group("/credits")
 	credits.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	credits.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
-	{
-		credits.GET("/balance", handlers.Credit.GetBalance)
-		credits.GET("/limits", handlers.Credit.GetLimits)
-		credits.POST("/purchase", handlers.Credit.PurchasePack)
-		credits.GET("/history", handlers.Credit.GetHistory)
-	}
+	credits.GET("/balance", handlers.Credit.GetBalance)
+	credits.GET("/limits", handlers.Credit.GetLimits)
+	credits.POST("/purchase", handlers.Credit.PurchasePack)
+	credits.GET("/history", handlers.Credit.GetHistory)
 
 	// Campaign endpoints (30 req/min per user)
 	campaigns := api.Group("/campaigns")
 	campaigns.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	campaigns.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
-	{
-		campaigns.GET("", handlers.Campaign.List)
-		campaigns.POST("", handlers.Campaign.Create)
-		campaigns.DELETE("/:id", handlers.Campaign.Cancel)
-	}
+	campaigns.GET("", handlers.Campaign.List)
+	campaigns.POST("", handlers.Campaign.Create)
+	campaigns.DELETE("/:id", handlers.Campaign.Cancel)
 
 	// DB Manager endpoints (admin/owner only)
 	dbManager := api.Group("/db-manager")
 	dbManager.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	dbManager.Use(middleware.RequireAdminMiddleware())
-	{
-		dbManager.GET("/tasks", handlers.DBManager.ListCleanupTasks)
-		dbManager.GET("/config", handlers.DBManager.GetCleanupConfig)
-		dbManager.POST("/run-all", handlers.DBManager.RunAllCleanups)
-		dbManager.POST("/run", handlers.DBManager.RunCleanupTask)
-	}
+	dbManager.GET("/tasks", handlers.DBManager.ListCleanupTasks)
+	dbManager.GET("/config", handlers.DBManager.GetCleanupConfig)
+	dbManager.POST("/run-all", handlers.DBManager.RunAllCleanups)
+	dbManager.POST("/run", handlers.DBManager.RunCleanupTask)
 
 	// Background Worker endpoints (admin/owner only)
 	background := api.Group("/background")
 	background.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	background.Use(middleware.RequireAdminMiddleware())
-	{
-		background.POST("/submit", handlers.Background.SubmitTask)
-		background.GET("/tasks", handlers.Background.ListTasks)
-		background.GET("/tasks/:id", handlers.Background.GetTaskStatus)
-		background.GET("/stats", handlers.Background.WorkerStats)
-	}
+	background.POST("/submit", handlers.Background.SubmitTask)
+	background.GET("/tasks", handlers.Background.ListTasks)
+	background.GET("/tasks/:id", handlers.Background.GetTaskStatus)
+	background.GET("/stats", handlers.Background.WorkerStats)
 	}
 
 	// WhatsApp Template endpoints (30 req/min per user)
 	templates := api.Group("/templates")
 	templates.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	templates.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
-	{
-		templates.GET("", handlers.Template.List)
-		templates.POST("", handlers.Template.Create)
-		templates.GET("/:id", handlers.Template.GetByID)
-		templates.PUT("/:id", handlers.Template.Update)
-		templates.DELETE("/:id", handlers.Template.Delete)
-		templates.POST("/:id/submit", handlers.Template.SubmitForApproval)
-		templates.POST("/send", handlers.Template.Send)
-		templates.GET("/common", handlers.Template.GetCommon)
-	}
+	templates.GET("", handlers.Template.List)
+	templates.POST("", handlers.Template.Create)
+	templates.GET("/:id", handlers.Template.GetByID)
+	templates.PUT("/:id", handlers.Template.Update)
+	templates.DELETE("/:id", handlers.Template.Delete)
+	templates.POST("/:id/submit", handlers.Template.SubmitForApproval)
+	templates.POST("/send", handlers.Template.Send)
+	templates.GET("/common", handlers.Template.GetCommon)
 
 	// WhatsApp Campaign endpoints (30 req/min per user)
 	whatsappCampaign := api.Group("/whatsapp/campaigns")
 	whatsappCampaign.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	whatsappCampaign.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
-	{
-		whatsappCampaign.POST("/broadcast", handlers.OpenWA.BroadcastCampaign)
-		whatsappCampaign.GET("/:campaignID/analytics", handlers.OpenWA.CampaignAnalytics)
-	}
+	whatsappCampaign.POST("/broadcast", handlers.OpenWA.BroadcastCampaign)
+	whatsappCampaign.GET("/:campaignID/analytics", handlers.OpenWA.CampaignAnalytics)
 
 	// WhatsApp Media endpoints
 	media := api.Group("/chats/conversations")
 	media.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
-	{
-		media.POST("/:id/media", handlers.OpenWA.UploadMedia)
-		media.GET("/:id/media", handlers.OpenWA.ListMedia)
-		media.GET("/media/:mediaID", handlers.OpenWA.GetMedia)
-		media.GET("/media/:mediaID/thumbnail", handlers.OpenWA.GetMediaThumbnail)
-	}
+	media.POST("/:id/media", handlers.OpenWA.UploadMedia)
+	media.GET("/:id/media", handlers.OpenWA.ListMedia)
+	media.GET("/media/:mediaID", handlers.OpenWA.GetMedia)
+	media.GET("/media/:mediaID/thumbnail", handlers.OpenWA.GetMediaThumbnail)
 
 	// WhatsApp Queue & Session management endpoints
 	whatsappAdmin := api.Group("/whatsapp/admin")
 	whatsappAdmin.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
-	{
-		whatsappAdmin.GET("/queue/stats", handlers.OpenWA.QueueStats)
-		whatsappAdmin.GET("/sessions", handlers.OpenWA.ListManagedSessions)
-		whatsappAdmin.GET("/sessions/:sessionID/metrics", handlers.OpenWA.SessionMetrics)
-		whatsappAdmin.POST("/sessions/:sessionID/reconnect", handlers.OpenWA.ForceReconnect)
-	}
+	whatsappAdmin.GET("/queue/stats", handlers.OpenWA.QueueStats)
+	whatsappAdmin.GET("/sessions", handlers.OpenWA.ListManagedSessions)
+	whatsappAdmin.GET("/sessions/:sessionID/metrics", handlers.OpenWA.SessionMetrics)
+	whatsappAdmin.POST("/sessions/:sessionID/reconnect", handlers.OpenWA.ForceReconnect)
 
 	// Interactive message endpoints
 	interactive := api.Group("/whatsapp/interactive")
 	interactive.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
-	{
-		interactive.POST("/list", handlers.OpenWA.SendListMessage)
-		interactive.POST("/buttons", handlers.OpenWA.SendButtonsMessage)
-	}
+	interactive.POST("/list", handlers.OpenWA.SendListMessage)
+	interactive.POST("/buttons", handlers.OpenWA.SendButtonsMessage)
 
 	// Onboarding Assistant endpoints
 	assistant := api.Group("/assistant")
 	assistant.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	assistant.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
-	{
-		assistant.POST("/chat", handlers.Assistant.Chat)
-	}
+	assistant.POST("/chat", handlers.Assistant.Chat)
 
 	// Onboarding wizard endpoints
 	onboarding := api.Group("/onboarding")
 	onboarding.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	onboarding.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
-	{
-		onboarding.GET("/status", handlers.Onboarding.GetStatus)
-		onboarding.POST("/step", handlers.Onboarding.CompleteStep)
-		onboarding.POST("/categories/auto-create", handlers.Onboarding.AutoCreateCategories)
-		onboarding.GET("/industry-templates", handlers.Onboarding.GetIndustryTemplates)
-	}
+	onboarding.GET("/status", handlers.Onboarding.GetStatus)
+	onboarding.POST("/step", handlers.Onboarding.CompleteStep)
+	onboarding.POST("/categories/auto-create", handlers.Onboarding.AutoCreateCategories)
+	onboarding.GET("/industry-templates", handlers.Onboarding.GetIndustryTemplates)
 
 	// Push notification subscription endpoints
 	pushSub := api.Group("/push")
 	pushSub.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 	pushSub.Use(middleware.RateLimitByUserMiddleware(redisClient, 30, time.Minute))
-	{
-		pushSub.POST("/subscribe", handlers.Push.Subscribe)
-		pushSub.POST("/unsubscribe", handlers.Push.Unsubscribe)
-	}
+	pushSub.POST("/subscribe", handlers.Push.Subscribe)
+	pushSub.POST("/unsubscribe", handlers.Push.Unsubscribe)
 
 	// Serve frontend static files if the static directory exists
 	if _, err := os.Stat("./static"); err == nil {

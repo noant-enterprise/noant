@@ -143,11 +143,11 @@ func (s *TrainingService) UploadCSV(ctx context.Context, userID, categoryID stri
 	return len(records) - 1, nil
 }
 
-func (s *TrainingService) ListUnknownQuestions(ctx context.Context, userID string, status string, limit int, offset int) ([]domain.UnknownQuestion, error) {
+func (s *TrainingService) ListUnknownQuestions(ctx context.Context, userID, status string, limit, offset int) ([]domain.UnknownQuestion, error) {
 	return s.repos.UnknownQ.List(ctx, userID, status, limit, offset)
 }
 
-func (s *TrainingService) CountUnknownQuestions(ctx context.Context, userID string, status string) (int, error) {
+func (s *TrainingService) CountUnknownQuestions(ctx context.Context, userID, status string) (int, error) {
 	return s.repos.UnknownQ.CountByFilter(ctx, userID, status)
 }
 
@@ -159,7 +159,7 @@ func (s *TrainingService) BatchIgnoreUnknown(ctx context.Context, userID string,
 	return s.repos.UnknownQ.BatchIgnore(ctx, userID, ids)
 }
 
-func (s *TrainingService) TrainUnknown(ctx context.Context, userID, id string, answer string, categoryID string) error {
+func (s *TrainingService) TrainUnknown(ctx context.Context, userID, id, answer, categoryID string) error {
 	target, err := s.repos.UnknownQ.GetByIDAndUser(ctx, id, userID)
 	if err != nil {
 		return err
@@ -194,7 +194,7 @@ func (s *TrainingService) ListQAPairs(ctx context.Context, userID, categoryID st
 	return s.repos.QAPair.ListByCategoryAndUser(ctx, categoryID, userID)
 }
 
-func (s *TrainingService) CreateQAPair(ctx context.Context, userID, categoryID string, question, answer string) (*domain.QAPair, error) {
+func (s *TrainingService) CreateQAPair(ctx context.Context, userID, categoryID, question, answer string) (*domain.QAPair, error) {
 	qa := &domain.QAPair{
 		UserID:     userID,
 		CategoryID: categoryID,

@@ -1,6 +1,9 @@
 package service
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestCleanWhatsAppID(t *testing.T) {
 	got := cleanWhatsAppID("waid:+234-801-234-5678@s.whatsapp.net")
@@ -19,7 +22,7 @@ func TestFirstNonEmpty(t *testing.T) {
 func TestResolveWhatsAppIdentityBasicFallback(t *testing.T) {
 	svc := &ChatService{}
 	identity, err := svc.ResolveWhatsAppIdentity(
-		nil,
+		context.TODO(),
 		"user-1",
 		"session-1",
 		&OpenWAMessageData{

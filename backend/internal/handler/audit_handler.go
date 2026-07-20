@@ -15,8 +15,8 @@ type AuditHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewAuditHandler(service *service.AuditService, logger *infrastructure.Logger) *AuditHandler {
-	return &AuditHandler{service: service, logger: logger}
+func NewAuditHandler(svc *service.AuditService, logger *infrastructure.Logger) *AuditHandler {
+	return &AuditHandler{service: svc, logger: logger}
 }
 
 func (h *AuditHandler) ListLogs(c *gin.Context) {

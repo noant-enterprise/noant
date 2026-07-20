@@ -96,7 +96,7 @@ func (h *DBManagerHandler) ListCleanupTasks(c *gin.Context) {
 		{"name": "expired_trials", "description": "Deactivate expired free trials"},
 		{"name": "expired_credits", "description": "Delete expired credit balances"},
 		{"name": "stale_credit_purchases", "description": "Delete old credit purchase records"},
-		{"name": "completed_campaigns", "description": "Delete completed/cancelled campaigns older than N days"},
+		{"name": "completed_campaigns", "description": "Delete completed/canceled campaigns older than N days"},
 	}
 	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
 }

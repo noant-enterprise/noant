@@ -35,7 +35,7 @@ func (r *CampaignRecipientRepository) ListByCampaign(ctx context.Context, campai
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var cr domain.CampaignRecipient
 		if err := rows.Scan(&cr.ID, &cr.CampaignID, &cr.UserID, &cr.Phone, &cr.Name, &cr.Status, &cr.Error, &cr.SentAt, &cr.DeliveredAt, &cr.ReadAt, &cr.CreatedAt); err != nil {
@@ -48,12 +48,14 @@ func (r *CampaignRecipientRepository) ListByCampaign(ctx context.Context, campai
 
 func (r *CampaignRecipientRepository) UpdateStatus(ctx context.Context, id, status string, errInfo *string) error {
 	query := `UPDATE campaign_recipients SET status = ?, error = ?`
-	args := []interface{}{status, errInfo}
-	if status == "sent" {
+	args := make([]interface{}, 0, 3)
+	args = append(args, status, errInfo)
+	switch status {
+	case "sent":
 		query += ", sent_at = NOW()"
-	} else if status == "delivered" {
+	case "delivered":
 		query += ", delivered_at = NOW()"
-	} else if status == "read" {
+	case "read":
 		query += ", read_at = NOW()"
 	}
 	query += " WHERE id = ?"

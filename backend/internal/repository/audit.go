@@ -44,7 +44,7 @@ func (r *AuditRepository) ListByUser(ctx context.Context, userID string, limit i
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var logs []domain.AuditLog
 	for rows.Next() {
@@ -64,7 +64,7 @@ func (r *AuditRepository) ListByUser(ctx context.Context, userID string, limit i
 		if ua.Valid {
 			log.UserAgent = &ua.String
 		}
-		json.Unmarshal([]byte(detailsStr), &log.Details)
+		_ = json.Unmarshal([]byte(detailsStr), &log.Details)
 		logs = append(logs, log)
 	}
 	if logs == nil {

@@ -9,6 +9,15 @@ import (
 	"noant/internal/infrastructure"
 )
 
+type ConversationRepository struct {
+	db    *sql.DB
+	redis *infrastructure.RedisClient
+}
+
+func NewConversationRepository(db *sql.DB, redis *infrastructure.RedisClient) *ConversationRepository {
+	return &ConversationRepository{db: db, redis: redis}
+}
+
 func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*domain.Conversation, error) {
 	conv := &domain.Conversation{}
 	row := r.db.QueryRowContext(ctx, `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, customer_avatar, created_at, updated_at FROM conversations WHERE id = ?`, id)
@@ -20,15 +29,6 @@ func (r *ConversationRepository) GetByID(ctx context.Context, id string) (*domai
 		return nil, err
 	}
 	return conv, nil
-}
-
-type ConversationRepository struct {
-	db    *sql.DB
-	redis *infrastructure.RedisClient
-}
-
-func NewConversationRepository(db *sql.DB, redis *infrastructure.RedisClient) *ConversationRepository {
-	return &ConversationRepository{db: db, redis: redis}
 }
 
 func (r *ConversationRepository) Create(ctx context.Context, conv *domain.Conversation) error {
@@ -44,7 +44,7 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *domain.Conver
 	return nil
 }
 
-func (r *ConversationRepository) List(ctx context.Context, userID string, status string, limit, offset int) ([]domain.Conversation, int, error) {
+func (r *ConversationRepository) List(ctx context.Context, userID, status string, limit, offset int) ([]domain.Conversation, int, error) {
 	countQuery := "SELECT COUNT(*) FROM conversations WHERE user_id = ?"
 	countArgs := []interface{}{userID}
 	if status != "" {
@@ -69,7 +69,7 @@ func (r *ConversationRepository) List(ctx context.Context, userID string, status
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var conversations []domain.Conversation
 	for rows.Next() {
 		var conv domain.Conversation
@@ -82,7 +82,7 @@ func (r *ConversationRepository) List(ctx context.Context, userID string, status
 	return conversations, total, nil
 }
 
-func (r *ConversationRepository) GetByIDAndUser(ctx context.Context, id string, userID string) (*domain.Conversation, error) {
+func (r *ConversationRepository) GetByIDAndUser(ctx context.Context, id, userID string) (*domain.Conversation, error) {
 	query := `SELECT id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, taken_over_by, taken_over_at, resolved_at, folder_id, customer_avatar, created_at, updated_at FROM conversations WHERE id = ? AND user_id = ?`
 	row := r.db.QueryRowContext(ctx, query, id, userID)
 	conv := &domain.Conversation{}
@@ -96,13 +96,13 @@ func (r *ConversationRepository) GetByIDAndUser(ctx context.Context, id string, 
 	return conv, nil
 }
 
-func (r *ConversationRepository) UpdateStatus(ctx context.Context, id string, userID string, status string) error {
+func (r *ConversationRepository) UpdateStatus(ctx context.Context, id, userID, status string) error {
 	query := `UPDATE conversations SET status = ? WHERE id = ? AND user_id = ?`
 	_, err := r.db.ExecContext(ctx, query, status, id, userID)
 	return err
 }
 
-func (r *ConversationRepository) UpdateCustomerInfo(ctx context.Context, id string, name string, avatar string) error {
+func (r *ConversationRepository) UpdateCustomerInfo(ctx context.Context, id, name, avatar string) error {
 	query := `UPDATE conversations SET customer_name = ?, customer_avatar = ? WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, name, avatar, id)
 	return err
@@ -122,7 +122,7 @@ func (r *ConversationRepository) FindActiveByCustomer(ctx context.Context, userI
 	return conv, nil
 }
 
-func (r *ConversationRepository) Takeover(ctx context.Context, id string, userID string, agentID string) error {
+func (r *ConversationRepository) Takeover(ctx context.Context, id, userID, agentID string) error {
 	query := `UPDATE conversations SET status = 'escalated', taken_over_by = ?, taken_over_at = NOW() WHERE id = ? AND user_id = ?`
 	_, err := r.db.ExecContext(ctx, query, agentID, id, userID)
 	return err
@@ -133,7 +133,7 @@ func (r *ConversationRepository) ClearChats(ctx context.Context, userID string) 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// 1. Delete messages
 	_, err = tx.ExecContext(ctx, `DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)`, userID)
@@ -180,7 +180,7 @@ func (r *ConversationRepository) CountByChannel(ctx context.Context, userID stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make(map[string]int)
 	for rows.Next() {
 		var channel string
@@ -198,7 +198,7 @@ func (r *ConversationRepository) CountByIntent(ctx context.Context, userID strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var intent string
@@ -216,7 +216,7 @@ func (r *ConversationRepository) CountByHour(ctx context.Context, userID string)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var hour, count int
@@ -234,7 +234,7 @@ func (r *ConversationRepository) CountByDate(ctx context.Context, userID string,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var date string
@@ -258,14 +258,13 @@ func (r *ConversationRepository) RecordCSAT(ctx context.Context, userID, convers
 	return err
 }
 
-func (r *ConversationRepository) GetCSATAverage(ctx context.Context, userID string) (float64, int, error) {
-	var avg sql.NullFloat64
-	var total int
-	err := r.db.QueryRowContext(ctx, `SELECT AVG(score), COUNT(*) FROM csat_ratings WHERE user_id = ?`, userID).Scan(&avg, &total)
+func (r *ConversationRepository) GetCSATAverage(ctx context.Context, userID string) (avg float64, total int, err error) {
+	var avgN sql.NullFloat64
+	err = r.db.QueryRowContext(ctx, `SELECT AVG(score), COUNT(*) FROM csat_ratings WHERE user_id = ?`, userID).Scan(&avgN, &total)
 	if err != nil {
 		return 0, 0, err
 	}
-	return avg.Float64, total, nil
+	return avgN.Float64, total, nil
 }
 
 func (r *ConversationRepository) GetCSATDistribution(ctx context.Context, userID string) (map[int]int, error) {
@@ -273,7 +272,7 @@ func (r *ConversationRepository) GetCSATDistribution(ctx context.Context, userID
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	dist := map[int]int{1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
 	for rows.Next() {
 		var score, count int
@@ -292,7 +291,7 @@ func (r *ConversationRepository) GetCSATTrend(ctx context.Context, userID string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var dateStr string
@@ -317,7 +316,7 @@ func (r *ConversationRepository) CountMessagesByDate(ctx context.Context, userID
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var dateStr string

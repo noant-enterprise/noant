@@ -39,7 +39,7 @@ func (r *NotificationRepository) ListByUser(ctx context.Context, userID string, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []*domain.Notification
 	for rows.Next() {
@@ -182,7 +182,7 @@ func (r *UserRepository) ExportUserData(ctx context.Context, userID string) (map
 	}, nil
 }
 
-func (r *UserRepository) UpdateProfile(ctx context.Context, userID string, firstName, lastName, companyName, phone string) error {
+func (r *UserRepository) UpdateProfile(ctx context.Context, userID, firstName, lastName, companyName, phone string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE users SET first_name = ?, last_name = ?, company_name = ?, phone = ?, updated_at = NOW()
 		WHERE id = ?`, firstName, lastName, companyName, phone, userID)
@@ -202,7 +202,7 @@ func (r *UserRepository) GetOnboardingStatus(ctx context.Context, userID string)
 	return status, nil
 }
 
-func (r *UserRepository) UpdateOnboardingStatus(ctx context.Context, userID string, status string, industry *string) error {
+func (r *UserRepository) UpdateOnboardingStatus(ctx context.Context, userID, status string, industry *string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE users SET onboarding_status = ?, industry = COALESCE(?, industry), updated_at = NOW()
 		WHERE id = ?`, status, industry, userID)

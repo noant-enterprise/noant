@@ -78,7 +78,7 @@ func AuthMiddleware(jwtSecret string, redis *infrastructure.RedisClient) gin.Han
 		c.Set("userID", userID)
 		c.Set("userEmail", claims["email"])
 		c.Set("userRole", claims["role"])
-		c.Set("tokenExpiry", exp.Time.Unix())
+		c.Set("tokenExpiry", exp.Unix())
 
 		c.Next()
 	}
@@ -164,11 +164,12 @@ func LoggerMiddleware(logger *infrastructure.Logger) gin.HandlerFunc {
 		infrastructure.RequestsTotal.WithLabelValues(method, path, fmt.Sprintf("%d", statusCode)).Inc()
 		infrastructure.RequestDuration.WithLabelValues(method, path).Observe(latency.Seconds())
 
-		if statusCode >= 500 {
+		switch {
+		case statusCode >= 500:
 			logger.Error("HTTP request", "method", method, "path", path, "status", statusCode, "latency_ms", latency.Milliseconds(), "ip", clientIP, "request_id", reqIDStr)
-		} else if statusCode >= 400 {
+		case statusCode >= 400:
 			logger.Warn("HTTP request", "method", method, "path", path, "status", statusCode, "latency_ms", latency.Milliseconds(), "ip", clientIP, "request_id", reqIDStr)
-		} else {
+		default:
 			logger.Info("HTTP request", "method", method, "path", path, "status", statusCode, "latency_ms", latency.Milliseconds(), "ip", clientIP, "request_id", reqIDStr)
 		}
 	}

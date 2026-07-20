@@ -41,21 +41,21 @@ func (r *QAPairRepository) BulkCreate(ctx context.Context, qas []domain.QAPair) 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	query := `INSERT INTO qa_pairs (id, user_id, category_id, question, answer, variations, is_active, created_at, updated_at)
 	VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
-	for _, qa := range qas {
-		if qa.ID == "" {
-			qa.ID = generateUUID()
+	for i := range qas {
+		if qas[i].ID == "" {
+			qas[i].ID = generateUUID()
 		}
 		variationsJSON := []byte("[]")
-		if len(qa.Variations) > 0 {
-			b, err := json.Marshal(qa.Variations)
+		if len(qas[i].Variations) > 0 {
+			b, err := json.Marshal(qas[i].Variations)
 			if err == nil {
 				variationsJSON = b
 			}
 		}
-		_, err := tx.ExecContext(ctx, query, qa.ID, qa.UserID, qa.CategoryID, qa.Question, qa.Answer, string(variationsJSON), qa.IsActive)
+		_, err := tx.ExecContext(ctx, query, qas[i].ID, qas[i].UserID, qas[i].CategoryID, qas[i].Question, qas[i].Answer, string(variationsJSON), qas[i].IsActive)
 		if err != nil {
 			return err
 		}
@@ -69,7 +69,7 @@ func (r *QAPairRepository) ListByCategory(ctx context.Context, categoryID string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var qas []domain.QAPair
 	for rows.Next() {
 		var qa domain.QAPair
@@ -88,13 +88,13 @@ func (r *QAPairRepository) ListByCategory(ctx context.Context, categoryID string
 	return qas, nil
 }
 
-func (r *QAPairRepository) ListByCategoryAndUser(ctx context.Context, categoryID string, userID string) ([]domain.QAPair, error) {
+func (r *QAPairRepository) ListByCategoryAndUser(ctx context.Context, categoryID, userID string) ([]domain.QAPair, error) {
 	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE category_id = ? AND user_id = ? AND is_active = true`
 	rows, err := r.db.QueryContext(ctx, query, categoryID, userID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var qas []domain.QAPair
 	for rows.Next() {
 		var qa domain.QAPair
@@ -114,7 +114,7 @@ func (r *QAPairRepository) ListByCategoryAndUser(ctx context.Context, categoryID
 	return qas, nil
 }
 
-func (r *QAPairRepository) Search(ctx context.Context, userID string, query string) ([]domain.QAPair, error) {
+func (r *QAPairRepository) Search(ctx context.Context, userID, query string) ([]domain.QAPair, error) {
 	// Clean query by removing common punctuation and trim
 	cleanQuery := query
 	for _, char := range []string{"?", "!", ".", ",", ";", ":"} {
@@ -138,7 +138,7 @@ func (r *QAPairRepository) Search(ctx context.Context, userID string, query stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var qas []domain.QAPair
 	for rows.Next() {
 		var qa domain.QAPair
@@ -157,7 +157,7 @@ func (r *QAPairRepository) Search(ctx context.Context, userID string, query stri
 	return qas, nil
 }
 
-func (r *QAPairRepository) ListByUser(ctx context.Context, userID string, categoryID string) ([]domain.QAPair, error) {
+func (r *QAPairRepository) ListByUser(ctx context.Context, userID, categoryID string) ([]domain.QAPair, error) {
 	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE user_id = ? AND is_active = true`
 	args := []interface{}{userID}
 	if categoryID != "" {
@@ -169,7 +169,7 @@ func (r *QAPairRepository) ListByUser(ctx context.Context, userID string, catego
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var qas []domain.QAPair
 	for rows.Next() {
 		var qa domain.QAPair
@@ -255,7 +255,7 @@ func (r *QAPairRepository) CountByUser(ctx context.Context, userID string) (int,
 	return count, err
 }
 
-func (r *QAPairRepository) Delete(ctx context.Context, id string, userID string) error {
+func (r *QAPairRepository) Delete(ctx context.Context, id, userID string) error {
 	query := `DELETE FROM qa_pairs WHERE id = ? AND user_id = ?`
 	_, err := r.db.ExecContext(ctx, query, id, userID)
 	return err

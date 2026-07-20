@@ -81,7 +81,7 @@ func generateVerificationCode() string {
 func validatePasswordStrength(password string) error {
 	if !regexp.MustCompile(`[A-Z]`).MatchString(password) ||
 		!regexp.MustCompile(`[a-z]`).MatchString(password) ||
-		!regexp.MustCompile(`[0-9]`).MatchString(password) ||
+		!regexp.MustCompile(`\d`).MatchString(password) ||
 		!regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{}|;':",./<>?]`).MatchString(password) {
 		return fmt.Errorf("password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
 	}
@@ -138,7 +138,10 @@ func (s *AuthService) Register(ctx context.Context, email, password, firstName, 
 		}
 	}
 
-	created, _ := s.userRepo.GetByEmail(ctx, email)
+	created, err := s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve created user: %w", err)
+	}
 	return created, nil
 }
 
@@ -152,8 +155,8 @@ func (s *AuthService) generateRefreshToken() string {
 // refresh token, and the authenticated user on success. Returns ErrInvalidCredentials
 // on wrong password, ErrAccountLocked after 5 failed attempts (15-minute lockout),
 // or ErrEmailNotVerified if the account hasn't been verified.
-func (s *AuthService) Login(ctx context.Context, email, password string) (*domain.User, string, string, error) {
-	user, err := s.userRepo.GetByEmail(ctx, email)
+func (s *AuthService) Login(ctx context.Context, email, password string) (user *domain.User, token, refreshToken string, err error) {
+	user, err = s.userRepo.GetByEmail(ctx, email)
 	if user == nil {
 		return nil, "", "", fmt.Errorf("invalid credentials")
 	}
@@ -193,12 +196,12 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*domai
 		return nil, "", "", apperrors.ErrEmailNotVerified
 	}
 	_ = s.userRepo.UpdateLastLogin(ctx, user.ID)
-	token, err := s.generateToken(user)
+	token, err = s.generateToken(user)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	refreshToken := s.generateRefreshToken()
+	refreshToken = s.generateRefreshToken()
 	if s.redis != nil {
 		_ = s.redis.Set(ctx, "refresh:"+refreshToken, user.ID, 7*24*time.Hour)
 	}
@@ -210,12 +213,12 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*domai
 // marks the account as verified and returns JWT tokens. Rate-limited to 5 attempts
 // per minute. Returns ErrInvalidVerification on code mismatch or
 // ErrTooManyVerifications when rate-limited.
-func (s *AuthService) VerifyEmail(ctx context.Context, email, code string) (*domain.User, string, string, error) {
+func (s *AuthService) VerifyEmail(ctx context.Context, email, code string) (user *domain.User, token, refreshToken string, err error) {
 	if !s.memRL.Allow("verify:"+email, 5, time.Minute) {
 		return nil, "", "", apperrors.ErrTooManyVerifications
 	}
 
-	user, err := s.userRepo.GetByEmail(ctx, email)
+	user, err = s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("database error: %w", err)
 	}
@@ -223,11 +226,11 @@ func (s *AuthService) VerifyEmail(ctx context.Context, email, code string) (*dom
 		return nil, "", "", fmt.Errorf("user not found")
 	}
 	if user.IsVerified {
-		token, err := s.generateToken(user)
+		token, err = s.generateToken(user)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("failed to generate token: %w", err)
 		}
-		refreshToken := s.generateRefreshToken()
+		refreshToken = s.generateRefreshToken()
 		if s.redis != nil {
 			_ = s.redis.Set(ctx, "refresh:"+refreshToken, user.ID, 7*24*time.Hour)
 		}
@@ -244,11 +247,11 @@ func (s *AuthService) VerifyEmail(ctx context.Context, email, code string) (*dom
 	user.IsVerified = true
 	user.VerificationCode = nil
 
-	token, err := s.generateToken(user)
+	token, err = s.generateToken(user)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to generate token: %w", err)
 	}
-	refreshToken := s.generateRefreshToken()
+	refreshToken = s.generateRefreshToken()
 	if s.redis != nil {
 		_ = s.redis.Set(ctx, "refresh:"+refreshToken, user.ID, 7*24*time.Hour)
 	}
@@ -299,7 +302,7 @@ func (s *AuthService) generateToken(user *domain.User) (string, error) {
 	return token.SignedString([]byte(s.cfg.JWTSecret))
 }
 
-func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (string, string, error) {
+func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (accessToken, newRefreshToken string, err error) {
 	if refreshToken == "" {
 		return "", "", fmt.Errorf("refresh token required")
 	}
@@ -317,12 +320,12 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (st
 		return "", "", fmt.Errorf("user not found")
 	}
 
-	accessToken, err := s.generateToken(user)
+	accessToken, err = s.generateToken(user)
 	if err != nil {
 		return "", "", err
 	}
 
-	newRefreshToken := s.generateRefreshToken()
+	newRefreshToken = s.generateRefreshToken()
 	_ = s.redis.Delete(ctx, "refresh:"+refreshToken)
 	if err := s.redis.Set(ctx, "refresh:"+newRefreshToken, user.ID, 7*24*time.Hour); err != nil {
 		return "", "", err
@@ -358,17 +361,15 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 		countStr, err := s.redis.Get(ctx, key)
 		var count int
 		if err == nil {
-			fmt.Sscanf(countStr, "%d", &count)
+			_, _ = fmt.Sscanf(countStr, "%d", &count)
 		}
 		if count >= 3 {
 			s.logger.Warn("Forgot password request rate limited", "email", email)
 			return fmt.Errorf("too many forgot password requests, please try again in an hour")
 		}
-	} else {
-		if !s.memRL.Allow(key, 3, time.Hour) {
-			s.logger.Warn("Forgot password request rate limited (memory)", "email", email)
-			return fmt.Errorf("too many forgot password requests, please try again in an hour")
-		}
+	} else if !s.memRL.Allow(key, 3, time.Hour) {
+		s.logger.Warn("Forgot password request rate limited (memory)", "email", email)
+		return fmt.Errorf("too many forgot password requests, please try again in an hour")
 	}
 
 	if s.redis != nil {
@@ -401,7 +402,7 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 	return nil
 }
 
-func (s *AuthService) Logout(ctx context.Context, token string, refreshToken string) error {
+func (s *AuthService) Logout(ctx context.Context, token, refreshToken string) error {
 	if s.redis == nil {
 		return nil
 	}

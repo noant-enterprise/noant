@@ -88,7 +88,7 @@ func IsValidUUID(id string) bool {
 // It skips fields with "password", "secret", "token", "key" in their name (case-insensitive) or fields tagged with `sanitize:"skip"`.
 func SanitizeStruct(v interface{}) {
 	val := reflect.ValueOf(v)
-	if val.Kind() != reflect.Ptr || val.IsNil() {
+	if val.Kind() != reflect.Pointer || val.IsNil() {
 		return
 	}
 	sanitizeValue(val.Elem(), "")
@@ -146,7 +146,8 @@ func sanitizeValue(val reflect.Value, fieldName string) {
 		}
 		for _, key := range val.MapKeys() {
 			mapVal := val.MapIndex(key)
-			if mapVal.Kind() == reflect.String {
+			switch mapVal.Kind() {
+			case reflect.String:
 				str := mapVal.String()
 				var sanitized string
 				if strings.Contains(lowerFieldName, "email") {
@@ -155,7 +156,7 @@ func sanitizeValue(val reflect.Value, fieldName string) {
 					sanitized = SanitizeXSS(str)
 				}
 				val.SetMapIndex(key, reflect.ValueOf(sanitized))
-			} else if mapVal.Kind() == reflect.Interface {
+			case reflect.Interface:
 				elem := mapVal.Elem()
 				if elem.Kind() == reflect.String {
 					str := elem.String()
@@ -166,15 +167,15 @@ func sanitizeValue(val reflect.Value, fieldName string) {
 						sanitized = SanitizeXSS(str)
 					}
 					val.SetMapIndex(key, reflect.ValueOf(sanitized))
-				} else if elem.Kind() == reflect.Map || elem.Kind() == reflect.Slice || elem.Kind() == reflect.Struct || elem.Kind() == reflect.Ptr {
+				} else if elem.Kind() == reflect.Map || elem.Kind() == reflect.Slice || elem.Kind() == reflect.Struct || elem.Kind() == reflect.Pointer {
 					sanitizeValue(elem, fieldName)
 				}
-			} else {
+			default:
 				sanitizeValue(mapVal, fieldName)
 			}
 		}
 
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if !val.IsNil() {
 			sanitizeValue(val.Elem(), fieldName)
 		}

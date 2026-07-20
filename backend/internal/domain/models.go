@@ -381,7 +381,7 @@ type CampaignSchedule struct {
 	Name        string    `json:"name" db:"name"`
 	StartDate   string    `json:"start_date" db:"start_date"` // stored as DATE, but handled as string
 	EndDate     string    `json:"end_date" db:"end_date"`     // stored as DATE, but handled as string
-	Status      string    `json:"status" db:"status"` // draft/active/completed/cancelled
+	Status      string    `json:"status" db:"status"` // draft/active/completed/canceled
 	CreatedAt   time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 }

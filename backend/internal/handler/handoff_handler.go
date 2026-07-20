@@ -15,8 +15,8 @@ type HandoffHandler struct {
 	logger  *infrastructure.Logger
 }
 
-func NewHandoffHandler(service *service.HandoffService, logger *infrastructure.Logger) *HandoffHandler {
-	return &HandoffHandler{service: service, logger: logger}
+func NewHandoffHandler(svc *service.HandoffService, logger *infrastructure.Logger) *HandoffHandler {
+	return &HandoffHandler{service: svc, logger: logger}
 }
 
 func (h *HandoffHandler) List(c *gin.Context) {

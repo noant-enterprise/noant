@@ -40,7 +40,7 @@ func NewEmailService(cfg *config.Config, logger *infrastructure.Logger) *EmailSe
 	return svc
 }
 
-func smtpSettingsFromConfig(cfg *config.Config, overrides map[string]interface{}) SMTPSettings {
+func smtpSettingsFromConfig(cfg *config.Config, overrides map[string]interface{}) *SMTPSettings {
 	settings := SMTPSettings{
 		Host:       cfg.SMTPHost,
 		Port:       cfg.SMTPPort,
@@ -85,10 +85,10 @@ func smtpSettingsFromConfig(cfg *config.Config, overrides map[string]interface{}
 	if settings.Port == 0 {
 		settings.Port = 587
 	}
-	return settings
+	return &settings
 }
 
-func sendSMTPMessage(ctx context.Context, settings SMTPSettings, toEmail, subject, bodyHTML string) (string, error) {
+func sendSMTPMessage(ctx context.Context, settings *SMTPSettings, toEmail, subject, bodyHTML string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -110,7 +110,7 @@ func sendSMTPMessage(ctx context.Context, settings SMTPSettings, toEmail, subjec
 	if err != nil {
 		return "", err
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	if ok, _ := client.Extension("STARTTLS"); ok {
 		tlsConfig := &tls.Config{
@@ -140,9 +140,9 @@ func sendSMTPMessage(ctx context.Context, settings SMTPSettings, toEmail, subjec
 	}
 
 	msg := bytes.Buffer{}
-	msg.WriteString(fmt.Sprintf("From: %s\r\n", settings.From))
-	msg.WriteString(fmt.Sprintf("To: %s\r\n", toEmail))
-	msg.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+	fmt.Fprintf(&msg, "From: %s\r\n", settings.From)
+	fmt.Fprintf(&msg, "To: %s\r\n", toEmail)
+	fmt.Fprintf(&msg, "Subject: %s\r\n", subject)
 	msg.WriteString("MIME-Version: 1.0\r\n")
 	msg.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
 	msg.WriteString("\r\n")

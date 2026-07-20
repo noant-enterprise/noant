@@ -37,7 +37,7 @@ func (r *UserRepository) RunInTx(ctx context.Context, fn func(tx *sql.Tx) error)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err := fn(tx); err != nil {
 		return err
 	}
@@ -100,13 +100,13 @@ func (r *UserRepository) UpdateLastLogin(ctx context.Context, id string) error {
 	return err
 }
 
-func (r *UserRepository) UpdatePassword(ctx context.Context, id string, hashedPassword string) error {
+func (r *UserRepository) UpdatePassword(ctx context.Context, id, hashedPassword string) error {
 	query := `UPDATE users SET password_hash = ?, must_change_password = false WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, hashedPassword, id)
 	return err
 }
 
-func (r *UserRepository) UpdatePlan(ctx context.Context, userID string, planID string) error {
+func (r *UserRepository) UpdatePlan(ctx context.Context, userID, planID string) error {
 	query := `UPDATE users SET plan_id = ? WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, planID, userID)
 	return err
@@ -118,7 +118,7 @@ func (r *UserRepository) UpdateVerificationStatus(ctx context.Context, id string
 	return err
 }
 
-func (r *UserRepository) UpdateVerificationCode(ctx context.Context, id string, code string) error {
+func (r *UserRepository) UpdateVerificationCode(ctx context.Context, id, code string) error {
 	query := `UPDATE users SET verification_code = ? WHERE id = ?`
 	_, err := r.db.ExecContext(ctx, query, code, id)
 	return err
