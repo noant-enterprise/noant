@@ -123,18 +123,18 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, cust
 	customerAvatar = utils.SanitizeXSS(customerAvatar)
 
 	if s.redis != nil {
-		limit := 500
+		limit := chatRateLimitPulse
 		user, err := s.repos.User.GetByID(ctx, userID)
 		if err == nil && user != nil {
 			switch user.PlanID {
 			case "pulse":
-				limit = 500
+				limit = chatRateLimitPulse
 			case "pro", "business", "enterprise":
-				limit = 999999 // unlimited
+				limit = chatRateLimitUnlimited
 			}
 		}
 
-		if limit < 999999 {
+		if limit < chatRateLimitUnlimited {
 			allowed, _ := s.redis.RateLimit(ctx, "chat:"+userID, limit, time.Minute)
 			if !allowed {
 				return nil, nil, fmt.Errorf("rate limit exceeded")

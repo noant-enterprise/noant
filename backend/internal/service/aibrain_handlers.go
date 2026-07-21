@@ -306,10 +306,10 @@ RULES:
 	}
 	if len(history) > 0 {
 		cut := history
-		if len(cut) > 4 {
-			cut = cut[len(cut)-4:]
+		if len(cut) > humanizeHistoryLimit {
+			cut = cut[len(cut)-humanizeHistoryLimit:]
 		}
-		var historyLines []string
+		historyLines := make([]string, 0, len(cut))
 		for _, t := range cut {
 			historyLines = append(historyLines, t.Role+": "+t.Content)
 		}
@@ -329,16 +329,16 @@ func (b *AIBrain) humanizeStreaming(ctx context.Context, answer, query string, q
 	var contextBuf strings.Builder
 	if len(qaPairs) > 0 {
 		contextBuf.WriteString("Relevant Q&A:\n")
-		for _, qa := range qaPairs {
-			contextBuf.WriteString(fmt.Sprintf("Q: %s\nA: %s\n\n", qa.Question, qa.Answer))
+		for i := range qaPairs {
+			fmt.Fprintf(&contextBuf, "Q: %s\nA: %s\n\n", qaPairs[i].Question, qaPairs[i].Answer)
 		}
 	}
 	if len(inventory) > 0 {
 		contextBuf.WriteString("Relevant products:\n")
-		for _, item := range inventory {
-			contextBuf.WriteString(fmt.Sprintf("- %s: ₦%.0f", item.Name, item.Price))
-			if item.Description != "" {
-				contextBuf.WriteString(" - " + trimTurnText(item.Description, 80))
+		for i := range inventory {
+			fmt.Fprintf(&contextBuf, "- %s: ₦%.0f", inventory[i].Name, inventory[i].Price)
+			if inventory[i].Description != "" {
+				contextBuf.WriteString(" - " + trimTurnText(inventory[i].Description, 80))
 			}
 			contextBuf.WriteString("\n")
 		}
@@ -357,10 +357,10 @@ Rules:
 	}
 	if len(history) > 0 {
 		cut := history
-		if len(cut) > 4 {
-			cut = cut[len(cut)-4:]
+		if len(cut) > humanizeHistoryLimit {
+			cut = cut[len(cut)-humanizeHistoryLimit:]
 		}
-		var historyLines []string
+		historyLines := make([]string, 0, len(cut))
 		for _, t := range cut {
 			historyLines = append(historyLines, t.Role+": "+t.Content)
 		}

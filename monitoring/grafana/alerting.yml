@@ -1,0 +1,248 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: noant-alerts
+    folder: noant
+    interval: 1m
+    rules:
+      - uid: noant-high-error-rate
+        title: HighErrorRate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(rate(noant_requests_total{status=~"5.."}[5m])) / sum(rate(noant_requests_total[5m])) > 0.05
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "High 5xx error rate detected"
+          description: "Error rate is above 5% of total requests for the last 5 minutes."
+
+      - uid: noant-high-latency-p95
+        title: HighLatencyP95
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, sum(rate(noant_request_duration_seconds_bucket[5m])) by (le)) > 3
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High P95 latency detected"
+          description: "P95 request latency exceeds 3 seconds for the last 5 minutes."
+
+      - uid: noant-high-latency-p99
+        title: HighLatencyP99
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.99, sum(rate(noant_request_duration_seconds_bucket[5m])) by (le)) > 10
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical P99 latency detected"
+          description: "P99 request latency exceeds 10 seconds for the last 5 minutes."
+
+      - uid: noant-ai-failure-rate
+        title: AIFailureRate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(noant_ai_response_total{status="failure"}[5m]) / (rate(noant_ai_response_total{status="success"}[5m]) + rate(noant_ai_response_total{status="failure"}[5m])) > 0.2
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: critical
+          team: ai
+        annotations:
+          summary: "High AI failure rate"
+          description: "AI response failure rate exceeds 20% for the last 5 minutes."
+
+      - uid: noant-groq-rate-limited
+        title: GroqRateLimited
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(noant_groq_rate_limited[5m]) > 5
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "Groq API rate limiting active"
+          description: "Groq rate limiting exceeds 5 per minute for the last 5 minutes."
+
+      - uid: noant-high-ai-duration
+        title: HighAIDuration
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, sum(rate(noant_ai_duration_seconds_bucket[5m])) by (le)) > 5
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "High AI response latency"
+          description: "P95 AI response duration exceeds 5 seconds for the last 5 minutes."
+
+      - uid: noant-db-connection-exhaustion
+        title: DatabaseConnectionExhaustion
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: noant_db_connections > 80
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "DB connections exceed 80% of pool (assuming 100 max)."
+
+      - uid: noant-redis-down
+        title: RedisDown
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: noant_redis_connections == 0
+              instant: false
+        noDataState: Alerting
+        execErrState: Error
+        for: 1m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Redis is unreachable"
+          description: "Redis connections have dropped to 0."
+
+      - uid: noant-openwa-queue-backlog
+        title: OpenWAQueueBacklog
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: noant_openwa_queue_depth > 100
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+          team: messaging
+        annotations:
+          summary: "OpenWA message queue backlog"
+          description: "Message queue depth exceeds 100 for the last 5 minutes."
+
+      - uid: noant-csat-drop
+        title: CSATDrop
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.5, sum(rate(noant_csat_score_bucket[1h])) by (le)) < 3
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: warning
+          team: product
+        annotations:
+          summary: "CSAT score dropping"
+          description: "Median CSAT score has dropped below 3.0 over the last hour."
+
+      - uid: noant-instance-down
+        title: InstanceDown
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: up == 0
+              instant: false
+        noDataState: Alerting
+        execErrState: Error
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Instance unreachable"
+          description: "A monitored instance is down and unreachable."

@@ -49,7 +49,7 @@ func (cb *CircuitBreaker) RecordFailure() {
 	defer cb.mutex.Unlock()
 	cb.failures++
 	cb.lastFailure = time.Now()
-	if cb.failures >= 3 {
+	if cb.failures >= circuitBreakerThreshold {
 		cb.state = "open"
 	}
 }

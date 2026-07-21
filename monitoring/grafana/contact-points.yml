@@ -1,0 +1,15 @@
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: noant-ops
+    receivers:
+      - uid: email-ops
+        type: email
+        settings:
+          addresses: ops@noant.example.com
+          singleEmail: false
+      - uid: slack-ops
+        type: slack
+        settings:
+          url: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+          recipient: "#noant-alerts"

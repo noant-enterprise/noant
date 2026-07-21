@@ -19,8 +19,8 @@ func (b *AIBrain) getConversationHistory(ctx context.Context, conversationID str
 	if err := json.Unmarshal([]byte(historyJSON), &history); err != nil {
 		return nil, err
 	}
-	if len(history) > 10 {
-		history = history[len(history)-10:]
+	if len(history) > maxConversationHistory {
+		history = history[len(history)-maxConversationHistory:]
 	}
 	return history, nil
 }
@@ -37,8 +37,8 @@ func (b *AIBrain) storeConversationTurn(ctx context.Context, conversationID, use
 		MessageTurn{Role: "user", Content: userQuery},
 		MessageTurn{Role: "assistant", Content: aiResponse},
 	)
-	if len(history) > 10 {
-		history = history[len(history)-10:]
+	if len(history) > maxConversationHistory {
+		history = history[len(history)-maxConversationHistory:]
 	}
 	historyJSON, err := json.Marshal(history)
 	if err != nil {

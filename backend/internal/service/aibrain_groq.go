@@ -31,7 +31,7 @@ func (b *AIBrain) allowGroqCall(ctx context.Context, userID string) bool {
 	if b.redis == nil || userID == "" {
 		return true
 	}
-	allowed, err := b.redis.RateLimit(ctx, "groq_rate:"+userID, 20, time.Minute)
+	allowed, err := b.redis.RateLimit(ctx, "groq_rate:"+userID, groqRateLimitPerMin, time.Minute)
 	if err != nil {
 		b.logger.Warn("Groq rate limit check failed, allowing call", "error", err)
 		return true
@@ -53,11 +53,11 @@ func (b *AIBrain) callGroqWithFallback(ctx context.Context, messages []MessageTu
 		return "", 0, fmt.Errorf("no Groq API keys configured")
 	}
 	payload := map[string]interface{}{
-		"model":       "llama-3.3-70b-versatile",
+		"model":       groqModel,
 		"messages":    messages,
-		"temperature": 0.1,
-		"max_tokens":  500,
-		"top_p":       0.9,
+		"temperature": groqTemperature,
+		"max_tokens":  groqMaxTokens,
+		"top_p":       groqTopP,
 	}
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
@@ -132,11 +132,11 @@ func (b *AIBrain) callGroqStreaming(ctx context.Context, messages []MessageTurn,
 		return "", 0, fmt.Errorf("no Groq API keys configured")
 	}
 	payload := map[string]interface{}{
-		"model":       "llama-3.3-70b-versatile",
+		"model":       groqModel,
 		"messages":    messages,
-		"temperature": 0.1,
-		"max_tokens":  500,
-		"top_p":       0.9,
+		"temperature": groqTemperature,
+		"max_tokens":  groqMaxTokens,
+		"top_p":       groqTopP,
 		"stream":      true,
 	}
 	jsonPayload, err := json.Marshal(payload)

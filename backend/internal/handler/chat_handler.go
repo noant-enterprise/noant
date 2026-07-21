@@ -291,7 +291,7 @@ func (h *ChatHandler) StreamMessage(c *gin.Context) {
 	var fullContent string
 	aiMsg, err := h.service.GenerateAIStreamingResponse(c.Request.Context(), id, req.Content, func(chunk string) {
 		fullContent += chunk
-		fmt.Fprintf(c.Writer, "data: %s\n\n", chunk)
+		_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", chunk)
 		flusher.Flush()
 	})
 
@@ -309,7 +309,7 @@ func (h *ChatHandler) StreamMessage(c *gin.Context) {
 
 	if err != nil {
 		h.logger.Error("AI streaming failed", "error", err)
-		fmt.Fprintf(c.Writer, "data: [ERROR]\n\n")
+		_, _ = fmt.Fprintf(c.Writer, "data: [ERROR]\n\n")
 		flusher.Flush()
 		return
 	}
@@ -322,9 +322,9 @@ func (h *ChatHandler) StreamMessage(c *gin.Context) {
 			"confidence": aiMsg.Confidence,
 			"source":     aiMsg.Source,
 		})
-		fmt.Fprintf(c.Writer, "data: [DONE]%s\n\n", metaJSON)
+		_, _ = fmt.Fprintf(c.Writer, "data: [DONE]%s\n\n", metaJSON)
 	} else {
-		fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
+		_, _ = fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
 	}
 	flusher.Flush()
 

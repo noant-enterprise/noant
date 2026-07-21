@@ -1,0 +1,61 @@
+groups:
+  - name: noant_rules
+    interval: 15s
+    rules:
+      # Request metrics
+      - record: noant:request_rate:rate5m
+        expr: sum(rate(noant_requests_total[5m])) by (method)
+
+      - record: noant:request_rate:rate1m
+        expr: sum(rate(noant_requests_total[1m])) by (method)
+
+      - record: noant:error_rate:ratio5m
+        expr: sum(rate(noant_requests_total{status=~"5.."}[5m])) / sum(rate(noant_requests_total[5m]))
+
+      - record: noant:error_rate:ratio1m
+        expr: sum(rate(noant_requests_total{status=~"5.."}[1m])) / sum(rate(noant_requests_total[1m]))
+
+      - record: noant:latency:p50_5m
+        expr: histogram_quantile(0.50, sum(rate(noant_request_duration_seconds_bucket[5m])) by (le))
+
+      - record: noant:latency:p95_5m
+        expr: histogram_quantile(0.95, sum(rate(noant_request_duration_seconds_bucket[5m])) by (le))
+
+      - record: noant:latency:p99_5m
+        expr: histogram_quantile(0.99, sum(rate(noant_request_duration_seconds_bucket[5m])) by (le))
+
+      - record: noant:latency:p50_1h
+        expr: histogram_quantile(0.50, sum(rate(noant_request_duration_seconds_bucket[1h])) by (le))
+
+      - record: noant:latency:p95_1h
+        expr: histogram_quantile(0.95, sum(rate(noant_request_duration_seconds_bucket[1h])) by (le))
+
+      # AI metrics
+      - record: noant:ai_response_rate:rate5m
+        expr: sum(rate(noant_ai_response_total[5m])) by (status)
+
+      - record: noant:ai_failure_ratio:ratio5m
+        expr: rate(noant_ai_response_total{status="failure"}[5m]) / (rate(noant_ai_response_total{status="success"}[5m]) + rate(noant_ai_response_total{status="failure"}[5m]))
+
+      - record: noant:ai_latency:p95_5m
+        expr: histogram_quantile(0.95, sum(rate(noant_ai_duration_seconds_bucket[5m])) by (le))
+
+      - record: noant:ai_latency:p50_5m
+        expr: histogram_quantile(0.50, sum(rate(noant_ai_duration_seconds_bucket[5m])) by (le))
+
+      - record: noant:groq_rate_limit:rate5m
+        expr: rate(noant_groq_rate_limited[5m])
+
+      # Business metrics
+      - record: noant:csat:median_1h
+        expr: histogram_quantile(0.50, sum(rate(noant_csat_score_bucket[1h])) by (le))
+
+      - record: noant:credit_usage:rate1h
+        expr: sum(rate(noant_credit_usage_total[1h])) by (operation)
+
+      # Infrastructure metrics
+      - record: noant:queue_depth:current
+        expr: noant_openwa_queue_depth
+
+      - record: noant:connections:current
+        expr: noant_active_connections

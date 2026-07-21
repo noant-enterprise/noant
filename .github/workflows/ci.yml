@@ -54,9 +54,49 @@ jobs:
         with:
           go-version: "1.25"
           cache-dependency-path: backend/go.sum
-      - name: Run tests
+      - name: Run tests with coverage
         working-directory: backend
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Enforce coverage threshold
+        working-directory: backend
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${COVERAGE}%"
+          if [ "$(echo "$COVERAGE < 80" | bc -l)" -eq 1 ]; then
+            echo "::error::Coverage ${COVERAGE}% is below the 80% threshold"
+            exit 1
+          fi
+          echo "Coverage ${COVERAGE}% meets the 80% threshold ✓"
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: backend/coverage.out
+          retention-days: 7
+
+  test-frontend:
+    name: Test Frontend
+    runs-on: ubuntu-latest
+    needs: lint-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Run tests with coverage
+        working-directory: frontend
+        run: npx vitest run --coverage
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          retention-days: 7
 
   lint-frontend:
     name: Lint Frontend
@@ -123,3 +163,145 @@ jobs:
           name: backend-binary
           path: backend/bin/main
           retention-days: 3
+
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint-backend
+    services:
+      docker:
+        image: docker:dind
+        privileged: true
+        options: >-
+          --health-cmd "docker info"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: backend/go.sum
+      - name: Run integration tests
+        working-directory: backend
+        env:
+          DOCKER_HOST: tcp://docker:2375
+        run: go test -v -timeout 5m ./tests/integration/... -count=1
+
+  e2e-frontend:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: build-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run E2E tests
+        working-directory: frontend
+        run: npx playwright test
+      - name: Upload E2E report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+  load-test:
+    name: Load Tests
+    runs-on: ubuntu-latest
+    needs: build-backend
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: noant_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+      - name: Download backend binary
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-binary
+          path: backend/bin/
+      - name: Start backend
+        working-directory: backend
+        run: |
+          chmod +x bin/main
+          DATABASE_URL="noant:rootpassword@tcp(127.0.0.1:3306)/noant_test?charset=utf8mb4&parseTime=True&loc=Local&multiStatements=true" \
+          REDIS_HOST=127.0.0.1 \
+          REDIS_PORT=6379 \
+          JWT_SECRET=test-secret \
+          PORT=8080 \
+          GROQ_API_KEYS=test-key \
+          NODE_ENV=production \
+          ./bin/main &
+          sleep 5
+      - name: Run smoke test
+        run: mkdir -p k6-results && k6 run --summary-export=k6-results/smoke-summary.json tests/load/smoke.js
+      - name: Run stress test
+        run: k6 run --summary-export=k6-results/stress-summary.json tests/load/stress.js
+      - name: Print load test results
+        if: always()
+        run: |
+          echo "=== Smoke Test Results ==="
+          if [ -f k6-results/smoke-summary.json ]; then
+            cat k6-results/smoke-summary.json | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          metrics = data.get('metrics', {})
+          http = metrics.get('http_req_duration', {})
+          p95 = http.get('p(95)', 'N/A')
+          error_rate = metrics.get('http_req_failed', {}).get('rate', 'N/A')
+          print(f'  P95 Latency: {p95}ms')
+          print(f'  Error Rate: {error_rate}')
+          "
+          fi
+          echo ""
+          echo "=== Stress Test Results ==="
+          if [ -f k6-results/stress-summary.json ]; then
+            cat k6-results/stress-summary.json | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          metrics = data.get('metrics', {})
+          http = metrics.get('http_req_duration', {})
+          p95 = http.get('p(95)', 'N/A')
+          error_rate = metrics.get('http_req_failed', {}).get('rate', 'N/A')
+          print(f'  P95 Latency: {p95}ms')
+          print(f'  Error Rate: {error_rate}')
+          "
+          fi
+      - name: Upload k6 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-results
+          path: k6-results/
+          retention-days: 7
