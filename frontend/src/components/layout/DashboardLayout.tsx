@@ -1,11 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { BottomNav } from '@/components/layout/BottomNav'
-import { useOffline } from '@/hooks/useOffline'
-import { Wifi, WifiOff } from 'lucide-react'
 
 
 // Pages that need to fill the entire viewport without any padding wrapper
@@ -17,19 +15,6 @@ export function DashboardLayout() {
   const [collapsed, setCollapsed] = useState(true)
   const location = useLocation()
   const [searchParams] = useSearchParams()
-
-  const isOffline = useOffline()
-  const [showOnlineBanner, setShowOnlineBanner] = useState(false)
-  const prevOfflineRef = useRef(isOffline)
-
-  useEffect(() => {
-    if (prevOfflineRef.current && !isOffline) {
-      setShowOnlineBanner(true)
-      const t = setTimeout(() => setShowOnlineBanner(false), 3000)
-      return () => clearTimeout(t)
-    }
-    prevOfflineRef.current = isOffline
-  }, [isOffline])
 
   const isFullBleed = FULL_BLEED_ROUTES.some(r => location.pathname.startsWith(r))
   // Hide header + bottom nav on mobile only when viewing a chat thread (not the chat list)
@@ -86,22 +71,6 @@ export function DashboardLayout() {
           <BottomNav />
         </div>
       </div>
-      {/* Offline Alert Glassmorphism Banner */}
-      {isOffline && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-red-500/10 dark:bg-red-500/20 border border-red-500/30 text-red-500 backdrop-blur-md shadow-lg shadow-red-500/5 animate-slide-down">
-          <WifiOff className="w-4 h-4 shrink-0 animate-pulse" />
-          <span className="text-xs font-semibold tracking-wide">You are currently offline</span>
-        </div>
-      )}
-
-      {/* Online Confirmation Banner */}
-      {showOnlineBanner && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 border border-emerald-500/30 text-emerald-500 backdrop-blur-md shadow-lg shadow-emerald-500/5 animate-slide-down">
-          <Wifi className="w-4 h-4 shrink-0" />
-          <span className="text-xs font-semibold tracking-wide">Back online</span>
-        </div>
-      )}
-
 
       <style>{`
         @keyframes noantSlideDown {
