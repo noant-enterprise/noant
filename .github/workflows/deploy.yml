@@ -24,7 +24,7 @@ jobs:
       image-tag: ${{ steps.meta.outputs.version }}
       image-digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: docker/setup-buildx-action@v3
 
@@ -58,7 +58,7 @@ jobs:
     needs: build-and-push
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ------------------------------------------------------------------
       # OPTION A: Deploy via SSH (e.g. a bare VPS / EC2 instance)
