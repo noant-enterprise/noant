@@ -1,3 +1,7 @@
+// Package repository provides data access for NOANT's domain models.
+// Each domain (user, conversation, message, etc.) has its own file with
+// CRUD operations backed by TiDB/MySQL and Redis caching. The package
+// also includes interface definitions and mock implementations for testing.
 package repository
 
 import (

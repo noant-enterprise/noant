@@ -1,3 +1,6 @@
+// Package utils provides shared utility functions for NOANT including
+// input sanitization (XSS, HTML), email/phone/UUID validation, encryption,
+// and JSON response helpers.
 package utils
 
 import (

@@ -1,3 +1,7 @@
+// Package infrastructure provides foundational services for NOANT including
+// database connections, Redis client, caching, logging, metrics, migrations,
+// background job scheduling, and rate limiting. These are low-level building
+// blocks used by the handler and service layers.
 package infrastructure
 
 import (

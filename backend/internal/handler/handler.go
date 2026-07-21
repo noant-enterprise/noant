@@ -1,3 +1,7 @@
+// Package handler implements HTTP request handlers for the NOANT API.
+// Each domain (auth, chat, training, etc.) has its own file with handler methods
+// that validate input, call service-layer methods, and return JSON responses.
+// Handlers use the gin.Context for request/response and are wired to routes in main.go.
 package handler
 
 import (

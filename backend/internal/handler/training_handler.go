@@ -60,6 +60,8 @@ func (h *TrainingHandler) CreateCategory(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "Category created", "id": category.ID})
 }
 
+// BulkImport imports multiple QA pairs from a JSON array in the request body.
+// Useful for migrating training data from other platforms.
 func (h *TrainingHandler) BulkImport(c *gin.Context) {
 	var req struct {
 		CategoryID string `json:"category_id" binding:"required"`
@@ -93,6 +95,8 @@ func (h *TrainingHandler) BulkImport(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Bulk import successful", "count": len(pairs)})
 }
 
+// UploadCSV imports QA pairs from a CSV file upload.
+// Expects columns: category, question, answer (with header row).
 func (h *TrainingHandler) UploadCSV(c *gin.Context) {
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -280,6 +284,8 @@ func (h *TrainingHandler) ListQAPairs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"qa_pairs": qaPairs})
 }
 
+// CreateQAPair adds a new question-answer pair to the training data.
+// The pair is used by the AI Brain for intent matching and response generation.
 func (h *TrainingHandler) CreateQAPair(c *gin.Context) {
 	var req struct {
 		CategoryID string `json:"category_id" binding:"required"`

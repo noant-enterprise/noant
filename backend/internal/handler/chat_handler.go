@@ -25,6 +25,9 @@ func NewChatHandler(svc *service.ChatService, logger *infrastructure.Logger, wsH
 	return &ChatHandler{service: svc, logger: logger, wsHub: wsHub}
 }
 
+// DirectChat handles one-off AI chat messages outside of a conversation context.
+// It creates a temporary conversation, generates an AI response, and returns it
+// without persisting to the conversation history.
 func (h *ChatHandler) DirectChat(c *gin.Context) {
 	var req struct {
 		CustomerName string `json:"customer_name"`
@@ -64,6 +67,8 @@ func (h *ChatHandler) ClearChats(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Chats cleared successfully"})
 }
 
+// ListConversations returns a paginated list of conversations for the authenticated user.
+// Supports filtering by status (active, resolved, archived) and sorting by last message time.
 func (h *ChatHandler) ListConversations(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	status := c.Query("status")
@@ -132,6 +137,8 @@ func (h *ChatHandler) GetConversation(c *gin.Context) {
 	})
 }
 
+// SendMessage sends a user message to an existing conversation and triggers an AI response.
+// The AI response is generated asynchronously and broadcast via WebSocket to connected clients.
 func (h *ChatHandler) SendMessage(c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
@@ -237,6 +244,8 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Message sent"})
 }
 
+// StreamMessage sends a user message and streams the AI response back via Server-Sent Events (SSE).
+// The response is generated token-by-token for real-time display in the frontend.
 func (h *ChatHandler) StreamMessage(c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
@@ -347,6 +356,8 @@ func (h *ChatHandler) StreamMessage(c *gin.Context) {
 	}
 }
 
+// HumanTakeover switches a conversation from AI to human agent mode.
+// The assigned agent receives real-time notifications via WebSocket.
 func (h *ChatHandler) HumanTakeover(c *gin.Context) {
 	id := c.Param("id")
 	agentID, _ := c.Get("userID")
@@ -364,6 +375,8 @@ func (h *ChatHandler) HumanTakeover(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Conversation taken over by human agent"})
 }
 
+// RateConversation records a CSAT (Customer Satisfaction) rating for a conversation.
+// Ratings are used in analytics dashboards and Prometheus metrics.
 func (h *ChatHandler) RateConversation(c *gin.Context) {
 	id := c.Param("id")
 	userID, exists := c.Get("userID")

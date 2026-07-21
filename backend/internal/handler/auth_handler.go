@@ -23,6 +23,8 @@ func NewAuthHandler(svc *service.AuthService, logger *infrastructure.Logger) *Au
 	return &AuthHandler{service: svc, logger: logger}
 }
 
+// Register creates a new user account with email verification.
+// Sends a verification email and returns JWT access + refresh tokens in httpOnly cookies.
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req struct {
 		Email       string `json:"email" binding:"required,email"`
@@ -51,6 +53,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	})
 }
 
+// Login authenticates a user with email and password.
+// Returns JWT tokens in httpOnly cookies. Supports 15-minute account lockout after 5 failed attempts.
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req struct {
 		Email    string `json:"email" binding:"required,email"`
@@ -185,6 +189,8 @@ func (h *AuthHandler) ResendVerification(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Verification code sent successfully"})
 }
 
+// RefreshToken exchanges a valid refresh token for a new access token.
+// The refresh token is rotated on each use to prevent replay attacks.
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	refreshToken := middleware.GetRefreshTokenFromRequest(c)
 	if refreshToken == "" {

@@ -1,3 +1,8 @@
+// Package service contains the business logic layer for NOANT.
+// Services orchestrate domain operations, coordinate between repositories,
+// and implement the AI Brain, chat processing, training, billing, and
+// integration subsystems. Each domain has its own file; service.go
+// aggregates them via the Services struct.
 package service
 
 import (

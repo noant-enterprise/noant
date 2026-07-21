@@ -1,3 +1,7 @@
+// Package middleware provides HTTP middleware for the NOANT API including
+// authentication (JWT), rate limiting, CSRF protection, security headers,
+// request logging, audit trails, input sanitization, error standardization,
+// and API versioning.
 package middleware
 
 import (
