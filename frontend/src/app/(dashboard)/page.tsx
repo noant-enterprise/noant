@@ -132,7 +132,8 @@ export default function OverviewPage() {
                 {/* Mobile � Instagram-style cards */}
                 <div className="lg:hidden divide-y divide-subtle">
                   {(conversations?.conversations || []).map((c: Conversation) => {
-                    const ch = channelIcons[c.channel] || channelIcons.web
+                    const ch = channelIcons[c.channel] ?? channelIcons.web
+                    if (!ch) return null
                     const Icon = ch.icon
                     return (
                       <Link

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"log/slog"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,7 @@ func main() {
 	cfg := config.Load()
 
 	logger := infrastructure.NewLogger(cfg.LogLevel)
+	slog.SetDefault(logger.Logger)
 	logger.Info("Starting Noant Enterprise Platform v2.0")
 
 	db, err := infrastructure.NewTiDBConnection(cfg)
@@ -274,8 +276,8 @@ func main() {
 		// Auth mutation endpoints: strict rate limiting (10 req/min per IP)
 		auth := api.Group("/auth")
 		auth.Use(middleware.RateLimitMiddleware(redisClient, 10, time.Minute))
-		auth.POST("/register", handlers.Auth.Register)
-		auth.POST("/login", handlers.Auth.Login)
+		auth.POST("/register", middleware.ValidateRegister(), handlers.Auth.Register)
+		auth.POST("/login", middleware.ValidateLogin(), handlers.Auth.Login)
 		auth.POST("/logout", handlers.Auth.Logout)
 		auth.POST("/change-password", middleware.AuthMiddleware(cfg.JWTSecret, redisClient), handlers.Auth.ChangePassword)
 		auth.POST("/forgot-password", handlers.Auth.ForgotPassword)
@@ -294,10 +296,10 @@ func main() {
 		chats.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
 		chats.Use(middleware.RateLimitByUserMiddleware(redisClient, 500, time.Minute))
 		chats.Use(middleware.AuditMiddleware(auditRepo, logger))
-		chats.POST("/direct-chat", handlers.Chat.DirectChat)
+		chats.POST("/direct-chat", middleware.ValidateDirectChat(), handlers.Chat.DirectChat)
 		chats.GET("/conversations", handlers.Chat.ListConversations)
 		chats.GET("/conversations/:id", handlers.Chat.GetConversation)
-		chats.POST("/conversations/:id/messages", handlers.Chat.SendMessage)
+		chats.POST("/conversations/:id/messages", middleware.ValidateSendMessage(), handlers.Chat.SendMessage)
 		chats.POST("/conversations/:id/stream", handlers.Chat.StreamMessage)
 		chats.PUT("/conversations/:id/takeover", handlers.Chat.HumanTakeover)
 		chats.POST("/conversations/:id/escalate", handlers.Chat.Escalate)
@@ -313,7 +315,7 @@ func main() {
 		training.POST("/categories", handlers.Training.CreateCategory)
 		training.DELETE("/categories/:id", handlers.Training.DeleteCategory)
 		training.GET("/categories/:id/qa", handlers.Training.ListQAPairs)
-		training.POST("/qa", handlers.Training.CreateQAPair)
+		training.POST("/qa", middleware.ValidateCreateQAPair(), handlers.Training.CreateQAPair)
 		training.PUT("/qa/:id", handlers.Training.UpdateQAPair)
 		training.DELETE("/qa/:id", handlers.Training.DeleteQAPair)
 		training.POST("/bulk-qa", handlers.Training.BulkImport)

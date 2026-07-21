@@ -83,7 +83,7 @@ describe('api.post', () => {
         body: formData,
       })
     );
-    const callHeaders = mockFetch.mock.calls[0][1].headers;
+    const callHeaders = mockFetch.mock.calls[0]![1]!.headers;
     expect(callHeaders['Content-Type']).toBeUndefined();
   });
 });

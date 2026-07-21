@@ -3,7 +3,7 @@ package middleware
 import (
 	"database/sql"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 
 	apperrors "noant/internal/errors"
@@ -64,8 +64,14 @@ func RespondError(c *gin.Context, err error) {
 
 	if statusCode >= 500 {
 		reqID, _ := c.Get("requestID")
-		log.Printf("[ERROR] %s %s | status=%d code=%s request_id=%v err=%v",
-			c.Request.Method, c.Request.URL.Path, statusCode, code, reqID, err)
+		slog.Error("internal server error",
+			"method", c.Request.Method,
+			"path", c.Request.URL.Path,
+			"status", statusCode,
+			"code", code,
+			"request_id", reqID,
+			"error", err,
+		)
 	}
 
 	c.JSON(statusCode, resp)
@@ -79,8 +85,12 @@ func StandardizedResponseMiddleware() gin.HandlerFunc {
 		defer func() {
 			if r := recover(); r != nil {
 				reqID, _ := c.Get("requestID")
-				log.Printf("[PANIC] %s %s | request_id=%v recovered=%v",
-					c.Request.Method, c.Request.URL.Path, reqID, r)
+				slog.Error("panic recovered",
+					"method", c.Request.Method,
+					"path", c.Request.URL.Path,
+					"request_id", reqID,
+					"panic", r,
+				)
 
 				if !c.Writer.Written() {
 					c.JSON(http.StatusInternalServerError, ErrorResponse{

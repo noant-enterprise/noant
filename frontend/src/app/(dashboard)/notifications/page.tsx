@@ -163,7 +163,8 @@ export default function NotificationsPage() {
             <div className="text-xs font-semibold text-tertiary uppercase tracking-widest mb-2 px-1">{dateLabel}</div>
             <div className="space-y-2">
               {items.map(n => {
-                const cfg = typeConfig[n.type] || typeConfig.default
+                const cfg = typeConfig[n.type] ?? typeConfig.default
+                if (!cfg) return null
                 const Icon = cfg.icon
                 return (
                   <div

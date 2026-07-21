@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -278,7 +278,10 @@ func HealthCheckHandler(integrationSvc interface{ Test(ctx context.Context, chan
 		for _, ch := range channels {
 			ok, msg := integrationSvc.Test(ctx, ch, nil)
 			if !ok {
-				log.Printf("[BG] %s health check: %s", ch, msg)
+				slog.Warn("channel health check failed",
+					"channel", ch,
+					"details", msg,
+				)
 			}
 		}
 		return nil

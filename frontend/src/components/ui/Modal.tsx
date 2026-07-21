@@ -33,8 +33,8 @@ export function Modal({ open, onClose, title, description, children, size = 'md'
           )
         )
         if (focusables.length === 0) return
-        const first = focusables[0]
-        const last = focusables[focusables.length - 1]
+        const first = focusables[0]!
+        const last = focusables[focusables.length - 1]!
         if (e.shiftKey) {
           if (document.activeElement === first) { e.preventDefault(); last.focus() }
         } else {

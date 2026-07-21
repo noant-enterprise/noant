@@ -73,7 +73,7 @@ describe('ChatList', () => {
   })
 
   it('does not show unread badge when unread is 0', () => {
-    render(<ChatList conversations={[mockConversations[1]]} />)
+    render(<ChatList conversations={[mockConversations[1]!]} />)
     expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
 
@@ -119,8 +119,8 @@ describe('ChatList', () => {
   })
 
   it('shows "No messages yet" for conversations without last_message', () => {
-    const convs = [{ ...mockConversations[0], last_message: undefined }]
-    render(<ChatList conversations={convs} />)
+    const conv = { ...mockConversations[0]!, last_message: '' }
+    render(<ChatList conversations={[conv]} />)
     expect(screen.getByText('No messages yet')).toBeInTheDocument()
   })
 

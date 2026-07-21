@@ -123,7 +123,7 @@ describe('UnknownQuestionItem', () => {
     expect(screen.getByText('Train AI Response')).toBeInTheDocument()
 
     const cancelButtons = screen.getAllByRole('button', { name: /cancel/i })
-    await user.click(cancelButtons[0])
+    await user.click(cancelButtons[0]!)
 
     expect(screen.queryByText('Train AI Response')).not.toBeInTheDocument()
   })

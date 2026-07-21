@@ -1,7 +1,8 @@
 version: "3.8"
 
 services:
-  backend:
+  # ─── Application ───────────────────────────────────────────────
+  app:
     build:
       context: .
       dockerfile: Dockerfile
@@ -9,38 +10,128 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    environment:
+      - TIDB_HOST=tidb
+      - TIDB_PORT=4000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     depends_on:
-      mysql:
+      tidb:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - noant
     restart: unless-stopped
-
-  mysql:
-    image: mysql:8.0
-    ports:
-      - "3306:3306"
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
-      MYSQL_DATABASE: ${TIDB_DATABASE:-noant}
-      MYSQL_USER: ${TIDB_USER:-noant}
-      MYSQL_PASSWORD: ${TIDB_PASSWORD:-noantpass}
-    volumes:
-      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - noant
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─── Database: TiDB Cluster ────────────────────────────────────
+  pd:
+    image: pingcap/pd:v8.5.0
+    ports:
+      - "2379:2379"
+    command:
+      - --name=pd1
+      - --client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://pd:2379
+      - --peer-urls=http://0.0.0.0:2380
+      - --advertise-peer-urls=http://pd:2380
+      - --data-dir=/data/pd
+      - --initial-cluster=pd=http://pd:2380
+    volumes:
+      - pd_data:/data/pd
+    networks:
+      - noant
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2379/pd/api/v1/health"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     restart: unless-stopped
 
+  tikv:
+    image: pingcap/tikv:v8.5.0
+    ports:
+      - "20160:20160"
+    command:
+      - --addr=0.0.0.0:20160
+      - --advertise-addr=tikv:20160
+      - --data-dir=/data/tikv
+      - --pd=pd:2379
+    volumes:
+      - tikv_data:/data/tikv
+    depends_on:
+      pd:
+        condition: service_healthy
+    networks:
+      - noant
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:20160/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  tidb:
+    image: pingcap/tidb:v8.5.0
+    ports:
+      - "4000:4000"
+      - "10080:10080"
+    command:
+      - --store=tikv
+      - --path=pd:2379
+      - --advertise-address=tidb
+      - --report-status=true
+    depends_on:
+      pd:
+        condition: service_healthy
+      tikv:
+        condition: service_healthy
+    networks:
+      - noant
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:10080/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    restart: unless-stopped
+
+  # ─── Cache ─────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - noant
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -49,6 +140,70 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # ─── Monitoring ────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/recording-rules.yml:/etc/prometheus/recording-rules.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    depends_on:
+      node-exporter:
+        condition: service_started
+    networks:
+      - noant
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/dashboard.json:/var/lib/grafana/dashboards/noant.json:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - noant
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    networks:
+      - noant
+    restart: unless-stopped
+
+# ─── Volumes ──────────────────────────────────────────────────────
 volumes:
-  mysql_data:
+  pd_data:
+  tikv_data:
   redis_data:
+  prometheus_data:
+  grafana_data:
+
+# ─── Networks ─────────────────────────────────────────────────────
+networks:
+  noant:
+    driver: bridge

@@ -86,7 +86,9 @@ export default function OnboardingPage() {
   const advanceTo = (step: Step) => {
     const order: Step[] = ['profile', 'training', 'whatsapp', 'complete']
     const nextIdx = order.indexOf(step)
-    setCurrentStep(order[nextIdx])
+    const nextStep = order[nextIdx]
+    if (!nextStep) return
+    setCurrentStep(nextStep)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 

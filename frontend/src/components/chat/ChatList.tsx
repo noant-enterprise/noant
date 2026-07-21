@@ -106,7 +106,8 @@ export function ChatList({
           <>
             {filtered.map((c) => {
               const isActive = c.id === activeId
-              const ch = channelIcons[c.channel] || channelIcons.web
+              const ch = channelIcons[c.channel] ?? channelIcons.web
+              if (!ch) return null
               const Icon = ch.icon
               return (
                 <button

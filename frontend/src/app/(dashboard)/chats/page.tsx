@@ -113,6 +113,7 @@ export default function ChatsPage() {
     if (optimisticMessages.length === 0 || !activeId) return
 
     const lastOptimistic = optimisticMessages[optimisticMessages.length - 1]
+    if (!lastOptimistic) return
     const foundReal = activeMessages.some((m: Message) =>
       m.sender_type === 'customer' && m.content === lastOptimistic.content
     )

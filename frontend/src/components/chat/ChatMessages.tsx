@@ -161,7 +161,7 @@ export function ChatMessages({
 
         const showDateHeader =
           index === 0 ||
-          new Date(messages[index - 1].created_at).toDateString() !== new Date(m.created_at).toDateString()
+          new Date(messages[index - 1]!.created_at).toDateString() !== new Date(m.created_at).toDateString()
 
         const dateHeader = showDateHeader ? formatDateHeader(m.created_at) : null
 

@@ -211,7 +211,8 @@ export default function TeamPage() {
             </div>
           ) : (
             members.map((member, i) => {
-              const rc = roleConfig[member.role] || roleConfig.member
+              const rc = roleConfig[member.role] ?? roleConfig.member
+              if (!rc) return null
               const RoleIcon = rc.icon
               const isMe = member.user_id === user?.id
               const initials = `${member.first_name[0]}${member.last_name[0]}`.toUpperCase()

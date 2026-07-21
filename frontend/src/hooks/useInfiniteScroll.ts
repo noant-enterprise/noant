@@ -23,7 +23,7 @@ export function useInfiniteScroll({
 
       observerRef.current = new IntersectionObserver(
         (entries) => {
-          if (entries[0].isIntersecting && hasMore && !loading) {
+          if (entries[0]?.isIntersecting && hasMore && !loading) {
             onLoadMore()
           }
         },
