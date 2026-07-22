@@ -37,8 +37,8 @@ const LandingPage = lazy(() => import('@/app/landing/page'))
 
 function PageLoader() {
   return (
-    <div className="flex items-center justify-center h-screen w-full bg-gray-50 dark:bg-gray-900">
-      <Spinner size="lg" />
+    <div className="flex items-center justify-center h-screen w-full" style={{ background: 'var(--bg-base)' }}>
+      <Spinner size="lg" className="text-tertiary" />
     </div>
   )
 }
