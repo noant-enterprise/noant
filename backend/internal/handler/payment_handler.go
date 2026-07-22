@@ -53,8 +53,12 @@ func (h *PaymentHandler) Subscribe(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("userID")
-	checkoutURL, err := h.service.Subscribe(c.Request.Context(), userID.(string), planID)
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	checkoutURL, err := h.service.Subscribe(c.Request.Context(), userID, planID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -85,8 +89,12 @@ func (h *PaymentHandler) Webhook(c *gin.Context) {
 }
 
 func (h *PaymentHandler) Status(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	status, err := h.service.Status(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	status, err := h.service.Status(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return

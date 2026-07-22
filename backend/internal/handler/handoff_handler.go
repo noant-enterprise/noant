@@ -20,10 +20,14 @@ func NewHandoffHandler(svc *service.HandoffService, logger *infrastructure.Logge
 }
 
 func (h *HandoffHandler) List(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	status := c.Query("status")
 
-	handoffs, err := h.service.List(c.Request.Context(), userID.(string), status)
+	handoffs, err := h.service.List(c.Request.Context(), userID, status)
 	if err != nil {
 		h.logger.Error("Failed to list handoffs", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -34,10 +38,14 @@ func (h *HandoffHandler) List(c *gin.Context) {
 }
 
 func (h *HandoffHandler) GetByID(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	id := c.Param("id")
 
-	handoff, err := h.service.GetByID(c.Request.Context(), id, userID.(string))
+	handoff, err := h.service.GetByID(c.Request.Context(), id, userID)
 	if err != nil {
 		h.logger.Error("Failed to get handoff", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -65,8 +73,12 @@ func (h *HandoffHandler) UpdateStatus(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
-	if err := h.service.UpdateStatus(c.Request.Context(), req.ID, userID.(string), req.Status, req.Notes, req.FinalPrice); err != nil {
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := h.service.UpdateStatus(c.Request.Context(), req.ID, userID, req.Status, req.Notes, req.FinalPrice); err != nil {
 		h.logger.Error("Failed to update handoff status", "error", err)
 		utils.RespondInternalError(c, err.Error())
 		return

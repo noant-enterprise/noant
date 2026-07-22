@@ -20,7 +20,7 @@ func NewAssistantHandler(svc *service.AssistantService, logger *infrastructure.L
 }
 
 func (h *AssistantHandler) Chat(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
 	userEmail, _ := c.Get("email")
 
 	var req struct {

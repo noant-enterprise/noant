@@ -20,7 +20,11 @@ func NewPushHandler(svc *service.PushNotificationService, logger *infrastructure
 }
 
 func (h *PushHandler) Subscribe(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 
 	var req struct {
 		Endpoint string `json:"endpoint" binding:"required"`
@@ -35,7 +39,7 @@ func (h *PushHandler) Subscribe(c *gin.Context) {
 
 	userAgent := c.GetHeader("User-Agent")
 
-	if err := h.service.Subscribe(c.Request.Context(), userID.(string), req.Endpoint, req.Auth, req.P256dh, userAgent); err != nil {
+	if err := h.service.Subscribe(c.Request.Context(), userID, req.Endpoint, req.Auth, req.P256dh, userAgent); err != nil {
 		h.logger.Error("Push subscribe failed", "error", err)
 		utils.RespondInternalError(c, "Failed to subscribe")
 		return
@@ -45,7 +49,11 @@ func (h *PushHandler) Subscribe(c *gin.Context) {
 }
 
 func (h *PushHandler) Unsubscribe(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 
 	var req struct {
 		Endpoint string `json:"endpoint"`
@@ -53,14 +61,14 @@ func (h *PushHandler) Unsubscribe(c *gin.Context) {
 	_ = c.ShouldBindJSON(&req)
 
 	if req.Endpoint != "" {
-		if err := h.service.Unsubscribe(c.Request.Context(), userID.(string), req.Endpoint); err != nil {
+		if err := h.service.Unsubscribe(c.Request.Context(), userID, req.Endpoint); err != nil {
 			h.logger.Error("Push unsubscribe failed", "error", err)
 			utils.RespondInternalError(c, "Failed to unsubscribe")
 			return
 		}
 	} else {
 		// Delete all subscriptions for this user (fallback)
-		_ = h.service.Unsubscribe(c.Request.Context(), userID.(string), "")
+		_ = h.service.Unsubscribe(c.Request.Context(), userID, "")
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Unsubscribed from push notifications"})

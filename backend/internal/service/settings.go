@@ -61,7 +61,9 @@ func (s *SettingsService) ListAPIKeys(ctx context.Context, userID string) ([]dom
 
 func (s *SettingsService) CreateAPIKey(ctx context.Context, userID, name string) (*domain.APIKey, error) {
 	keyBytes := make([]byte, 32)
-	rand.Read(keyBytes)
+	if _, err := rand.Read(keyBytes); err != nil {
+		return nil, fmt.Errorf("generate API key: %w", err)
+	}
 	apiKey := &domain.APIKey{
 		UserID:   userID,
 		Name:     name,
@@ -160,5 +162,5 @@ func (s *SettingsService) InviteTeamMember(ctx context.Context, ownerID, email, 
 }
 
 func (s *SettingsService) RemoveTeamMember(ctx context.Context, id string) error {
-	return nil
+	return fmt.Errorf("team member removal not yet implemented: delete the member record directly")
 }

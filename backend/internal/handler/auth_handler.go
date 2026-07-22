@@ -235,8 +235,12 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
-	if err := h.service.ChangePassword(c.Request.Context(), userID.(string), req.CurrentPassword, req.NewPassword); err != nil {
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := h.service.ChangePassword(c.Request.Context(), userID, req.CurrentPassword, req.NewPassword); err != nil {
 		utils.RespondValidationError(c, "Failed to change password")
 		return
 	}
@@ -284,9 +288,12 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 }
 
 func (h *AuthHandler) Me(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	id, _ := userID.(string)
-	user, err := h.service.GetUser(c.Request.Context(), id)
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	user, err := h.service.GetUser(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, "Failed to retrieve user")
 		return

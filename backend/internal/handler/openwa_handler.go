@@ -27,11 +27,15 @@ func NewOpenWAHandler(cfg *config.Config, openwa *service.OpenWAService, chat *s
 
 // WhatsAppWebhook receives incoming messages from OpenWA
 func (h *OpenWAHandler) WhatsAppWebhook(c *gin.Context) {
-	// Read raw body for signature verification
-	rawBody, err := io.ReadAll(c.Request.Body)
+	const maxBodySize = 10 << 20 // 10 MB
+	rawBody, err := io.ReadAll(io.LimitReader(c.Request.Body, maxBodySize+1))
 	if err != nil {
 		h.logger.Error("Failed to read OpenWA webhook body", "error", err)
 		utils.RespondValidationError(c, "Failed to read request body")
+		return
+	}
+	if int64(len(rawBody)) > maxBodySize {
+		utils.RespondError(c, http.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "Request body too large", false)
 		return
 	}
 
@@ -183,7 +187,7 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 	}
 
 	// Broadcast to WebSocket dashboard
-	if h.wsHub != nil && conv != nil {
+	if h.wsHub != nil && conv != nil && aiResp != nil {
 		h.wsHub.BroadcastMessage(WebSocketMessage{
 			ConversationID: conv.ID,
 			Type:           "new_message",
@@ -714,10 +718,10 @@ func (h *OpenWAHandler) DisconnectWhatsApp(c *gin.Context) {
 	utils.SanitizeStruct(&req)
 
 	// Remove integration and disconnect session completely (logging out credentials)
-	userID, _ := c.Get("userID")
-	if userID != nil {
-		h.chat.DisconnectWhatsAppSession(c.Request.Context(), userID.(string))
-		h.chat.RemoveWhatsAppIntegration(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID != "" {
+		h.chat.DisconnectWhatsAppSession(c.Request.Context(), userID)
+		h.chat.RemoveWhatsAppIntegration(c.Request.Context(), userID)
 	} else {
 		// Fallback: delete session only if userID is somehow missing
 		_ = h.openwa.LogoutSession(req.SessionID)

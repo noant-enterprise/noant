@@ -23,10 +23,15 @@ func NewTelegramHandler(integration *service.IntegrationService, logger *infrast
 
 // TelegramWebhook receives incoming messages from Telegram bots.
 func (h *TelegramHandler) Webhook(c *gin.Context) {
-	rawBody, err := io.ReadAll(c.Request.Body)
+	const maxBodySize = 10 << 20 // 10 MB
+	rawBody, err := io.ReadAll(io.LimitReader(c.Request.Body, maxBodySize+1))
 	if err != nil {
 		h.logger.Error("Failed to read Telegram webhook body", "error", err)
 		utils.RespondValidationError(c, "Failed to read request body")
+		return
+	}
+	if int64(len(rawBody)) > maxBodySize {
+		utils.RespondError(c, http.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "Request body too large", false)
 		return
 	}
 

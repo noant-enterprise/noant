@@ -37,7 +37,11 @@ func (h *InventoryHandler) Create(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	item := &domain.InventoryItem{
 		Type:          req.Type,
 		Name:          req.Name,
@@ -48,7 +52,7 @@ func (h *InventoryHandler) Create(c *gin.Context) {
 		ImageURL:      req.ImageURL,
 	}
 
-	if err := h.service.Create(c.Request.Context(), userID.(string), item); err != nil {
+	if err := h.service.Create(c.Request.Context(), userID, item); err != nil {
 		h.logger.Error("Failed to create inventory item", "error", err)
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -58,10 +62,14 @@ func (h *InventoryHandler) Create(c *gin.Context) {
 }
 
 func (h *InventoryHandler) List(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	itemType := c.Query("type")
 
-	items, err := h.service.List(c.Request.Context(), userID.(string), itemType)
+	items, err := h.service.List(c.Request.Context(), userID, itemType)
 	if err != nil {
 		h.logger.Error("Failed to list inventory", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -72,10 +80,14 @@ func (h *InventoryHandler) List(c *gin.Context) {
 }
 
 func (h *InventoryHandler) GetByID(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	id := c.Param("id")
 
-	item, err := h.service.GetByID(c.Request.Context(), id, userID.(string))
+	item, err := h.service.GetByID(c.Request.Context(), id, userID)
 	if err != nil {
 		h.logger.Error("Failed to get inventory item", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -108,8 +120,12 @@ func (h *InventoryHandler) Update(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
-	item, err := h.service.GetByID(c.Request.Context(), req.ID, userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	item, err := h.service.GetByID(c.Request.Context(), req.ID, userID)
 	if err != nil || item == nil {
 		utils.RespondNotFound(c, "Item not found")
 		return
@@ -150,10 +166,14 @@ func (h *InventoryHandler) Update(c *gin.Context) {
 }
 
 func (h *InventoryHandler) Delete(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	id := c.Param("id")
 
-	if err := h.service.Delete(c.Request.Context(), id, userID.(string)); err != nil {
+	if err := h.service.Delete(c.Request.Context(), id, userID); err != nil {
 		h.logger.Error("Failed to delete inventory item", "error", err)
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -163,10 +183,14 @@ func (h *InventoryHandler) Delete(c *gin.Context) {
 }
 
 func (h *InventoryHandler) Search(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	q := c.Query("q")
 
-	items, err := h.service.Search(c.Request.Context(), userID.(string), q)
+	items, err := h.service.Search(c.Request.Context(), userID, q)
 	if err != nil {
 		h.logger.Error("Failed to search inventory", "error", err)
 		utils.RespondInternalError(c, err.Error())

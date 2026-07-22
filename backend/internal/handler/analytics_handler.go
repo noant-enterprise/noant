@@ -20,8 +20,12 @@ func NewAnalyticsHandler(svc *service.AnalyticsService, logger *infrastructure.L
 }
 
 func (h *AnalyticsHandler) Overview(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	overview, err := h.service.Overview(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	overview, err := h.service.Overview(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -31,8 +35,12 @@ func (h *AnalyticsHandler) Overview(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) ChannelDistribution(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	distribution, err := h.service.ChannelDistribution(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	distribution, err := h.service.ChannelDistribution(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -42,8 +50,12 @@ func (h *AnalyticsHandler) ChannelDistribution(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) Insights(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	insights, err := h.service.Insights(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	insights, err := h.service.Insights(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -53,10 +65,14 @@ func (h *AnalyticsHandler) Insights(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) Trends(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	days := 7
 
-	trends, err := h.service.Trends(c.Request.Context(), userID.(string), days)
+	trends, err := h.service.Trends(c.Request.Context(), userID, days)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -66,8 +82,12 @@ func (h *AnalyticsHandler) Trends(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) Satisfaction(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	data, err := h.service.Satisfaction(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	data, err := h.service.Satisfaction(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -76,8 +96,12 @@ func (h *AnalyticsHandler) Satisfaction(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) UnknownQuestions(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	data, err := h.service.UnknownQuestionsStats(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	data, err := h.service.UnknownQuestionsStats(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -86,8 +110,12 @@ func (h *AnalyticsHandler) UnknownQuestions(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) PopularQuestions(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	data, err := h.service.PopularQuestions(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	data, err := h.service.PopularQuestions(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -96,9 +124,13 @@ func (h *AnalyticsHandler) PopularQuestions(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) MessagesTrend(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	days := 7
-	data, err := h.service.MessagesTrend(c.Request.Context(), userID.(string), days)
+	data, err := h.service.MessagesTrend(c.Request.Context(), userID, days)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -107,8 +139,12 @@ func (h *AnalyticsHandler) MessagesTrend(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) Uptime(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	data, err := h.service.Uptime(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	data, err := h.service.Uptime(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return

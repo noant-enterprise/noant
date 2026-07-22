@@ -27,13 +27,13 @@ func NewCreditHandler(creditSvc *service.CreditService, planSvc *service.PlanSer
 
 // GetBalance returns the user's current credit balance and expiry
 func (h *CreditHandler) GetBalance(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists || userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	balance, err := h.creditSvc.GetBalance(c.Request.Context(), userID.(string))
+	balance, err := h.creditSvc.GetBalance(c.Request.Context(), userID)
 	if err != nil {
 		h.logger.Error("Failed to get credit balance", "error", err, "userID", userID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get credit balance"})
@@ -49,13 +49,13 @@ func (h *CreditHandler) GetBalance(c *gin.Context) {
 
 // GetLimits returns the current plan limits for the user
 func (h *CreditHandler) GetLimits(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists || userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	limits, err := h.planSvc.GetLimitsByUserID(c.Request.Context(), userID.(string))
+	limits, err := h.planSvc.GetLimitsByUserID(c.Request.Context(), userID)
 	if err != nil {
 		h.logger.Error("Failed to get plan limits", "error", err, "userID", userID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get plan limits"})
@@ -68,9 +68,9 @@ func (h *CreditHandler) GetLimits(c *gin.Context) {
 
 // PurchasePack initiates a credit pack purchase by returning a Polar checkout URL
 func (h *CreditHandler) PurchasePack(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists || userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
@@ -83,7 +83,7 @@ func (h *CreditHandler) PurchasePack(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	checkoutURL, err := h.creditSvc.PurchasePack(c.Request.Context(), userID.(string), req.PackType)
+	checkoutURL, err := h.creditSvc.PurchasePack(c.Request.Context(), userID, req.PackType)
 	if err != nil {
 		h.logger.Error("Failed to get checkout URL", "error", err, "userID", userID, "packType", req.PackType)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initiate purchase"})
@@ -97,13 +97,13 @@ func (h *CreditHandler) PurchasePack(c *gin.Context) {
 
 // GetHistory returns the user's credit purchase history
 func (h *CreditHandler) GetHistory(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists || userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	history, err := h.creditSvc.GetPurchaseHistory(c.Request.Context(), userID.(string))
+	history, err := h.creditSvc.GetPurchaseHistory(c.Request.Context(), userID)
 	if err != nil {
 		h.logger.Error("Failed to get purchase history", "error", err, "userID", userID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get purchase history"})

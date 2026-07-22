@@ -20,8 +20,12 @@ func NewSettingsHandler(svc *service.SettingsService, logger *infrastructure.Log
 }
 
 func (h *SettingsHandler) GetProfile(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	profile, err := h.service.GetProfile(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	profile, err := h.service.GetProfile(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -38,8 +42,12 @@ func (h *SettingsHandler) UpdateProfile(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
-	if err := h.service.UpdateProfile(c.Request.Context(), userID.(string), req); err != nil {
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := h.service.UpdateProfile(c.Request.Context(), userID, req); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
@@ -48,8 +56,12 @@ func (h *SettingsHandler) UpdateProfile(c *gin.Context) {
 }
 
 func (h *SettingsHandler) ListAPIKeys(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	keys, err := h.service.ListAPIKeys(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	keys, err := h.service.ListAPIKeys(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -69,8 +81,12 @@ func (h *SettingsHandler) CreateAPIKey(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
-	key, err := h.service.CreateAPIKey(c.Request.Context(), userID.(string), req.Name)
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	key, err := h.service.CreateAPIKey(c.Request.Context(), userID, req.Name)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -81,8 +97,12 @@ func (h *SettingsHandler) CreateAPIKey(c *gin.Context) {
 
 func (h *SettingsHandler) RevokeAPIKey(c *gin.Context) {
 	id := c.Param("id")
-	userID, _ := c.Get("userID")
-	if err := h.service.RevokeAPIKey(c.Request.Context(), userID.(string), id); err != nil {
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := h.service.RevokeAPIKey(c.Request.Context(), userID, id); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
@@ -91,8 +111,12 @@ func (h *SettingsHandler) RevokeAPIKey(c *gin.Context) {
 }
 
 func (h *SettingsHandler) ListTeam(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	members, err := h.service.ListTeam(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	members, err := h.service.ListTeam(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -113,8 +137,12 @@ func (h *SettingsHandler) InviteTeamMember(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
-	member, err := h.service.InviteTeamMember(c.Request.Context(), userID.(string), req.Email, req.Role)
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	member, err := h.service.InviteTeamMember(c.Request.Context(), userID, req.Email, req.Role)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return

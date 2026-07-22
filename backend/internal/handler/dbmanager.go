@@ -23,7 +23,7 @@ func (h *DBManagerHandler) RunAllCleanups(c *gin.Context) {
 	report := h.dbManager.RunAllCleanups(c.Request.Context(), config)
 	status := http.StatusOK
 	if report.HasErrors {
-		status = http.StatusOK
+		status = http.StatusInternalServerError
 	}
 	c.JSON(status, gin.H{
 		"report": report,

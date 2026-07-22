@@ -23,7 +23,11 @@ func NewNotificationHandler(svc *service.NotificationService, logger *infrastruc
 }
 
 func (h *NotificationHandler) List(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	limit := 50
 	if lStr := c.Query("limit"); lStr != "" {
 		if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
@@ -34,7 +38,7 @@ func (h *NotificationHandler) List(c *gin.Context) {
 		limit = 200
 	}
 
-	notifs, err := h.service.List(c.Request.Context(), userID.(string), limit)
+	notifs, err := h.service.List(c.Request.Context(), userID, limit)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -44,8 +48,12 @@ func (h *NotificationHandler) List(c *gin.Context) {
 }
 
 func (h *NotificationHandler) UnreadCount(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	count, err := h.service.UnreadCount(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	count, err := h.service.UnreadCount(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -55,10 +63,14 @@ func (h *NotificationHandler) UnreadCount(c *gin.Context) {
 }
 
 func (h *NotificationHandler) MarkRead(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	id := c.Param("id")
 
-	err := h.service.MarkRead(c.Request.Context(), id, userID.(string))
+	err := h.service.MarkRead(c.Request.Context(), id, userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -68,9 +80,13 @@ func (h *NotificationHandler) MarkRead(c *gin.Context) {
 }
 
 func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 
-	err := h.service.MarkAllRead(c.Request.Context(), userID.(string))
+	err := h.service.MarkAllRead(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -91,8 +107,12 @@ func NewWidgetHandler(svc *service.WidgetService, logger *infrastructure.Logger)
 }
 
 func (h *WidgetHandler) Get(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	cfg, err := h.service.Get(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	cfg, err := h.service.Get(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -102,7 +122,11 @@ func (h *WidgetHandler) Get(c *gin.Context) {
 }
 
 func (h *WidgetHandler) Upsert(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	var req struct {
 		BrandColor string `json:"brand_color"`
 		Greeting   string `json:"greeting"`
@@ -117,7 +141,7 @@ func (h *WidgetHandler) Upsert(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	cfg, err := h.service.Get(c.Request.Context(), userID.(string))
+	cfg, err := h.service.Get(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -186,8 +210,12 @@ func (h *WidgetHandler) PublicChat(c *gin.Context) {
 // ========== SETTINGS EXTENSIONS ==========
 
 func (h *SettingsHandler) GetNotifPrefs(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	prefs, err := h.service.GetNotifPrefs(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	prefs, err := h.service.GetNotifPrefs(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -197,7 +225,11 @@ func (h *SettingsHandler) GetNotifPrefs(c *gin.Context) {
 }
 
 func (h *SettingsHandler) UpdateNotifPrefs(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	var req repository.NotifPrefs
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.RespondValidationError(c, err.Error())
@@ -205,7 +237,7 @@ func (h *SettingsHandler) UpdateNotifPrefs(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	err := h.service.UpdateNotifPrefs(c.Request.Context(), userID.(string), &req)
+	err := h.service.UpdateNotifPrefs(c.Request.Context(), userID, &req)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -215,8 +247,12 @@ func (h *SettingsHandler) UpdateNotifPrefs(c *gin.Context) {
 }
 
 func (h *SettingsHandler) DeleteAccount(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	err := h.service.DeleteAccount(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	err := h.service.DeleteAccount(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -226,8 +262,12 @@ func (h *SettingsHandler) DeleteAccount(c *gin.Context) {
 }
 
 func (h *SettingsHandler) ExportData(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	data, err := h.service.ExportUserData(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	data, err := h.service.ExportUserData(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return

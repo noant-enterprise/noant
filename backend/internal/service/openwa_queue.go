@@ -75,12 +75,30 @@ type MessageRateLimiter struct {
 }
 
 func NewMessageRateLimiter(cfg *config.Config) *MessageRateLimiter {
-	return &MessageRateLimiter{
+	rl := &MessageRateLimiter{
 		windows:    make(map[string][]time.Time),
 		textLimit:  cfg.OpenWARateLimitText,
 		mediaLimit: cfg.OpenWARateLimitMedia,
 		tplLimit:   cfg.OpenWARateLimitTemplate,
 		burstLimit: cfg.OpenWARateLimitBurst,
+	}
+	go rl.evictLoop()
+	return rl
+}
+
+func (rl *MessageRateLimiter) evictLoop() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		rl.mu.Lock()
+		now := time.Now()
+		cutoff := now.Add(-5 * time.Minute)
+		for sid, timestamps := range rl.windows {
+			if len(timestamps) == 0 || timestamps[len(timestamps)-1].Before(cutoff) {
+				delete(rl.windows, sid)
+			}
+		}
+		rl.mu.Unlock()
 	}
 }
 

@@ -239,7 +239,9 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey, message, convers
 func generateRandomString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	bytes := make([]byte, n)
-	_, _ = crypto_rand.Read(bytes)
+	if _, err := crypto_rand.Read(bytes); err != nil {
+		return time.Now().Format("20060102150405") + "fallback"
+	}
 	for i, b := range bytes {
 		bytes[i] = letters[b%byte(len(letters))]
 	}

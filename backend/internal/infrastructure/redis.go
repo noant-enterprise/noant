@@ -88,6 +88,10 @@ func (r *RedisClient) Incr(ctx context.Context, key string) (int64, error) {
 	return r.client.Incr(ctx, key).Result()
 }
 
+func (r *RedisClient) Decr(ctx context.Context, key string) (int64, error) {
+	return r.client.Decr(ctx, key).Result()
+}
+
 func (r *RedisClient) RateLimit(ctx context.Context, key string, limit int, window time.Duration) (bool, error) {
 	pipe := r.client.Pipeline()
 	incr := pipe.Incr(ctx, key)

@@ -27,13 +27,13 @@ func NewCampaignHandler(campaignSvc *service.CampaignService, logger *infrastruc
 
 // List returns all campaigns for the current user
 func (h *CampaignHandler) List(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists || userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	campaigns, err := h.campaignSvc.List(c.Request.Context(), userID.(string))
+	campaigns, err := h.campaignSvc.List(c.Request.Context(), userID)
 	if err != nil {
 		h.logger.Error("Failed to list campaigns", "error", err, "userID", userID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list campaigns"})
@@ -47,9 +47,9 @@ func (h *CampaignHandler) List(c *gin.Context) {
 
 // Create creates a new campaign schedule
 func (h *CampaignHandler) Create(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists || userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
@@ -60,7 +60,7 @@ func (h *CampaignHandler) Create(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	campaign, err := h.campaignSvc.Create(c.Request.Context(), userID.(string), req)
+	campaign, err := h.campaignSvc.Create(c.Request.Context(), userID, req)
 	if err != nil {
 		h.logger.Error("Failed to create campaign", "error", err, "userID", userID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create campaign"})
@@ -74,9 +74,9 @@ func (h *CampaignHandler) Create(c *gin.Context) {
 
 // Cancel cancels a campaign by ID
 func (h *CampaignHandler) Cancel(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists || userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
@@ -86,7 +86,7 @@ func (h *CampaignHandler) Cancel(c *gin.Context) {
 		return
 	}
 
-	if err := h.campaignSvc.Cancel(c.Request.Context(), id, userID.(string)); err != nil {
+	if err := h.campaignSvc.Cancel(c.Request.Context(), id, userID); err != nil {
 		h.logger.Error("Failed to cancel campaign", "error", err, "userID", userID, "campaignID", id)
 		if errors.Is(err, apperrors.ErrCampaign) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Campaign not found or access denied"})

@@ -20,8 +20,12 @@ func NewIntegrationHandler(svc *service.IntegrationService, logger *infrastructu
 }
 
 func (h *IntegrationHandler) List(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	integrations, err := h.service.List(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	integrations, err := h.service.List(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -42,8 +46,12 @@ func (h *IntegrationHandler) Connect(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
-	integration, err := h.service.Connect(c.Request.Context(), userID.(string), req.Channel, req.Config)
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	integration, err := h.service.Connect(c.Request.Context(), userID, req.Channel, req.Config)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -54,8 +62,12 @@ func (h *IntegrationHandler) Connect(c *gin.Context) {
 
 func (h *IntegrationHandler) Disconnect(c *gin.Context) {
 	channel := c.Param("channel")
-	userID, _ := c.Get("userID")
-	if err := h.service.Disconnect(c.Request.Context(), userID.(string), channel); err != nil {
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := h.service.Disconnect(c.Request.Context(), userID, channel); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}

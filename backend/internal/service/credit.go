@@ -115,27 +115,19 @@ func (s *CreditService) ActivatePurchase(ctx context.Context, checkoutID, userID
 	return nil
 }
 
-// Deduct deducts one response credit from user's balance
+// Deduct deducts one response credit from user's balance atomically.
+// The repository uses a serializable transaction with row-level locking,
+// so balance checks and deduction happen atomically.
 func (s *CreditService) Deduct(ctx context.Context, userID string) error {
-	// First check if user has an active credit balance
-	credit, err := s.repos.Credit.GetByUserID(ctx, userID)
-	if err != nil {
-		return err
-	}
-
-	// If no active balance or expired, return error
-	if credit.Balance <= 0 {
-		return fmt.Errorf("insufficient credit balance")
-	}
-	if credit.ExpiresAt != nil && credit.ExpiresAt.Before(time.Now()) {
-		return fmt.Errorf("credit balance has expired")
-	}
-
-	// Deduct one credit
 	if err := s.repos.Credit.Deduct(ctx, userID, 1); err != nil {
+		if strings.Contains(err.Error(), "insufficient balance") {
+			return fmt.Errorf("insufficient credit balance")
+		}
+		if strings.Contains(err.Error(), "expired") {
+			return fmt.Errorf("credit balance has expired")
+		}
 		return err
 	}
-
 	return nil
 }
 

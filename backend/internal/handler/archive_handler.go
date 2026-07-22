@@ -20,10 +20,14 @@ func NewArchiveHandler(svc *service.ArchiveService, logger *infrastructure.Logge
 }
 
 func (h *ArchiveHandler) ListFolders(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	folderType := c.Query("type")
 
-	folders, err := h.service.ListFolders(c.Request.Context(), userID.(string), folderType)
+	folders, err := h.service.ListFolders(c.Request.Context(), userID, folderType)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -49,8 +53,12 @@ func (h *ArchiveHandler) CreateFolder(c *gin.Context) {
 		req.Type = "custom"
 	}
 
-	userID, _ := c.Get("userID")
-	folder, err := h.service.CreateFolder(c.Request.Context(), userID.(string), req.Name, req.Type, req.Color)
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	folder, err := h.service.CreateFolder(c.Request.Context(), userID, req.Name, req.Type, req.Color)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -81,8 +89,12 @@ func (h *ArchiveHandler) MoveChat(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
-	if err := h.service.MoveChat(c.Request.Context(), userID.(string), req.ConversationID, req.FolderID); err != nil {
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := h.service.MoveChat(c.Request.Context(), userID, req.ConversationID, req.FolderID); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
@@ -101,8 +113,12 @@ func (h *ArchiveHandler) RemoveFromArchive(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
-	if err := h.service.RemoveFromArchive(c.Request.Context(), userID.(string), req.ConversationID); err != nil {
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := h.service.RemoveFromArchive(c.Request.Context(), userID, req.ConversationID); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
@@ -111,8 +127,12 @@ func (h *ArchiveHandler) RemoveFromArchive(c *gin.Context) {
 }
 
 func (h *ArchiveHandler) GetStatus(c *gin.Context) {
-	userID, _ := c.Get("userID")
-	status, err := h.service.GetStatus(c.Request.Context(), userID.(string))
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	status, err := h.service.GetStatus(c.Request.Context(), userID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return

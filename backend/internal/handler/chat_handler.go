@@ -41,8 +41,12 @@ func (h *ChatHandler) DirectChat(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, _ := c.Get("userID")
-	conv, msg, err := h.service.DirectChat(c.Request.Context(), userID.(string), req.CustomerName, req.CustomerName, req.Message, req.Channel, "")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	conv, msg, err := h.service.DirectChat(c.Request.Context(), userID, req.CustomerName, req.CustomerName, req.Message, req.Channel, "")
 	if err != nil {
 		h.logger.Error("Direct chat failed", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -56,9 +60,13 @@ func (h *ChatHandler) DirectChat(c *gin.Context) {
 }
 
 func (h *ChatHandler) ClearChats(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 
-	if err := h.service.ClearChats(c.Request.Context(), userID.(string)); err != nil {
+	if err := h.service.ClearChats(c.Request.Context(), userID); err != nil {
 		h.logger.Error("Clear chats failed", "error", err)
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -70,7 +78,11 @@ func (h *ChatHandler) ClearChats(c *gin.Context) {
 // ListConversations returns a paginated list of conversations for the authenticated user.
 // Supports filtering by status (active, resolved, archived) and sorting by last message time.
 func (h *ChatHandler) ListConversations(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	status := c.Query("status")
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -83,7 +95,7 @@ func (h *ChatHandler) ListConversations(c *gin.Context) {
 		limit = 20
 	}
 
-	conversations, total, err := h.service.ListConversations(c.Request.Context(), userID.(string), status, page, limit)
+	conversations, total, err := h.service.ListConversations(c.Request.Context(), userID, status, page, limit)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -102,9 +114,9 @@ func (h *ChatHandler) ListConversations(c *gin.Context) {
 
 func (h *ChatHandler) GetConversation(c *gin.Context) {
 	id := c.Param("id")
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
@@ -119,7 +131,7 @@ func (h *ChatHandler) GetConversation(c *gin.Context) {
 	}
 	offset := (page - 1) * limit
 
-	conv, messages, total, err := h.service.GetConversationPaginated(c.Request.Context(), userID.(string), id, limit, offset)
+	conv, messages, total, err := h.service.GetConversationPaginated(c.Request.Context(), userID, id, limit, offset)
 	if err != nil {
 		h.logger.Warn("Get conversation failed", "error", err, "conversation_id", id)
 		utils.RespondNotFound(c, "Conversation not found")
@@ -152,12 +164,12 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 	utils.SanitizeStruct(&req)
 
 	// Store customer message
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	_, err := h.service.SendMessage(c.Request.Context(), userID.(string), id, "customer", req.Content)
+	_, err := h.service.SendMessage(c.Request.Context(), userID, id, "customer", req.Content)
 	if err != nil {
 		h.logger.Error("Failed to store message", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -258,14 +270,14 @@ func (h *ChatHandler) StreamMessage(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
 	// Store customer message
-	_, err := h.service.SendMessage(c.Request.Context(), userID.(string), id, "customer", req.Content)
+	_, err := h.service.SendMessage(c.Request.Context(), userID, id, "customer", req.Content)
 	if err != nil {
 		h.logger.Error("Failed to store message", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -360,14 +372,12 @@ func (h *ChatHandler) StreamMessage(c *gin.Context) {
 // The assigned agent receives real-time notifications via WebSocket.
 func (h *ChatHandler) HumanTakeover(c *gin.Context) {
 	id := c.Param("id")
-	agentID, _ := c.Get("userID")
-
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	if err := h.service.HumanTakeover(c.Request.Context(), userID.(string), id, agentID.(string)); err != nil {
+	if err := h.service.HumanTakeover(c.Request.Context(), userID, id, userID); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
@@ -379,9 +389,9 @@ func (h *ChatHandler) HumanTakeover(c *gin.Context) {
 // Ratings are used in analytics dashboards and Prometheus metrics.
 func (h *ChatHandler) RateConversation(c *gin.Context) {
 	id := c.Param("id")
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 	var req struct {
@@ -397,7 +407,7 @@ func (h *ChatHandler) RateConversation(c *gin.Context) {
 		return
 	}
 	utils.SanitizeStruct(&req)
-	if err := h.service.RateConversation(c.Request.Context(), userID.(string), id, req.Score, req.Feedback); err != nil {
+	if err := h.service.RateConversation(c.Request.Context(), userID, id, req.Score, req.Feedback); err != nil {
 		utils.RespondInternalError(c, "")
 		return
 	}
@@ -416,12 +426,12 @@ func (h *ChatHandler) Escalate(c *gin.Context) {
 	utils.SanitizeStruct(&req)
 
 	id := c.Param("id")
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	if err := h.service.Escalate(c.Request.Context(), userID.(string), id, req.Reason); err != nil {
+	if err := h.service.Escalate(c.Request.Context(), userID, id, req.Reason); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}

@@ -82,27 +82,13 @@ func (s *PlanService) CanGenerateResponse(ctx context.Context, userID, planID st
 		if s.redis == nil {
 			return true, "", nil
 		}
-		// Check weekly free counter in Redis
+		// Use atomic INCR first, then check the result to avoid TOCTOU race.
 		key := fmt.Sprintf("free_weekly:%s", userID)
-		count, err := s.redis.GetInt(ctx, key)
+		count, err := s.redis.Incr(ctx, key)
 		if err != nil {
-			// If key doesn't exist, treat as 0
-			if err == infrastructure.ErrRedisNil {
-				count = 0
-			} else {
-				return false, "", err
-			}
-		}
-		
-		if count >= 100 {
-			return false, "You've exceeded your weekly limit of 100 AI responses. Upgrade your plan for more responses.", nil
-		}
-		
-		// Increment the counter
-		if _, err := s.redis.Incr(ctx, key); err != nil {
 			return false, "", err
 		}
-		
+
 		// Set expiry to Monday midnight if this is the first increment of the week
 		ttl, ttlErr := s.redis.TTL(ctx, key)
 		if ttl < 0 || ttlErr != nil {
@@ -112,9 +98,15 @@ func (s *PlanService) CanGenerateResponse(ctx context.Context, userID, planID st
 				daysUntilMonday = 7
 			}
 			midnight := time.Date(now.Year(), now.Month(), now.Day()+daysUntilMonday, 0, 0, 0, 0, time.Local)
-			_ = s.redis.SetEx(ctx, key, count+1, time.Until(midnight))
+			_ = s.redis.SetEx(ctx, key, count, time.Until(midnight))
 		}
-		
+
+		if count > 100 {
+			// Over the limit — decrement back since we already incremented
+			_, _ = s.redis.Decr(ctx, key)
+			return false, "You've exceeded your weekly limit of 100 AI responses. Upgrade your plan for more responses.", nil
+		}
+
 		return true, "", nil
 	case "pulse":
 		// Check if user has sufficient credit balance

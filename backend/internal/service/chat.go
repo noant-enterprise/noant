@@ -39,7 +39,7 @@ type replyGateState struct {
 // and real-time WebSocket broadcasting. The aiBrain parameter handles AI response
 // generation; openwa and telegram handle outbound channel delivery.
 func NewChatService(cfg *config.Config, repos *repository.Repositories, redis *infrastructure.RedisClient, aiBrain *AIBrain, logger *infrastructure.Logger, openwa *OpenWAService, telegram *TelegramService) *ChatService {
-	return &ChatService{
+	cs := &ChatService{
 		cfg:      cfg,
 		repos:    repos,
 		redis:    redis,
@@ -48,6 +48,23 @@ func NewChatService(cfg *config.Config, repos *repository.Repositories, redis *i
 		openwa:   openwa,
 		telegram: telegram,
 		replies:  make(map[string]*replyGateState),
+	}
+	go cs.evictRepliesLoop()
+	return cs
+}
+
+func (s *ChatService) evictRepliesLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.replyMu.Lock()
+		now := time.Now()
+		for k, state := range s.replies {
+			if now.Sub(state.lastReplyAt) > 10*time.Minute && now.Sub(state.inFlightAt) > 10*time.Minute {
+				delete(s.replies, k)
+			}
+		}
+		s.replyMu.Unlock()
 	}
 }
 

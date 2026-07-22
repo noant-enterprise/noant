@@ -20,9 +20,13 @@ func NewOnboardingHandler(svc *service.OnboardingService, logger *infrastructure
 }
 
 func (h *OnboardingHandler) GetStatus(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 
-	status, err := h.svc.GetStatus(c.Request.Context(), userID.(string))
+	status, err := h.svc.GetStatus(c.Request.Context(), userID)
 	if err != nil {
 		h.logger.Error("Failed to get onboarding status", "error", err, "user_id", userID)
 		utils.RespondInternalError(c, "")
@@ -33,7 +37,11 @@ func (h *OnboardingHandler) GetStatus(c *gin.Context) {
 }
 
 func (h *OnboardingHandler) CompleteStep(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 
 	var req struct {
 		Step     string  `json:"step" binding:"required"`
@@ -44,7 +52,7 @@ func (h *OnboardingHandler) CompleteStep(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.CompleteStep(c.Request.Context(), userID.(string), req.Step, req.Industry); err != nil {
+	if err := h.svc.CompleteStep(c.Request.Context(), userID, req.Step, req.Industry); err != nil {
 		h.logger.Error("Failed to complete onboarding step", "error", err, "user_id", userID, "step", req.Step)
 		utils.RespondInternalError(c, "")
 		return
@@ -54,7 +62,11 @@ func (h *OnboardingHandler) CompleteStep(c *gin.Context) {
 }
 
 func (h *OnboardingHandler) AutoCreateCategories(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 
 	var req struct {
 		IndustryID string `json:"industry_id" binding:"required"`
@@ -64,7 +76,7 @@ func (h *OnboardingHandler) AutoCreateCategories(c *gin.Context) {
 		return
 	}
 
-	cats, err := h.svc.AutoCreateCategories(c.Request.Context(), userID.(string), req.IndustryID)
+	cats, err := h.svc.AutoCreateCategories(c.Request.Context(), userID, req.IndustryID)
 	if err != nil {
 		h.logger.Error("Failed to auto-create categories", "error", err, "user_id", userID, "industry", req.IndustryID)
 		utils.RespondInternalError(c, "")

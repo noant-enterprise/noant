@@ -20,10 +20,14 @@ func NewAuditHandler(svc *service.AuditService, logger *infrastructure.Logger) *
 }
 
 func (h *AuditHandler) ListLogs(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID := getUserID(c)
+	if userID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
 	limit := 50 // default limit
 
-	logs, err := h.service.ListByUser(c.Request.Context(), userID.(string), limit)
+	logs, err := h.service.ListByUser(c.Request.Context(), userID, limit)
 	if err != nil {
 		h.logger.Error("Failed to list audit logs", "error", err)
 		utils.RespondInternalError(c, err.Error())

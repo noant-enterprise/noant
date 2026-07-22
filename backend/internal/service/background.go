@@ -61,7 +61,36 @@ func NewBackgroundWorker(logger *infrastructure.Logger, dbManager *DBManagerServ
 		bw.wg.Add(1)
 		go bw.worker(i)
 	}
+	go bw.evictCompletedTasks()
 	return bw
+}
+
+func (bw *BackgroundWorker) evictCompletedTasks() {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-bw.stopCh:
+			return
+		case <-ticker.C:
+			bw.mu.Lock()
+			now := time.Now()
+			for id, task := range bw.tasks {
+				if task.Status == WorkerTaskCompleted || task.Status == WorkerTaskFailed {
+					var cutoff time.Duration
+					if task.Status == WorkerTaskFailed {
+						cutoff = 48 * time.Hour
+					} else {
+						cutoff = 24 * time.Hour
+					}
+					if task.DoneAt != nil && now.Sub(*task.DoneAt) > cutoff {
+						delete(bw.tasks, id)
+					}
+				}
+			}
+			bw.mu.Unlock()
+		}
+	}
 }
 
 func (bw *BackgroundWorker) worker(id int) {
