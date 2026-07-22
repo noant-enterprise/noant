@@ -42,7 +42,7 @@ type Handlers struct {
 	Push         *PushHandler
 }
 
-func NewHandlers(cfg *config.Config, services *service.Services, auditRepo *repository.AuditRepository, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
+func NewHandlers(cfg *config.Config, services *service.Services, repos *repository.Repositories, auditRepo *repository.AuditRepository, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
 	return &Handlers{
 		Auth:         NewAuthHandler(services.Auth, auditRepo, logger),
 		Chat:         NewChatHandler(services.Chat, logger, wsHub),
@@ -57,7 +57,7 @@ func NewHandlers(cfg *config.Config, services *service.Services, auditRepo *repo
 		Widget:       NewWidgetHandler(services.Widget, logger),
 		Inventory:    NewInventoryHandler(services.Inventory, logger),
 		Handoff:      NewHandoffHandler(services.Handoff, logger),
-		OpenWA:       NewOpenWAHandler(cfg, services.OpenWA, services.Chat, logger, wsHub),
+		OpenWA:       NewOpenWAHandler(cfg, services.OpenWA, services.Chat, repos, logger, wsHub),
 		Telegram:     NewTelegramHandler(services.Integration, logger),
 		Credit:       NewCreditHandler(services.Credit, services.Plan, logger),
 		Campaign:     NewCampaignHandler(services.Campaign, logger),

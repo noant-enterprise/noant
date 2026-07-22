@@ -218,6 +218,12 @@ func (s *OpenWAService) GetMediaHandler() *MediaHandler {
 	return s.mediaHandler
 }
 
+// ShouldBackoff returns true if the OpenWA API rate limit headers indicate
+// that we should back off for the given session.
+func (s *OpenWAService) ShouldBackoff(sessionID string) bool {
+	return s.rateLimitHeaders.ShouldBackoff(sessionID)
+}
+
 // StartSessionManager starts the background session health monitor
 func (s *OpenWAService) StartSessionManager() {
 	if s.sessionMgr != nil {

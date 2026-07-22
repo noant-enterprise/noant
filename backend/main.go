@@ -233,7 +233,7 @@ func main() {
 	jobQueue.ScheduleRecurring("db_cleanup_expired_media", map[string]interface{}{}, 30*time.Minute)
 
 	// Pass wsHub to handlers
-	handlers := handler.NewHandlers(cfg, services, auditRepo, logger, wsHub)
+	handlers := handler.NewHandlers(cfg, services, repos, auditRepo, logger, wsHub)
 	healthHandler := handler.NewHealthHandler(db, redisClient, cfg.GroqAPIKeys, logger)
 
 	startHealthChecks(services.Integration, logger)

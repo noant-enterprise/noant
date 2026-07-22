@@ -216,14 +216,18 @@ func (sq *SendQueue) persist(ctx context.Context, entry *QueueEntry) {
 		return
 	}
 	key := fmt.Sprintf("openwa:queue:%s", entry.ID)
-	_ = sq.redis.SetEx(ctx, key, string(data), 72*time.Hour)
+	if err := sq.redis.SetEx(ctx, key, string(data), 72*time.Hour); err != nil {
+		sq.logger.Warn("Failed to persist queue entry to Redis", "id", entry.ID, "error", err)
+	}
 }
 
 func (sq *SendQueue) removeFromRedis(ctx context.Context, entryID string) {
 	if sq.redis == nil {
 		return
 	}
-	_ = sq.redis.Delete(ctx, fmt.Sprintf("openwa:queue:%s", entryID))
+	if err := sq.redis.Delete(ctx, fmt.Sprintf("openwa:queue:%s", entryID)); err != nil {
+		sq.logger.Warn("Failed to remove queue entry from Redis", "id", entryID, "error", err)
+	}
 }
 
 // Enqueue adds a message to the queue with FIFO ordering within priority
@@ -452,6 +456,13 @@ func (w *SessionWorker) processNext() {
 	if w.queue == nil {
 		return
 	}
+
+	// Check OpenWA API rate limit headers before dequeuing
+	if w.openwa.ShouldBackoff(w.sessionID) {
+		w.logger.Warn("Backing off due to OpenWA rate limit headers", "session", w.sessionID)
+		return
+	}
+
 	entry := w.queue.DequeueBySession(w.sessionID)
 	if entry == nil {
 		return

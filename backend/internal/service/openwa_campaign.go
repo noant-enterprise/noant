@@ -92,6 +92,21 @@ func (cb *CampaignBridge) ExecuteCampaign(ctx context.Context, req *BroadcastReq
 
 		// Enqueue batch
 		for _, phone := range batch {
+			// Check opt-out before sending
+			cleanedPhone := CleanPhoneNumber(phone)
+			optedOut, err := cb.repos.CampaignRecipient.IsOptedOut(ctx, req.UserID, cleanedPhone)
+			if err != nil {
+				cb.logger.Warn("Failed to check opt-out status", "phone", phone, "error", err)
+			}
+			if optedOut {
+				cb.logger.Info("Skipping opted-out recipient", "phone", phone, "campaignID", req.CampaignID)
+				cb.createRecipientRecord(ctx, req.CampaignID, req.UserID, phone)
+				if err := cb.repos.CampaignRecipient.MarkOptedOut(ctx, req.UserID, cleanedPhone); err != nil {
+					cb.logger.Warn("Failed to mark opted-out recipient", "phone", phone, "error", err)
+				}
+				continue
+			}
+
 			chatID := FormatChatID(phone)
 			entry := &QueueEntry{
 				ID:        fmt.Sprintf("camp_%s_%s_%d", req.CampaignID, phone, time.Now().UnixNano()),

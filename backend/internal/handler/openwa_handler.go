@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	"noant/config"
 	"noant/internal/infrastructure"
+	"noant/internal/repository"
 	"noant/internal/service"
 	"noant/internal/utils"
 
@@ -17,12 +19,13 @@ type OpenWAHandler struct {
 	cfg    *config.Config
 	openwa *service.OpenWAService
 	chat   *service.ChatService
+	repos  *repository.Repositories
 	logger *infrastructure.Logger
 	wsHub  *WebSocketHub
 }
 
-func NewOpenWAHandler(cfg *config.Config, openwa *service.OpenWAService, chat *service.ChatService, logger *infrastructure.Logger, wsHub *WebSocketHub) *OpenWAHandler {
-	return &OpenWAHandler{cfg: cfg, openwa: openwa, chat: chat, logger: logger, wsHub: wsHub}
+func NewOpenWAHandler(cfg *config.Config, openwa *service.OpenWAService, chat *service.ChatService, repos *repository.Repositories, logger *infrastructure.Logger, wsHub *WebSocketHub) *OpenWAHandler {
+	return &OpenWAHandler{cfg: cfg, openwa: openwa, chat: chat, repos: repos, logger: logger, wsHub: wsHub}
 }
 
 // WhatsAppWebhook receives incoming messages from OpenWA
@@ -179,10 +182,29 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 		return
 	}
 
-	// Send AI reply back via OpenWA
+	// Send AI reply back via OpenWA (routed through queue for rate-limit + retry protection)
 	if aiResp != nil && aiResp.Content != "" {
-		if err := h.openwa.SendTextMessage(event.SessionID, chatID, aiResp.Content); err != nil {
-			h.logger.Error("Failed to send OpenWA reply", "error", err, "chatID", chatID)
+		queue := h.openwa.GetQueue()
+		workerPool := h.openwa.GetWorkerPool()
+		if queue != nil && workerPool != nil {
+			workerPool.EnsureWorker(event.SessionID)
+			entry := &service.QueueEntry{
+				ID:        fmt.Sprintf("ai_%s_%d", conv.ID, time.Now().UnixNano()),
+				SessionID: event.SessionID,
+				UserID:    userID,
+				ChatID:    chatID,
+				MsgType:   service.MsgTypeText,
+				Content:   aiResp.Content,
+				Priority:  service.PriorityNormal,
+			}
+			if err := queue.Enqueue(entry); err != nil {
+				h.logger.Error("Failed to enqueue AI reply", "error", err, "chatID", chatID)
+			}
+		} else {
+			// Fallback to direct send if queue unavailable
+			if err := h.openwa.SendTextMessage(event.SessionID, chatID, aiResp.Content); err != nil {
+				h.logger.Error("Failed to send OpenWA reply", "error", err, "chatID", chatID)
+			}
 		}
 	}
 
@@ -209,7 +231,11 @@ func (h *OpenWAHandler) handleMessageStatus(c *gin.Context, event *service.OpenW
 		return
 	}
 
-	h.logger.Info("OpenWA status update", "id", status.ID, "status", status.Status)
+	h.logger.Info("WhatsApp delivery status",
+		"messageID", status.ID,
+		"status", status.Status,
+		"sessionID", event.SessionID,
+	)
 }
 
 // GetSessionStatus returns the WhatsApp session status
@@ -589,10 +615,20 @@ func (h *OpenWAHandler) GetWhatsAppStatus(c *gin.Context) {
 
 	// Force connect: user's phone shows logged in — trust the user and mark as connected
 	if forceConnect && !isConnected {
-		h.logger.Info("Force-connect requested by user — marking session as connected", "sessionID", sessionID)
+		h.logger.Warn("Force-connect bypass used — session may not actually be connected", "sessionID", sessionID)
 		isConnected = true
 		status = "connected"
 		qrCode = ""
+
+		// Background verification: check actual status after a delay
+		go func() {
+			time.Sleep(10 * time.Second)
+			actualStatus, err := h.openwa.GetSessionStatusByID(sessionID)
+			if err != nil || actualStatus != "connected" {
+				h.logger.Error("Force-connect verification failed — session is NOT actually connected",
+					"sessionID", sessionID, "actualStatus", actualStatus, "error", err)
+			}
+		}()
 	}
 
 	// Update integration status if connected, and notify dashboard via WebSocket
