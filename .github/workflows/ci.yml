@@ -172,8 +172,8 @@ jobs:
     services:
       docker:
         image: docker:dind
-        privileged: true
         options: >-
+          --privileged
           --health-cmd "docker info"
           --health-interval 10s
           --health-timeout 5s
