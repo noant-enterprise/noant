@@ -183,9 +183,9 @@ func (b *AIBrain) intentCategoryFallback(ctx context.Context, userID, userQuery 
 
 	catNames := make([]string, len(categories))
 	catMap := make(map[string]domain.Category)
-	for i, cat := range categories {
-		catNames[i] = cat.Name
-		catMap[strings.ToLower(strings.TrimSpace(cat.Name))] = cat
+	for i := range categories {
+		catNames[i] = categories[i].Name
+		catMap[strings.ToLower(strings.TrimSpace(categories[i].Name))] = categories[i]
 	}
 
 	prompt := []MessageTurn{
