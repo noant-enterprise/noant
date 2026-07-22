@@ -14,7 +14,7 @@ function useReveal(threshold = 0.15) {
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setVisible(true); obs.disconnect() } }, { threshold })
+    const obs = new IntersectionObserver(([e]) => { if (e?.isIntersecting) { setVisible(true); obs.disconnect() } }, { threshold })
     obs.observe(el)
     return () => obs.disconnect()
   }, [threshold])

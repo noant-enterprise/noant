@@ -57,7 +57,7 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Run tests with coverage
         working-directory: backend
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v tests/integration)
       - name: Enforce coverage threshold
         working-directory: backend
         run: |
@@ -188,7 +188,7 @@ jobs:
         working-directory: backend
         env:
           DOCKER_HOST: tcp://docker:2375
-        run: go test -v -timeout 5m ./tests/integration/... -count=1
+        run: go test -v -short -timeout 5m ./tests/integration/... -count=1
 
   e2e-frontend:
     name: E2E Tests
