@@ -217,7 +217,7 @@ Rules:
 		return nil
 	}
 
-	qas, err := b.repos.QAPair.ListByCategoryAndUser(ctx, cat.ID, userID)
+	qas, err := b.repos.QAPair.ListByCategoryAndOrg(ctx, cat.ID, userID)
 	if err != nil || len(qas) == 0 {
 		return nil
 	}

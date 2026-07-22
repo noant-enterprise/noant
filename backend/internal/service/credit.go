@@ -73,7 +73,7 @@ func (s *CreditService) ActivatePurchase(ctx context.Context, checkoutID, userID
 	}
 
 	// Get current credit balance
-	currentCredit, err := s.repos.Credit.GetByUserID(ctx, userID)
+	currentCredit, err := s.repos.Credit.GetByOrgID(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (s *CreditService) Deduct(ctx context.Context, userID string) error {
 
 // GetBalance returns the user's current credit balance and expiry
 func (s *CreditService) GetBalance(ctx context.Context, userID string) (*domain.UserCredit, error) {
-	return s.repos.Credit.GetByUserID(ctx, userID)
+	return s.repos.Credit.GetByOrgID(ctx, userID)
 }
 
 // GetPurchaseHistory returns the user's credit purchase history from the database

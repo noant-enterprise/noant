@@ -23,17 +23,17 @@ func (r *CampaignRepository) Create(ctx context.Context, campaign *domain.Campai
 		campaign.ID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	_, err := r.db.ExecContext(ctx, 
-		`INSERT INTO campaign_schedules (id, user_id, name, start_date, end_date, status, created_at, updated_at) 
-		 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-		campaign.ID, campaign.UserID, campaign.Name, campaign.StartDate, campaign.EndDate, campaign.Status)
+		`INSERT INTO campaign_schedules (id, user_id, org_id, name, start_date, end_date, status, created_at, updated_at) 
+		 VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		campaign.ID, campaign.UserID, campaign.OrgID, campaign.Name, campaign.StartDate, campaign.EndDate, campaign.Status)
 	return err
 }
 
-func (r *CampaignRepository) ListByUser(ctx context.Context, userID string) ([]domain.CampaignSchedule, error) {
+func (r *CampaignRepository) ListByOrg(ctx context.Context, orgID string) ([]domain.CampaignSchedule, error) {
 	var campaigns []domain.CampaignSchedule
 	rows, err := r.db.QueryContext(ctx, 
-		`SELECT id, user_id, name, start_date, end_date, status, created_at, updated_at FROM campaign_schedules WHERE user_id = ? ORDER BY created_at DESC`, 
-		userID)
+		`SELECT id, user_id, name, start_date, end_date, status, created_at, updated_at FROM campaign_schedules WHERE org_id = ? ORDER BY created_at DESC`, 
+		orgID)
 	if err != nil {
 		return nil, err
 	}

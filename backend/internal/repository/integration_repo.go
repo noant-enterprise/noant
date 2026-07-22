@@ -22,8 +22,8 @@ func (r *IntegrationRepository) Create(ctx context.Context, integration *domain.
 	if integration.ID == "" {
 		integration.ID = generateUUID()
 	}
-	query := `INSERT INTO integrations (id, user_id, channel, status, config, webhook_url, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	query := `INSERT INTO integrations (id, user_id, org_id, channel, status, config, webhook_url, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
 	configJSON := []byte("{}")
 	if integration.Config != nil {
 		b, err := json.Marshal(integration.Config)
@@ -31,13 +31,13 @@ func (r *IntegrationRepository) Create(ctx context.Context, integration *domain.
 			configJSON = b
 		}
 	}
-	_, err := r.db.ExecContext(ctx, query, integration.ID, integration.UserID, integration.Channel, integration.Status, string(configJSON), integration.WebhookURL)
+	_, err := r.db.ExecContext(ctx, query, integration.ID, integration.UserID, integration.OrgID, integration.Channel, integration.Status, string(configJSON), integration.WebhookURL)
 	return err
 }
 
-func (r *IntegrationRepository) ListByUser(ctx context.Context, userID string) ([]domain.Integration, error) {
-	query := `SELECT id, user_id, channel, status, config, webhook_url, last_error, created_at, updated_at FROM integrations WHERE user_id = ?`
-	rows, err := r.db.QueryContext(ctx, query, userID)
+func (r *IntegrationRepository) ListByOrg(ctx context.Context, orgID string) ([]domain.Integration, error) {
+	query := `SELECT id, user_id, channel, status, config, webhook_url, last_error, created_at, updated_at FROM integrations WHERE org_id = ?`
+	rows, err := r.db.QueryContext(ctx, query, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -116,12 +116,12 @@ func (r *IntegrationRepository) UpdateStatus(ctx context.Context, id, status str
 	return err
 }
 
-func (r *IntegrationRepository) GetByUserAndChannel(ctx context.Context, userID, channel string) (*domain.Integration, error) {
+func (r *IntegrationRepository) GetByOrgAndChannel(ctx context.Context, orgID, channel string) (*domain.Integration, error) {
 	query := `SELECT id, user_id, channel, status, config, webhook_url, last_error, created_at, updated_at 
-	FROM integrations WHERE user_id = ? AND channel = ? LIMIT 1`
+	FROM integrations WHERE org_id = ? AND channel = ? LIMIT 1`
 	var i domain.Integration
 	var configStr string
-	err := r.db.QueryRowContext(ctx, query, userID, channel).Scan(
+	err := r.db.QueryRowContext(ctx, query, orgID, channel).Scan(
 		&i.ID, &i.UserID, &i.Channel, &i.Status, &configStr, &i.WebhookURL, &i.LastError, &i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -198,9 +198,9 @@ func (r *IntegrationRepository) Update(ctx context.Context, integration *domain.
 	return err
 }
 
-func (r *IntegrationRepository) Disconnect(ctx context.Context, userID, channel string) error {
-	query := `UPDATE integrations SET status = 'inactive', updated_at = NOW() WHERE user_id = ? AND channel = ?`
-	_, err := r.db.ExecContext(ctx, query, userID, channel)
+func (r *IntegrationRepository) Disconnect(ctx context.Context, orgID, channel string) error {
+	query := `UPDATE integrations SET status = 'inactive', updated_at = NOW() WHERE org_id = ? AND channel = ?`
+	_, err := r.db.ExecContext(ctx, query, orgID, channel)
 	return err
 }
 

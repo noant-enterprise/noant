@@ -21,15 +21,15 @@ func (r *APIKeyRepository) Create(ctx context.Context, key *domain.APIKey) error
 	if key.ID == "" {
 		key.ID = generateUUID()
 	}
-	query := `INSERT INTO api_keys (id, user_id, name, key_hash, is_active, created_at)
-	VALUES (?, ?, ?, ?, ?, NOW())`
-	_, err := r.db.ExecContext(ctx, query, key.ID, key.UserID, key.Name, key.Key, key.IsActive)
+	query := `INSERT INTO api_keys (id, user_id, org_id, name, key_hash, is_active, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, NOW())`
+	_, err := r.db.ExecContext(ctx, query, key.ID, key.UserID, key.OrgID, key.Name, key.Key, key.IsActive)
 	return err
 }
 
-func (r *APIKeyRepository) ListByUser(ctx context.Context, userID string) ([]domain.APIKey, error) {
-	query := `SELECT id, user_id, name, key_hash, last_used, is_active, created_at FROM api_keys WHERE user_id = ? AND is_active = true`
-	rows, err := r.db.QueryContext(ctx, query, userID)
+func (r *APIKeyRepository) ListByOrg(ctx context.Context, orgID string) ([]domain.APIKey, error) {
+	query := `SELECT id, user_id, name, key_hash, last_used, is_active, created_at FROM api_keys WHERE org_id = ? AND is_active = true`
+	rows, err := r.db.QueryContext(ctx, query, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -46,8 +46,8 @@ func (r *APIKeyRepository) ListByUser(ctx context.Context, userID string) ([]dom
 	return keys, nil
 }
 
-func (r *APIKeyRepository) Revoke(ctx context.Context, id, userID string) error {
-	query := `UPDATE api_keys SET is_active = false WHERE id = ? AND user_id = ?`
-	_, err := r.db.ExecContext(ctx, query, id, userID)
+func (r *APIKeyRepository) Revoke(ctx context.Context, id, orgID string) error {
+	query := `UPDATE api_keys SET is_active = false WHERE id = ? AND org_id = ?`
+	_, err := r.db.ExecContext(ctx, query, id, orgID)
 	return err
 }

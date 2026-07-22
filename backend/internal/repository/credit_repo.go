@@ -19,14 +19,14 @@ func NewCreditRepository(db *sql.DB, redis *infrastructure.RedisClient) *CreditR
 	return &CreditRepository{db: db}
 }
 
-func (r *CreditRepository) GetByUserID(ctx context.Context, userID string) (*domain.UserCredit, error) {
+func (r *CreditRepository) GetByOrgID(ctx context.Context, orgID string) (*domain.UserCredit, error) {
 	uc := &domain.UserCredit{}
-	err := r.db.QueryRowContext(ctx, `SELECT id, user_id, balance, expires_at, last_updated_at FROM user_credits WHERE user_id = ?`, userID).
+	err := r.db.QueryRowContext(ctx, `SELECT id, user_id, balance, expires_at, last_updated_at FROM user_credits WHERE user_id = ?`, orgID).
 		Scan(&uc.ID, &uc.UserID, &uc.Balance, &uc.ExpiresAt, &uc.LastUpdatedAt)
 	if err == sql.ErrNoRows {
 		return &domain.UserCredit{
 			ID:           "",
-			UserID:       userID,
+			UserID:       orgID,
 			Balance:      0,
 			ExpiresAt:    nil,
 			LastUpdatedAt: time.Now(),

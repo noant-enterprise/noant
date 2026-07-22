@@ -75,44 +75,44 @@ type IQAPairRepo interface {
 	Create(ctx context.Context, qa *domain.QAPair) error
 	BulkCreate(ctx context.Context, qas []domain.QAPair) error
 	ListByCategory(ctx context.Context, categoryID string) ([]domain.QAPair, error)
-	ListByCategoryAndUser(ctx context.Context, categoryID, userID string) ([]domain.QAPair, error)
-	Search(ctx context.Context, userID, query string) ([]domain.QAPair, error)
-	ListByUser(ctx context.Context, userID, categoryID string) ([]domain.QAPair, error)
+	ListByCategoryAndOrg(ctx context.Context, categoryID, orgID string) ([]domain.QAPair, error)
+	Search(ctx context.Context, orgID, query string) ([]domain.QAPair, error)
+	ListByOrg(ctx context.Context, orgID, categoryID string) ([]domain.QAPair, error)
 	GetByID(ctx context.Context, id string) (*domain.QAPair, error)
-	GetByQuestion(ctx context.Context, userID, question string) (*domain.QAPair, error)
+	GetByQuestion(ctx context.Context, orgID, question string) (*domain.QAPair, error)
 	Update(ctx context.Context, qa *domain.QAPair) error
 	IncrementUsage(ctx context.Context, id string) error
-	CountByUser(ctx context.Context, userID string) (int, error)
-	Delete(ctx context.Context, id, userID string) error
+	CountByOrg(ctx context.Context, orgID string) (int, error)
+	Delete(ctx context.Context, id, orgID string) error
 }
 
 type ICategoryRepo interface {
-	GetByName(ctx context.Context, userID, name string) (*domain.Category, error)
+	GetByName(ctx context.Context, orgID, name string) (*domain.Category, error)
 	Create(ctx context.Context, cat *domain.Category) error
-	List(ctx context.Context, userID string) ([]domain.Category, error)
-	Delete(ctx context.Context, id, userID string) error
+	List(ctx context.Context, orgID string) ([]domain.Category, error)
+	Delete(ctx context.Context, id, orgID string) error
 }
 
 type IIntegrationRepo interface {
 	Create(ctx context.Context, integration *domain.Integration) error
-	ListByUser(ctx context.Context, userID string) ([]domain.Integration, error)
+	ListByOrg(ctx context.Context, orgID string) ([]domain.Integration, error)
 	ListActive(ctx context.Context) ([]domain.Integration, error)
 	ListByChannel(ctx context.Context, channel string) ([]domain.Integration, error)
 	UpdateStatus(ctx context.Context, id, status string, lastError *string) error
-	GetByUserAndChannel(ctx context.Context, userID, channel string) (*domain.Integration, error)
+	GetByOrgAndChannel(ctx context.Context, orgID, channel string) (*domain.Integration, error)
 	GetByChannelAndSessionID(ctx context.Context, channel, sessionID string) (*domain.Integration, error)
 	GetByChannelAndWebhookSecret(ctx context.Context, channel, secret string) (*domain.Integration, error)
 	Update(ctx context.Context, integration *domain.Integration) error
-	Disconnect(ctx context.Context, userID, channel string) error
+	Disconnect(ctx context.Context, orgID, channel string) error
 	CleanupStaleInactive(ctx context.Context, days int) (int64, error)
 }
 
 type IHandoffRepo interface {
 	Create(ctx context.Context, h *domain.Handoff) error
-	GetByID(ctx context.Context, id, userID string) (*domain.Handoff, error)
-	List(ctx context.Context, userID, status string, limit int) ([]domain.Handoff, error)
-	UpdateStatus(ctx context.Context, id, userID, status, notes string) error
-	GetPending(ctx context.Context, userID string) ([]domain.Handoff, error)
+	GetByID(ctx context.Context, id, orgID string) (*domain.Handoff, error)
+	List(ctx context.Context, orgID, status string, limit int) ([]domain.Handoff, error)
+	UpdateStatus(ctx context.Context, id, orgID, status, notes string) error
+	GetPending(ctx context.Context, orgID string) ([]domain.Handoff, error)
 	GetReadyForReminder(ctx context.Context) ([]domain.Handoff, error)
 	IncrementReminder(ctx context.Context, id string) error
 	Expire(ctx context.Context, id string) error
@@ -129,7 +129,7 @@ type INotificationRepo interface {
 }
 
 type IWidgetConfigRepo interface {
-	Get(ctx context.Context, userID string) (*domain.WidgetConfig, error)
+	Get(ctx context.Context, orgID string) (*domain.WidgetConfig, error)
 	GetByAPIKey(ctx context.Context, apiKey string) (*domain.WidgetConfig, error)
 	Upsert(ctx context.Context, cfg *domain.WidgetConfig) error
 }
@@ -142,34 +142,34 @@ type IInventoryRepo interface {
 	Update(ctx context.Context, item *domain.InventoryItem) error
 	Delete(ctx context.Context, id, userID string) error
 	DecreaseStock(ctx context.Context, itemID string, quantity int) error
-	CountByUser(ctx context.Context, userID string) (int, error)
+	CountByOrg(ctx context.Context, orgID string) (int, error)
 }
 
 type IArchiveRepo interface {
 	CreateFolder(ctx context.Context, folder *domain.ArchiveFolder) error
-	ListFolders(ctx context.Context, userID, folderType string) ([]domain.ArchiveFolder, error)
-	MoveChat(ctx context.Context, conversationID, userID, folderID string) error
+	ListFolders(ctx context.Context, orgID, folderType string) ([]domain.ArchiveFolder, error)
+	MoveChat(ctx context.Context, conversationID, orgID, folderID string) error
 }
 
 type IUnknownQuestionRepo interface {
 	Create(ctx context.Context, uq *domain.UnknownQuestion) error
-	GetByIDAndUser(ctx context.Context, id, userID string) (*domain.UnknownQuestion, error)
-	List(ctx context.Context, userID, status string, limit, offset int) ([]domain.UnknownQuestion, error)
-	BatchTrain(ctx context.Context, userID, answer, categoryID string, ids []string) error
-	BatchIgnore(ctx context.Context, userID string, ids []string) error
-	ExistsPending(ctx context.Context, userID, question string) (bool, error)
-	UpdateStatus(ctx context.Context, id, userID, status string, answer, categoryID *string) error
-	Clear(ctx context.Context, userID string) error
-	CountByStatus(ctx context.Context, userID string) (map[string]int, error)
-	MostPopular(ctx context.Context, userID string, limit int) ([]map[string]interface{}, error)
-	CountByFilter(ctx context.Context, userID, status string) (int, error)
-	CountByDate(ctx context.Context, userID string, days int) ([]map[string]interface{}, error)
+	GetByIDAndOrg(ctx context.Context, id, orgID string) (*domain.UnknownQuestion, error)
+	List(ctx context.Context, orgID, status string, limit, offset int) ([]domain.UnknownQuestion, error)
+	BatchTrain(ctx context.Context, orgID, answer, categoryID string, ids []string) error
+	BatchIgnore(ctx context.Context, orgID string, ids []string) error
+	ExistsPending(ctx context.Context, orgID, question string) (bool, error)
+	UpdateStatus(ctx context.Context, id, orgID, status string, answer, categoryID *string) error
+	Clear(ctx context.Context, orgID string) error
+	CountByStatus(ctx context.Context, orgID string) (map[string]int, error)
+	MostPopular(ctx context.Context, orgID string, limit int) ([]map[string]interface{}, error)
+	CountByFilter(ctx context.Context, orgID, status string) (int, error)
+	CountByDate(ctx context.Context, orgID string, days int) ([]map[string]interface{}, error)
 	CleanupStale(ctx context.Context, days int) (int64, error)
 }
 
 type ICampaignRepo interface {
 	Create(ctx context.Context, campaign *domain.CampaignSchedule) error
-	ListByUser(ctx context.Context, userID string) ([]domain.CampaignSchedule, error)
+	ListByOrg(ctx context.Context, orgID string) ([]domain.CampaignSchedule, error)
 	GetScheduledForToday(ctx context.Context) ([]domain.CampaignSchedule, error)
 	GetEndingToday(ctx context.Context) ([]domain.CampaignSchedule, error)
 	UpdateStatus(ctx context.Context, id, status string) error
@@ -178,12 +178,12 @@ type ICampaignRepo interface {
 
 type IAPIKeyRepo interface {
 	Create(ctx context.Context, key *domain.APIKey) error
-	ListByUser(ctx context.Context, userID string) ([]domain.APIKey, error)
-	Revoke(ctx context.Context, id, userID string) error
+	ListByOrg(ctx context.Context, orgID string) ([]domain.APIKey, error)
+	Revoke(ctx context.Context, id, orgID string) error
 }
 
 type ICreditRepo interface {
-	GetByUserID(ctx context.Context, userID string) (*domain.UserCredit, error)
+	GetByOrgID(ctx context.Context, orgID string) (*domain.UserCredit, error)
 	Upsert(ctx context.Context, credit *domain.UserCredit) error
 	Deduct(ctx context.Context, userID string, amount int) error
 	GetExpiring(ctx context.Context, days int) ([]domain.UserCredit, error)
@@ -203,7 +203,7 @@ type ITeamRepo interface {
 
 type IAuditRepo interface {
 	Create(ctx context.Context, log *domain.AuditLog) error
-	ListByUser(ctx context.Context, userID string, limit int) ([]domain.AuditLog, error)
+	ListByOrg(ctx context.Context, orgID string, limit int) ([]domain.AuditLog, error)
 	ListWithFilters(ctx context.Context, filter *AuditFilter) (*AuditListResult, error)
 	CleanupOld(ctx context.Context, days int) (int64, error)
 }
@@ -219,10 +219,10 @@ type IPushSubscriptionRepo interface {
 
 type IWhatsAppTemplateRepo interface {
 	Create(ctx context.Context, tpl *domain.WhatsAppTemplate) error
-	ListByUser(ctx context.Context, userID string) ([]domain.WhatsAppTemplate, error)
-	GetByID(ctx context.Context, id, userID string) (*domain.WhatsAppTemplate, error)
+	ListByOrg(ctx context.Context, orgID string) ([]domain.WhatsAppTemplate, error)
+	GetByID(ctx context.Context, id, orgID string) (*domain.WhatsAppTemplate, error)
 	Update(ctx context.Context, tpl *domain.WhatsAppTemplate) error
-	Delete(ctx context.Context, id, userID string) error
+	Delete(ctx context.Context, id, orgID string) error
 	GetByStatus(ctx context.Context, status string) ([]domain.WhatsAppTemplate, error)
 }
 
@@ -236,8 +236,8 @@ type ICampaignRecipientRepo interface {
 	Create(ctx context.Context, cr *domain.CampaignRecipient) error
 	ListByCampaign(ctx context.Context, campaignID string) ([]domain.CampaignRecipient, error)
 	UpdateStatus(ctx context.Context, id, status string, errInfo *string) error
-	MarkOptedOut(ctx context.Context, userID, phone string) error
-	IsOptedOut(ctx context.Context, userID, phone string) (bool, error)
+	MarkOptedOut(ctx context.Context, orgID, phone string) error
+	IsOptedOut(ctx context.Context, orgID, phone string) (bool, error)
 }
 
 type ISubscriptionRepo interface {

@@ -47,6 +47,7 @@ func (h *AuditHandler) SearchLogs(c *gin.Context) {
 	}
 
 	filter := &repository.AuditFilter{
+		OrgID:        getOrgID(c),
 		UserID:       userID,
 		Action:       c.Query("action"),
 		ResourceType: c.Query("resource_type"),

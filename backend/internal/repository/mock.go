@@ -710,21 +710,21 @@ func (m *MockQAPairRepo) ListByCategory(ctx context.Context, categoryID string) 
 	return result, nil
 }
 
-func (m *MockQAPairRepo) ListByCategoryAndUser(ctx context.Context, categoryID, userID string) ([]domain.QAPair, error) {
+func (m *MockQAPairRepo) ListByCategoryAndOrg(ctx context.Context, categoryID, orgID string) ([]domain.QAPair, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []domain.QAPair
 	for _, qa := range m.qas {
 		if qa.CategoryID == categoryID && qa.IsActive {
 			cp := *qa
-			cp.UserID = userID
+			cp.UserID = orgID
 			result = append(result, cp)
 		}
 	}
 	return result, nil
 }
 
-func (m *MockQAPairRepo) Search(ctx context.Context, userID, query string) ([]domain.QAPair, error) {
+func (m *MockQAPairRepo) Search(ctx context.Context, orgID, query string) ([]domain.QAPair, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	lq := strings.ToLower(query)
@@ -744,7 +744,7 @@ func (m *MockQAPairRepo) Search(ctx context.Context, userID, query string) ([]do
 	return result, nil
 }
 
-func (m *MockQAPairRepo) ListByUser(ctx context.Context, userID, categoryID string) ([]domain.QAPair, error) {
+func (m *MockQAPairRepo) ListByOrg(ctx context.Context, orgID, categoryID string) ([]domain.QAPair, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []domain.QAPair
@@ -770,13 +770,13 @@ func (m *MockQAPairRepo) GetByID(ctx context.Context, id string) (*domain.QAPair
 	return &cp, nil
 }
 
-func (m *MockQAPairRepo) GetByQuestion(ctx context.Context, userID, question string) (*domain.QAPair, error) {
+func (m *MockQAPairRepo) GetByQuestion(ctx context.Context, orgID, question string) (*domain.QAPair, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, qa := range m.qas {
 		if qa.Question == question {
 			cp := *qa
-			cp.UserID = userID
+			cp.UserID = orgID
 			return &cp, nil
 		}
 	}
@@ -808,7 +808,7 @@ func (m *MockQAPairRepo) IncrementUsage(ctx context.Context, id string) error {
 	return nil
 }
 
-func (m *MockQAPairRepo) CountByUser(ctx context.Context, userID string) (int, error) {
+func (m *MockQAPairRepo) CountByOrg(ctx context.Context, orgID string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	count := 0
@@ -820,7 +820,7 @@ func (m *MockQAPairRepo) CountByUser(ctx context.Context, userID string) (int, e
 	return count, nil
 }
 
-func (m *MockQAPairRepo) Delete(ctx context.Context, id, userID string) error {
+func (m *MockQAPairRepo) Delete(ctx context.Context, id, orgID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.qas, id)
@@ -916,23 +916,23 @@ func (m *MockUnknownQuestionRepo) Create(ctx context.Context, uq *domain.Unknown
 	return nil
 }
 
-func (m *MockUnknownQuestionRepo) GetByIDAndUser(ctx context.Context, id, userID string) (*domain.UnknownQuestion, error) {
+func (m *MockUnknownQuestionRepo) GetByIDAndOrg(ctx context.Context, id, orgID string) (*domain.UnknownQuestion, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	uq, ok := m.questions[id]
-	if !ok || uq.UserID != userID {
+	if !ok || uq.UserID != orgID {
 		return nil, nil
 	}
 	cp := *uq
 	return &cp, nil
 }
 
-func (m *MockUnknownQuestionRepo) List(ctx context.Context, userID, status string, limit, offset int) ([]domain.UnknownQuestion, error) {
+func (m *MockUnknownQuestionRepo) List(ctx context.Context, orgID, status string, limit, offset int) ([]domain.UnknownQuestion, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var all []domain.UnknownQuestion
 	for _, uq := range m.questions {
-		if uq.UserID != userID {
+		if uq.UserID != orgID {
 			continue
 		}
 		if status != "" && uq.Status != status {
@@ -951,11 +951,11 @@ func (m *MockUnknownQuestionRepo) List(ctx context.Context, userID, status strin
 	return all[offset:end], nil
 }
 
-func (m *MockUnknownQuestionRepo) BatchTrain(ctx context.Context, userID, answer, categoryID string, ids []string) error {
+func (m *MockUnknownQuestionRepo) BatchTrain(ctx context.Context, orgID, answer, categoryID string, ids []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, id := range ids {
-		if uq, ok := m.questions[id]; ok && uq.UserID == userID {
+		if uq, ok := m.questions[id]; ok && uq.UserID == orgID {
 			uq.Status = "trained"
 			uq.SuggestedAnswer = &answer
 			uq.CategoryID = &categoryID
@@ -964,33 +964,33 @@ func (m *MockUnknownQuestionRepo) BatchTrain(ctx context.Context, userID, answer
 	return nil
 }
 
-func (m *MockUnknownQuestionRepo) BatchIgnore(ctx context.Context, userID string, ids []string) error {
+func (m *MockUnknownQuestionRepo) BatchIgnore(ctx context.Context, orgID string, ids []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, id := range ids {
-		if uq, ok := m.questions[id]; ok && uq.UserID == userID {
+		if uq, ok := m.questions[id]; ok && uq.UserID == orgID {
 			uq.Status = "ignored"
 		}
 	}
 	return nil
 }
 
-func (m *MockUnknownQuestionRepo) ExistsPending(ctx context.Context, userID, question string) (bool, error) {
+func (m *MockUnknownQuestionRepo) ExistsPending(ctx context.Context, orgID, question string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, uq := range m.questions {
-		if uq.UserID == userID && strings.EqualFold(uq.Question, question) && uq.Status == "pending" {
+		if uq.UserID == orgID && strings.EqualFold(uq.Question, question) && uq.Status == "pending" {
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func (m *MockUnknownQuestionRepo) UpdateStatus(ctx context.Context, id, userID, status string, answer, categoryID *string) error {
+func (m *MockUnknownQuestionRepo) UpdateStatus(ctx context.Context, id, orgID, status string, answer, categoryID *string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	uq, ok := m.questions[id]
-	if !ok || uq.UserID != userID {
+	if !ok || uq.UserID != orgID {
 		return nil
 	}
 	uq.Status = status
@@ -999,39 +999,39 @@ func (m *MockUnknownQuestionRepo) UpdateStatus(ctx context.Context, id, userID, 
 	return nil
 }
 
-func (m *MockUnknownQuestionRepo) Clear(ctx context.Context, userID string) error {
+func (m *MockUnknownQuestionRepo) Clear(ctx context.Context, orgID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for id, uq := range m.questions {
-		if uq.UserID == userID {
+		if uq.UserID == orgID {
 			delete(m.questions, id)
 		}
 	}
 	return nil
 }
 
-func (m *MockUnknownQuestionRepo) CountByStatus(ctx context.Context, userID string) (map[string]int, error) {
+func (m *MockUnknownQuestionRepo) CountByStatus(ctx context.Context, orgID string) (map[string]int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	result := map[string]int{"pending": 0, "trained": 0, "ignored": 0}
 	for _, uq := range m.questions {
-		if uq.UserID == userID {
+		if uq.UserID == orgID {
 			result[uq.Status]++
 		}
 	}
 	return result, nil
 }
 
-func (m *MockUnknownQuestionRepo) MostPopular(ctx context.Context, userID string, limit int) ([]map[string]interface{}, error) {
+func (m *MockUnknownQuestionRepo) MostPopular(ctx context.Context, orgID string, limit int) ([]map[string]interface{}, error) {
 	return []map[string]interface{}{}, nil
 }
 
-func (m *MockUnknownQuestionRepo) CountByFilter(ctx context.Context, userID, status string) (int, error) {
+func (m *MockUnknownQuestionRepo) CountByFilter(ctx context.Context, orgID, status string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	count := 0
 	for _, uq := range m.questions {
-		if uq.UserID != userID {
+		if uq.UserID != orgID {
 			continue
 		}
 		if status == "" || uq.Status == status {
@@ -1041,7 +1041,7 @@ func (m *MockUnknownQuestionRepo) CountByFilter(ctx context.Context, userID, sta
 	return count, nil
 }
 
-func (m *MockUnknownQuestionRepo) CountByDate(ctx context.Context, userID string, days int) ([]map[string]interface{}, error) {
+func (m *MockUnknownQuestionRepo) CountByDate(ctx context.Context, orgID string, days int) ([]map[string]interface{}, error) {
 	return []map[string]interface{}{}, nil
 }
 
@@ -1088,12 +1088,12 @@ func (m *MockIntegrationRepo) Create(ctx context.Context, integration *domain.In
 	return nil
 }
 
-func (m *MockIntegrationRepo) ListByUser(ctx context.Context, userID string) ([]domain.Integration, error) {
+func (m *MockIntegrationRepo) ListByOrg(ctx context.Context, orgID string) ([]domain.Integration, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []domain.Integration
 	for _, i := range m.integrations {
-		if i.UserID == userID {
+		if i.UserID == orgID {
 			cp := *i
 			result = append(result, cp)
 		}
@@ -1140,11 +1140,11 @@ func (m *MockIntegrationRepo) UpdateStatus(ctx context.Context, id, status strin
 	return nil
 }
 
-func (m *MockIntegrationRepo) GetByUserAndChannel(ctx context.Context, userID, channel string) (*domain.Integration, error) {
+func (m *MockIntegrationRepo) GetByOrgAndChannel(ctx context.Context, orgID, channel string) (*domain.Integration, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, i := range m.integrations {
-		if i.UserID == userID && i.Channel == channel {
+		if i.UserID == orgID && i.Channel == channel {
 			cp := *i
 			return &cp, nil
 		}
@@ -1194,11 +1194,11 @@ func (m *MockIntegrationRepo) Update(ctx context.Context, integration *domain.In
 	return nil
 }
 
-func (m *MockIntegrationRepo) Disconnect(ctx context.Context, userID, channel string) error {
+func (m *MockIntegrationRepo) Disconnect(ctx context.Context, orgID, channel string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, i := range m.integrations {
-		if i.UserID == userID && i.Channel == channel {
+		if i.UserID == orgID && i.Channel == channel {
 			i.Status = "inactive"
 			i.UpdatedAt = time.Now()
 		}
@@ -1373,12 +1373,12 @@ func (m *MockAPIKeyRepo) Create(ctx context.Context, key *domain.APIKey) error {
 	return nil
 }
 
-func (m *MockAPIKeyRepo) ListByUser(ctx context.Context, userID string) ([]domain.APIKey, error) {
+func (m *MockAPIKeyRepo) ListByOrg(ctx context.Context, orgID string) ([]domain.APIKey, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []domain.APIKey
 	for _, k := range m.keys {
-		if k.UserID == userID && k.IsActive {
+		if k.OrgID == orgID && k.IsActive {
 			cp := *k
 			result = append(result, cp)
 		}
@@ -1386,11 +1386,11 @@ func (m *MockAPIKeyRepo) ListByUser(ctx context.Context, userID string) ([]domai
 	return result, nil
 }
 
-func (m *MockAPIKeyRepo) Revoke(ctx context.Context, id, userID string) error {
+func (m *MockAPIKeyRepo) Revoke(ctx context.Context, id, orgID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	k, ok := m.keys[id]
-	if ok && k.UserID == userID {
+	if ok && k.UserID == orgID {
 		k.IsActive = false
 	}
 	return nil
@@ -1555,12 +1555,12 @@ func (m *MockAuditRepo) Create(ctx context.Context, log *domain.AuditLog) error 
 	return nil
 }
 
-func (m *MockAuditRepo) ListByUser(ctx context.Context, userID string, limit int) ([]domain.AuditLog, error) {
+func (m *MockAuditRepo) ListByOrg(ctx context.Context, orgID string, limit int) ([]domain.AuditLog, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []domain.AuditLog
 	for i := len(m.logs) - 1; i >= 0; i-- {
-		if m.logs[i].UserID == userID {
+		if m.logs[i].OrgID == orgID {
 			cp := *m.logs[i]
 			result = append(result, cp)
 			if limit > 0 && len(result) >= limit {
@@ -1597,6 +1597,9 @@ func (m *MockAuditRepo) ListWithFilters(ctx context.Context, filter *AuditFilter
 	var result []domain.AuditLog
 	for i := len(m.logs) - 1; i >= 0; i-- {
 		log := m.logs[i]
+		if filter.OrgID != "" && log.OrgID != filter.OrgID {
+			continue
+		}
 		if filter.UserID != "" && log.UserID != filter.UserID {
 			continue
 		}
@@ -1747,11 +1750,11 @@ func NewMockWidgetConfigRepo() *MockWidgetConfigRepo {
 	return &MockWidgetConfigRepo{cfgs: make(map[string]*domain.WidgetConfig)}
 }
 
-func (m *MockWidgetConfigRepo) Get(ctx context.Context, userID string) (*domain.WidgetConfig, error) {
+func (m *MockWidgetConfigRepo) Get(ctx context.Context, orgID string) (*domain.WidgetConfig, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, cfg := range m.cfgs {
-		if cfg.UserID == userID {
+		if cfg.OrgID == orgID {
 			cp := *cfg
 			return &cp, nil
 		}
@@ -1925,12 +1928,12 @@ func (m *MockInventoryRepo) DecreaseStock(ctx context.Context, itemID string, qu
 	return nil
 }
 
-func (m *MockInventoryRepo) CountByUser(ctx context.Context, userID string) (int, error) {
+func (m *MockInventoryRepo) CountByOrg(ctx context.Context, orgID string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	count := 0
 	for _, item := range m.items {
-		if item.UserID == userID {
+		if item.UserID == orgID {
 			count++
 		}
 	}
@@ -1969,23 +1972,23 @@ func (m *MockHandoffRepo) Create(ctx context.Context, h *domain.Handoff) error {
 	return nil
 }
 
-func (m *MockHandoffRepo) GetByID(ctx context.Context, id, userID string) (*domain.Handoff, error) {
+func (m *MockHandoffRepo) GetByID(ctx context.Context, id, orgID string) (*domain.Handoff, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.handoffs[id]
-	if !ok || h.UserID != userID {
+	if !ok || h.UserID != orgID {
 		return nil, nil
 	}
 	cp := *h
 	return &cp, nil
 }
 
-func (m *MockHandoffRepo) List(ctx context.Context, userID, status string, limit int) ([]domain.Handoff, error) {
+func (m *MockHandoffRepo) List(ctx context.Context, orgID, status string, limit int) ([]domain.Handoff, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []domain.Handoff
 	for _, h := range m.handoffs {
-		if h.UserID != userID {
+		if h.UserID != orgID {
 			continue
 		}
 		if status != "" && h.Status != status {
@@ -2000,11 +2003,11 @@ func (m *MockHandoffRepo) List(ctx context.Context, userID, status string, limit
 	return result, nil
 }
 
-func (m *MockHandoffRepo) UpdateStatus(ctx context.Context, id, userID, status, notes string) error {
+func (m *MockHandoffRepo) UpdateStatus(ctx context.Context, id, orgID, status, notes string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.handoffs[id]
-	if !ok || h.UserID != userID {
+	if !ok || h.UserID != orgID {
 		return nil
 	}
 	h.Status = status
@@ -2013,8 +2016,8 @@ func (m *MockHandoffRepo) UpdateStatus(ctx context.Context, id, userID, status, 
 	return nil
 }
 
-func (m *MockHandoffRepo) GetPending(ctx context.Context, userID string) ([]domain.Handoff, error) {
-	return m.List(ctx, userID, "pending", 100)
+func (m *MockHandoffRepo) GetPending(ctx context.Context, orgID string) ([]domain.Handoff, error) {
+	return m.List(ctx, orgID, "pending", 100)
 }
 
 func (m *MockHandoffRepo) GetReadyForReminder(ctx context.Context) ([]domain.Handoff, error) {
@@ -2091,17 +2094,17 @@ func NewMockCreditRepo() *MockCreditRepo {
 	}
 }
 
-func (m *MockCreditRepo) GetByUserID(ctx context.Context, userID string) (*domain.UserCredit, error) {
+func (m *MockCreditRepo) GetByOrgID(ctx context.Context, orgID string) (*domain.UserCredit, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, c := range m.credits {
-		if c.UserID == userID {
+		if c.UserID == orgID {
 			cp := *c
 			return &cp, nil
 		}
 	}
 	return &domain.UserCredit{
-		UserID:        userID,
+		UserID:        orgID,
 		Balance:       0,
 		LastUpdatedAt: time.Now(),
 	}, nil
@@ -2234,12 +2237,12 @@ func (m *MockCampaignRepo) Create(ctx context.Context, campaign *domain.Campaign
 	return nil
 }
 
-func (m *MockCampaignRepo) ListByUser(ctx context.Context, userID string) ([]domain.CampaignSchedule, error) {
+func (m *MockCampaignRepo) ListByOrg(ctx context.Context, orgID string) ([]domain.CampaignSchedule, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []domain.CampaignSchedule
 	for _, c := range m.campaigns {
-		if c.UserID == userID {
+		if c.UserID == orgID {
 			cp := *c
 			result = append(result, cp)
 		}
@@ -2330,12 +2333,12 @@ func (m *MockWhatsAppTemplateRepo) Create(ctx context.Context, tpl *domain.Whats
 	return nil
 }
 
-func (m *MockWhatsAppTemplateRepo) ListByUser(ctx context.Context, userID string) ([]domain.WhatsAppTemplate, error) {
+func (m *MockWhatsAppTemplateRepo) ListByOrg(ctx context.Context, orgID string) ([]domain.WhatsAppTemplate, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []domain.WhatsAppTemplate
 	for _, t := range m.templates {
-		if t.UserID == userID {
+		if t.OrgID == orgID {
 			cp := *t
 			result = append(result, cp)
 		}
@@ -2343,14 +2346,14 @@ func (m *MockWhatsAppTemplateRepo) ListByUser(ctx context.Context, userID string
 	return result, nil
 }
 
-func (m *MockWhatsAppTemplateRepo) GetByID(ctx context.Context, id, userID string) (*domain.WhatsAppTemplate, error) {
+func (m *MockWhatsAppTemplateRepo) GetByID(ctx context.Context, id, orgID string) (*domain.WhatsAppTemplate, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	t, ok := m.templates[id]
 	if !ok {
 		return nil, nil
 	}
-	if userID != "" && t.UserID != userID {
+	if orgID != "" && t.UserID != orgID {
 		return nil, nil
 	}
 	cp := *t
@@ -2379,10 +2382,10 @@ func (m *MockWhatsAppTemplateRepo) Update(ctx context.Context, tpl *domain.Whats
 	return nil
 }
 
-func (m *MockWhatsAppTemplateRepo) Delete(ctx context.Context, id, userID string) error {
+func (m *MockWhatsAppTemplateRepo) Delete(ctx context.Context, id, orgID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if t, ok := m.templates[id]; ok && t.UserID == userID {
+	if t, ok := m.templates[id]; ok && t.UserID == orgID {
 		delete(m.templates, id)
 	}
 	return nil
@@ -2466,22 +2469,22 @@ func (m *MockCampaignRecipientRepo) UpdateStatus(ctx context.Context, id, status
 	return nil
 }
 
-func (m *MockCampaignRecipientRepo) MarkOptedOut(ctx context.Context, userID, phone string) error {
+func (m *MockCampaignRecipientRepo) MarkOptedOut(ctx context.Context, orgID, phone string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, r := range m.recipients {
-		if r.UserID == userID && r.Phone == phone && (r.Status == "pending" || r.Status == "sent") {
+		if r.UserID == orgID && r.Phone == phone && (r.Status == "pending" || r.Status == "sent") {
 			r.Status = "opted_out"
 		}
 	}
 	return nil
 }
 
-func (m *MockCampaignRecipientRepo) IsOptedOut(ctx context.Context, userID, phone string) (bool, error) {
+func (m *MockCampaignRecipientRepo) IsOptedOut(ctx context.Context, orgID, phone string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, r := range m.recipients {
-		if r.UserID == userID && r.Phone == phone && r.Status == "opted_out" {
+		if r.UserID == orgID && r.Phone == phone && r.Status == "opted_out" {
 			return true, nil
 		}
 	}

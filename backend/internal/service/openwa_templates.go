@@ -97,7 +97,7 @@ func (ts *TemplateService) Create(ctx context.Context, userID string, req *Creat
 }
 
 func (ts *TemplateService) List(ctx context.Context, userID string) ([]domain.WhatsAppTemplate, error) {
-	return ts.repos.WhatsAppTemplate.ListByUser(ctx, userID)
+	return ts.repos.WhatsAppTemplate.ListByOrg(ctx, userID)
 }
 
 func (ts *TemplateService) GetByID(ctx context.Context, id, userID string) (*domain.WhatsAppTemplate, error) {

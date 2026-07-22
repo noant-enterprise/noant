@@ -165,7 +165,7 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, cust
 	// If channel is whatsapp and we don't have a valid pushname/avatar yet,
 	// query OpenWA dynamically to resolve the real contact profile details.
 	if channel == "whatsapp" && s.openwa != nil && (customerName == "" || customerName == customerKey || customerAvatar == "") {
-		integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+		integration, err := s.repos.Integration.GetByOrgAndChannel(ctx, userID, "whatsapp")
 		if err == nil && integration != nil {
 			if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
 				contactID := FormatContactID(customerKey) // use @c.us for contacts API
@@ -384,7 +384,7 @@ func (s *ChatService) ListConversations(ctx context.Context, userID, status stri
 	// Done in parallel goroutines, we wait for all to finish before returning
 	// so the UI always receives real names on every page load.
 	if s.openwa != nil {
-		integration, intErr := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+		integration, intErr := s.repos.Integration.GetByOrgAndChannel(ctx, userID, "whatsapp")
 		if intErr == nil && integration != nil {
 			if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
 				var wg sync.WaitGroup
@@ -584,7 +584,7 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, conversationID, s
 	if isAgent {
 		if conv.Channel == "whatsapp" && s.openwa != nil {
 			// Find active WhatsApp integration to get sessionID
-			integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+			integration, err := s.repos.Integration.GetByOrgAndChannel(ctx, userID, "whatsapp")
 			if err == nil && integration != nil {
 				if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
 					chatID := FormatChatID(conv.CustomerPhone)
@@ -604,7 +604,7 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, conversationID, s
 			}
 		} else if conv.Channel == "telegram" && s.telegram != nil {
 			// Find active Telegram integration to get bot token
-			integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "telegram")
+			integration, err := s.repos.Integration.GetByOrgAndChannel(ctx, userID, "telegram")
 			if err == nil && integration != nil {
 				if botToken, _ := integration.Config["bot_token"].(string); botToken != "" {
 					chatID, err := strconv.ParseInt(conv.CustomerPhone, 10, 64)
@@ -716,7 +716,7 @@ func (s *ChatService) StoreWhatsAppIntegration(ctx context.Context, userID, sess
 
 // StoreWhatsAppIntegrationWithStatus stores the WhatsApp integration config with a custom status
 func (s *ChatService) StoreWhatsAppIntegrationWithStatus(ctx context.Context, userID, sessionID, phone, status string) {
-	existing, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+	existing, err := s.repos.Integration.GetByOrgAndChannel(ctx, userID, "whatsapp")
 	phoneVal := phone
 	if phoneVal == "" && existing != nil {
 		if p, ok := existing.Config["phone"].(string); ok {
@@ -796,7 +796,7 @@ func (s *ChatService) StoreMediaRecord(ctx context.Context, conversationID, user
 // connection state, so callers can operate on connecting / qr_ready sessions too.
 // Returns nil only when no record exists or a hard error occurred.
 func (s *ChatService) GetWhatsAppIntegration(ctx context.Context, userID string) (*domain.Integration, error) {
-	integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+	integration, err := s.repos.Integration.GetByOrgAndChannel(ctx, userID, "whatsapp")
 	if err != nil || integration == nil {
 		return integration, err
 	}
@@ -822,7 +822,7 @@ func (s *ChatService) DisconnectWhatsAppSession(ctx context.Context, userID stri
 	if s.openwa == nil {
 		return
 	}
-	integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, "whatsapp")
+	integration, err := s.repos.Integration.GetByOrgAndChannel(ctx, userID, "whatsapp")
 	if err == nil && integration != nil {
 		if sessionID, _ := integration.Config["session_id"].(string); sessionID != "" {
 			s.logger.Info("Logging out and deleting WhatsApp session", "sessionID", sessionID)

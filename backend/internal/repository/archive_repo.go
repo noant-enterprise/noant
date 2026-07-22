@@ -21,15 +21,15 @@ func (r *ArchiveRepository) CreateFolder(ctx context.Context, folder *domain.Arc
 	if folder.ID == "" {
 		folder.ID = generateUUID()
 	}
-	query := `INSERT INTO archive_folders (id, user_id, name, type, color, created_at)
-	VALUES (?, ?, ?, ?, ?, NOW())`
-	_, err := r.db.ExecContext(ctx, query, folder.ID, folder.UserID, folder.Name, folder.Type, folder.Color)
+	query := `INSERT INTO archive_folders (id, user_id, org_id, name, type, color, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, NOW())`
+	_, err := r.db.ExecContext(ctx, query, folder.ID, folder.UserID, folder.OrgID, folder.Name, folder.Type, folder.Color)
 	return err
 }
 
-func (r *ArchiveRepository) ListFolders(ctx context.Context, userID, folderType string) ([]domain.ArchiveFolder, error) {
-	query := `SELECT id, user_id, name, type, color, item_count, created_at FROM archive_folders WHERE user_id = ?`
-	args := []interface{}{userID}
+func (r *ArchiveRepository) ListFolders(ctx context.Context, orgID, folderType string) ([]domain.ArchiveFolder, error) {
+	query := `SELECT id, user_id, name, type, color, item_count, created_at FROM archive_folders WHERE org_id = ?`
+	args := []interface{}{orgID}
 	if folderType != "" {
 		query += " AND type = ?"
 		args = append(args, folderType)
@@ -52,8 +52,8 @@ func (r *ArchiveRepository) ListFolders(ctx context.Context, userID, folderType 
 	return folders, nil
 }
 
-func (r *ArchiveRepository) MoveChat(ctx context.Context, conversationID, userID, folderID string) error {
-	query := `UPDATE conversations SET folder_id = ? WHERE id = ? AND user_id = ?`
-	_, err := r.db.ExecContext(ctx, query, folderID, conversationID, userID)
+func (r *ArchiveRepository) MoveChat(ctx context.Context, conversationID, orgID, folderID string) error {
+	query := `UPDATE conversations SET folder_id = ? WHERE id = ? AND org_id = ?`
+	_, err := r.db.ExecContext(ctx, query, folderID, conversationID, orgID)
 	return err
 }

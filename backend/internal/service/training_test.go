@@ -120,7 +120,7 @@ func TestBulkImport(t *testing.T) {
 		}
 	}
 
-	pairs, err := svc.repos.QAPair.ListByUser(ctx, "", "")
+	pairs, err := svc.repos.QAPair.ListByOrg(ctx, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error listing: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestUploadCSV_Success(t *testing.T) {
 		t.Errorf("expected category name 'General', got '%s'", cats[0].Name)
 	}
 
-	pairs, err := svc.repos.QAPair.ListByUser(ctx, "", "")
+	pairs, err := svc.repos.QAPair.ListByOrg(ctx, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error listing pairs: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestUploadCSV_InvalidFormat(t *testing.T) {
 		t.Errorf("expected count 1 (1 data row processed), got %d", count)
 	}
 
-	pairs, err := svc.repos.QAPair.ListByUser(ctx, "", "")
+	pairs, err := svc.repos.QAPair.ListByOrg(ctx, "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

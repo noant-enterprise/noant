@@ -25,15 +25,15 @@ func (r *HandoffRepository) Create(ctx context.Context, h *domain.Handoff) error
 	if h.Quantity == 0 {
 		h.Quantity = 1
 	}
-	query := `INSERT INTO handoffs (id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
-	_, err := r.db.ExecContext(ctx, query, h.ID, h.UserID, h.ConversationID, h.CustomerName, h.CustomerPhone, h.CustomerWhatsapp, h.CustomerLocation, h.ProductName, h.OriginalPrice, h.AgreedPrice, h.Quantity, h.Status)
+	query := `INSERT INTO handoffs (id, user_id, org_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	_, err := r.db.ExecContext(ctx, query, h.ID, h.UserID, h.OrgID, h.ConversationID, h.CustomerName, h.CustomerPhone, h.CustomerWhatsapp, h.CustomerLocation, h.ProductName, h.OriginalPrice, h.AgreedPrice, h.Quantity, h.Status)
 	return err
 }
 
-func (r *HandoffRepository) GetByID(ctx context.Context, id, userID string) (*domain.Handoff, error) {
+func (r *HandoffRepository) GetByID(ctx context.Context, id, orgID string) (*domain.Handoff, error) {
 	h := &domain.Handoff{}
-	row := r.db.QueryRowContext(ctx, `SELECT id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, final_price, owner_notes, owner_notified_at, reminder_count, next_reminder_at, created_at, updated_at FROM handoffs WHERE id = ? AND user_id = ?`, id, userID)
+	row := r.db.QueryRowContext(ctx, `SELECT id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, final_price, owner_notes, owner_notified_at, reminder_count, next_reminder_at, created_at, updated_at FROM handoffs WHERE id = ? AND org_id = ?`, id, orgID)
 	err := row.Scan(&h.ID, &h.UserID, &h.ConversationID, &h.CustomerName, &h.CustomerPhone, &h.CustomerWhatsapp, &h.CustomerLocation, &h.ProductName, &h.OriginalPrice, &h.AgreedPrice, &h.Quantity, &h.Status, &h.FinalPrice, &h.OwnerNotes, &h.OwnerNotifiedAt, &h.ReminderCount, &h.NextReminderAt, &h.CreatedAt, &h.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -44,9 +44,9 @@ func (r *HandoffRepository) GetByID(ctx context.Context, id, userID string) (*do
 	return h, nil
 }
 
-func (r *HandoffRepository) List(ctx context.Context, userID, status string, limit int) ([]domain.Handoff, error) {
-	query := `SELECT id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, final_price, owner_notes, owner_notified_at, reminder_count, next_reminder_at, created_at, updated_at FROM handoffs WHERE user_id = ?`
-	args := []interface{}{userID}
+func (r *HandoffRepository) List(ctx context.Context, orgID, status string, limit int) ([]domain.Handoff, error) {
+	query := `SELECT id, user_id, conversation_id, customer_name, customer_phone, customer_whatsapp, customer_location, product_name, original_price, agreed_price, quantity, status, final_price, owner_notes, owner_notified_at, reminder_count, next_reminder_at, created_at, updated_at FROM handoffs WHERE org_id = ?`
+	args := []interface{}{orgID}
 	if status != "" {
 		query += " AND status = ?"
 		args = append(args, status)
@@ -72,14 +72,14 @@ func (r *HandoffRepository) List(ctx context.Context, userID, status string, lim
 	return handoffs, nil
 }
 
-func (r *HandoffRepository) UpdateStatus(ctx context.Context, id, userID, status, notes string) error {
-	query := `UPDATE handoffs SET status=?, owner_notes=?, updated_at=NOW() WHERE id=? AND user_id=?`
-	_, err := r.db.ExecContext(ctx, query, status, notes, id, userID)
+func (r *HandoffRepository) UpdateStatus(ctx context.Context, id, orgID, status, notes string) error {
+	query := `UPDATE handoffs SET status=?, owner_notes=?, updated_at=NOW() WHERE id=? AND org_id=?`
+	_, err := r.db.ExecContext(ctx, query, status, notes, id, orgID)
 	return err
 }
 
-func (r *HandoffRepository) GetPending(ctx context.Context, userID string) ([]domain.Handoff, error) {
-	return r.List(ctx, userID, "pending", 100)
+func (r *HandoffRepository) GetPending(ctx context.Context, orgID string) ([]domain.Handoff, error) {
+	return r.List(ctx, orgID, "pending", 100)
 }
 
 func (r *HandoffRepository) GetReadyForReminder(ctx context.Context) ([]domain.Handoff, error) {

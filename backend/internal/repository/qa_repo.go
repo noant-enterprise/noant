@@ -23,8 +23,8 @@ func (r *QAPairRepository) Create(ctx context.Context, qa *domain.QAPair) error 
 	if qa.ID == "" {
 		qa.ID = generateUUID()
 	}
-	query := `INSERT INTO qa_pairs (id, user_id, category_id, question, answer, variations, is_active, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	query := `INSERT INTO qa_pairs (id, user_id, org_id, category_id, question, answer, variations, is_active, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
 	variationsJSON := []byte("[]")
 	if len(qa.Variations) > 0 {
 		b, err := json.Marshal(qa.Variations)
@@ -32,7 +32,7 @@ func (r *QAPairRepository) Create(ctx context.Context, qa *domain.QAPair) error 
 			variationsJSON = b
 		}
 	}
-	_, err := r.db.ExecContext(ctx, query, qa.ID, qa.UserID, qa.CategoryID, qa.Question, qa.Answer, string(variationsJSON), qa.IsActive)
+	_, err := r.db.ExecContext(ctx, query, qa.ID, qa.UserID, qa.OrgID, qa.CategoryID, qa.Question, qa.Answer, string(variationsJSON), qa.IsActive)
 	return err
 }
 
@@ -42,8 +42,8 @@ func (r *QAPairRepository) BulkCreate(ctx context.Context, qas []domain.QAPair) 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	query := `INSERT INTO qa_pairs (id, user_id, category_id, question, answer, variations, is_active, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	query := `INSERT INTO qa_pairs (id, user_id, org_id, category_id, question, answer, variations, is_active, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
 	for i := range qas {
 		if qas[i].ID == "" {
 			qas[i].ID = generateUUID()
@@ -55,7 +55,7 @@ func (r *QAPairRepository) BulkCreate(ctx context.Context, qas []domain.QAPair) 
 				variationsJSON = b
 			}
 		}
-		_, err := tx.ExecContext(ctx, query, qas[i].ID, qas[i].UserID, qas[i].CategoryID, qas[i].Question, qas[i].Answer, string(variationsJSON), qas[i].IsActive)
+		_, err := tx.ExecContext(ctx, query, qas[i].ID, qas[i].UserID, qas[i].OrgID, qas[i].CategoryID, qas[i].Question, qas[i].Answer, string(variationsJSON), qas[i].IsActive)
 		if err != nil {
 			return err
 		}
@@ -88,9 +88,9 @@ func (r *QAPairRepository) ListByCategory(ctx context.Context, categoryID string
 	return qas, nil
 }
 
-func (r *QAPairRepository) ListByCategoryAndUser(ctx context.Context, categoryID, userID string) ([]domain.QAPair, error) {
-	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE category_id = ? AND user_id = ? AND is_active = true`
-	rows, err := r.db.QueryContext(ctx, query, categoryID, userID)
+func (r *QAPairRepository) ListByCategoryAndOrg(ctx context.Context, categoryID, orgID string) ([]domain.QAPair, error) {
+	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE category_id = ? AND org_id = ? AND is_active = true`
+	rows, err := r.db.QueryContext(ctx, query, categoryID, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -108,13 +108,13 @@ func (r *QAPairRepository) ListByCategoryAndUser(ctx context.Context, categoryID
 		} else {
 			qa.Variations = []string{}
 		}
-		qa.UserID = userID
+		qa.OrgID = orgID
 		qas = append(qas, qa)
 	}
 	return qas, nil
 }
 
-func (r *QAPairRepository) Search(ctx context.Context, userID, query string) ([]domain.QAPair, error) {
+func (r *QAPairRepository) Search(ctx context.Context, orgID, query string) ([]domain.QAPair, error) {
 	// Clean query by removing common punctuation and trim
 	cleanQuery := query
 	for _, char := range []string{"?", "!", ".", ",", ";", ":"} {
@@ -124,7 +124,7 @@ func (r *QAPairRepository) Search(ctx context.Context, userID, query string) ([]
 
 	sqlQuery := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at
 	FROM qa_pairs 
-	WHERE user_id = ? 
+	WHERE org_id = ? 
 	  AND is_active = true 
 	  AND (
 	      LOWER(question) LIKE LOWER(?) 
@@ -134,7 +134,7 @@ func (r *QAPairRepository) Search(ctx context.Context, userID, query string) ([]
 	  ) LIMIT 10`
 
 	searchTerm := "%" + cleanQuery + "%"
-	rows, err := r.db.QueryContext(ctx, sqlQuery, userID, searchTerm, cleanQuery, searchTerm, searchTerm)
+	rows, err := r.db.QueryContext(ctx, sqlQuery, orgID, searchTerm, cleanQuery, searchTerm, searchTerm)
 	if err != nil {
 		return nil, err
 	}
@@ -157,9 +157,9 @@ func (r *QAPairRepository) Search(ctx context.Context, userID, query string) ([]
 	return qas, nil
 }
 
-func (r *QAPairRepository) ListByUser(ctx context.Context, userID, categoryID string) ([]domain.QAPair, error) {
-	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE user_id = ? AND is_active = true`
-	args := []interface{}{userID}
+func (r *QAPairRepository) ListByOrg(ctx context.Context, orgID, categoryID string) ([]domain.QAPair, error) {
+	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at FROM qa_pairs WHERE org_id = ? AND is_active = true`
+	args := []interface{}{orgID}
 	if categoryID != "" {
 		query += " AND category_id = ?"
 		args = append(args, categoryID)
@@ -206,12 +206,12 @@ func (r *QAPairRepository) GetByID(ctx context.Context, id string) (*domain.QAPa
 	return &qa, nil
 }
 
-func (r *QAPairRepository) GetByQuestion(ctx context.Context, userID, question string) (*domain.QAPair, error) {
+func (r *QAPairRepository) GetByQuestion(ctx context.Context, orgID, question string) (*domain.QAPair, error) {
 	query := `SELECT id, category_id, question, answer, variations, is_active, usage_count, created_at, updated_at 
-	FROM qa_pairs WHERE user_id = ? AND question = ? LIMIT 1`
+	FROM qa_pairs WHERE org_id = ? AND question = ? LIMIT 1`
 	var qa domain.QAPair
 	var variationsJSON sql.NullString
-	err := r.db.QueryRowContext(ctx, query, userID, question).Scan(
+	err := r.db.QueryRowContext(ctx, query, orgID, question).Scan(
 		&qa.ID, &qa.CategoryID, &qa.Question, &qa.Answer, &variationsJSON, 
 		&qa.IsActive, &qa.UsageCount, &qa.CreatedAt, &qa.UpdatedAt,
 	)
@@ -226,12 +226,12 @@ func (r *QAPairRepository) GetByQuestion(ctx context.Context, userID, question s
 	} else {
 		qa.Variations = []string{}
 	}
-	qa.UserID = userID
+	qa.OrgID = orgID
 	return &qa, nil
 }
 
 func (r *QAPairRepository) Update(ctx context.Context, qa *domain.QAPair) error {
-	query := `UPDATE qa_pairs SET category_id = ?, question = ?, answer = ?, variations = ?, is_active = ?, updated_at = NOW() WHERE id = ? AND user_id = ?`
+	query := `UPDATE qa_pairs SET category_id = ?, question = ?, answer = ?, variations = ?, is_active = ?, updated_at = NOW() WHERE id = ? AND org_id = ?`
 	variationsJSON := []byte("[]")
 	if len(qa.Variations) > 0 {
 		b, err := json.Marshal(qa.Variations)
@@ -239,7 +239,7 @@ func (r *QAPairRepository) Update(ctx context.Context, qa *domain.QAPair) error 
 			variationsJSON = b
 		}
 	}
-	_, err := r.db.ExecContext(ctx, query, qa.CategoryID, qa.Question, qa.Answer, string(variationsJSON), qa.IsActive, qa.ID, qa.UserID)
+	_, err := r.db.ExecContext(ctx, query, qa.CategoryID, qa.Question, qa.Answer, string(variationsJSON), qa.IsActive, qa.ID, qa.OrgID)
 	return err
 }
 
@@ -249,14 +249,14 @@ func (r *QAPairRepository) IncrementUsage(ctx context.Context, id string) error 
 	return err
 }
 
-func (r *QAPairRepository) CountByUser(ctx context.Context, userID string) (int, error) {
+func (r *QAPairRepository) CountByOrg(ctx context.Context, orgID string) (int, error) {
 	var count int
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM qa_pairs WHERE user_id = ? AND is_active = true`, userID).Scan(&count)
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM qa_pairs WHERE org_id = ? AND is_active = true`, orgID).Scan(&count)
 	return count, err
 }
 
-func (r *QAPairRepository) Delete(ctx context.Context, id, userID string) error {
-	query := `DELETE FROM qa_pairs WHERE id = ? AND user_id = ?`
-	_, err := r.db.ExecContext(ctx, query, id, userID)
+func (r *QAPairRepository) Delete(ctx context.Context, id, orgID string) error {
+	query := `DELETE FROM qa_pairs WHERE id = ? AND org_id = ?`
+	_, err := r.db.ExecContext(ctx, query, id, orgID)
 	return err
 }

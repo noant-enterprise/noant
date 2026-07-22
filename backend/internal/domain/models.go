@@ -104,6 +104,7 @@ type MessageMetadata struct {
 type QAPair struct {
     ID         string    `json:"id" db:"id"`
     UserID     string    `json:"user_id" db:"user_id"`
+    OrgID      string    `json:"org_id" db:"org_id"`
     CategoryID string    `json:"category_id" db:"category_id"`
     Category   string    `json:"category" db:"category"`
     Question   string    `json:"question" db:"question"`
@@ -120,6 +121,7 @@ type QAPair struct {
 type Category struct {
     ID          string    `json:"id" db:"id"`
     UserID      string    `json:"user_id" db:"user_id"`
+    OrgID       string    `json:"org_id" db:"org_id"`
     Name        string    `json:"name" db:"name"`
     Description string    `json:"description" db:"description"`
     Color       string    `json:"color" db:"color"`
@@ -131,6 +133,7 @@ type Category struct {
 type UnknownQuestion struct {
     ID             string    `json:"id" db:"id"`
     UserID         string    `json:"user_id" db:"user_id"`
+    OrgID          string    `json:"org_id" db:"org_id"`
     Question       string    `json:"question" db:"question"`
     ConversationID string    `json:"conversation_id" db:"conversation_id"`
     Channel        string    `json:"channel" db:"channel"`
@@ -144,6 +147,7 @@ type UnknownQuestion struct {
 type Integration struct {
 	ID        string    `json:"id" db:"id"`
 	UserID    string    `json:"user_id" db:"user_id"`
+	OrgID     string    `json:"org_id" db:"org_id"`
 	Channel   string    `json:"channel" db:"channel"`
 	Status    string    `json:"status" db:"status"` // active, inactive, error
 	Config    map[string]interface{} `json:"config" db:"config"`
@@ -185,6 +189,7 @@ type TeamMember struct {
 type APIKey struct {
 	ID        string    `json:"id" db:"id"`
 	UserID    string    `json:"user_id" db:"user_id"`
+	OrgID     string    `json:"org_id" db:"org_id"`
 	Name      string    `json:"name" db:"name"`
 	Key       string    `json:"key" db:"key_hash"`
 	LastUsed  *time.Time `json:"last_used" db:"last_used"`
@@ -196,6 +201,7 @@ type APIKey struct {
 type ArchiveFolder struct {
 	ID        string    `json:"id" db:"id"`
 	UserID    string    `json:"user_id" db:"user_id"`
+	OrgID     string    `json:"org_id" db:"org_id"`
 	Name      string    `json:"name" db:"name"`
 	Type      string    `json:"type" db:"type"` // chats, contacts, locations
 	Color     string    `json:"color" db:"color"`
@@ -218,6 +224,7 @@ type PaymentPlan struct {
 type Subscription struct {
 	ID                 string    `json:"id" db:"id"`
 	UserID             string    `json:"user_id" db:"user_id"`
+	OrgID              string    `json:"org_id" db:"org_id"`
 	PlanID             string    `json:"plan_id" db:"plan_id"`
 	Status             string    `json:"status" db:"status"`
 	CurrentPeriodStart time.Time `json:"current_period_start" db:"current_period_start"`
@@ -242,6 +249,7 @@ type Notification struct {
 type WidgetConfig struct {
 	ID           string    `json:"id" db:"id"`
 	UserID       string    `json:"user_id" db:"user_id"`
+	OrgID        string    `json:"org_id" db:"org_id"`
 	BrandColor   string    `json:"brand_color" db:"brand_color"`
 	Greeting     string    `json:"greeting" db:"greeting"`
 	BotName      string    `json:"bot_name" db:"bot_name"`
@@ -256,6 +264,7 @@ type WidgetConfig struct {
 type InventoryItem struct {
 	ID            string    `json:"id" db:"id"`
 	UserID        string    `json:"user_id" db:"user_id"`
+	OrgID         string    `json:"org_id" db:"org_id"`
 	Type          string    `json:"type" db:"type"` // product, service, package
 	Name          string    `json:"name" db:"name"`
 	Description   string    `json:"description" db:"description"`
@@ -272,6 +281,7 @@ type InventoryItem struct {
 type Handoff struct {
 	ID               string     `json:"id" db:"id"`
 	UserID           string     `json:"user_id" db:"user_id"`
+	OrgID            string     `json:"org_id" db:"org_id"`
 	ConversationID   string     `json:"conversation_id" db:"conversation_id"`
 	CustomerName     string     `json:"customer_name" db:"customer_name"`
 	CustomerPhone    string     `json:"customer_phone" db:"customer_phone"`
@@ -296,6 +306,7 @@ type Handoff struct {
 type UserCredit struct {
 	ID            string    `json:"id" db:"id"`
 	UserID        string    `json:"user_id" db:"user_id"`
+	OrgID         string    `json:"org_id" db:"org_id"`
 	Balance       int       `json:"balance" db:"balance"`
 	ExpiresAt     *time.Time `json:"expires_at" db:"expires_at"`
 	LastUpdatedAt time.Time `json:"last_updated_at" db:"last_updated_at"`
@@ -305,6 +316,7 @@ type UserCredit struct {
 type CreditPurchase struct {
 	ID           string    `json:"id" db:"id"`
 	UserID       string    `json:"user_id" db:"user_id"`
+	OrgID        string    `json:"org_id" db:"org_id"`
 	CheckoutID   string    `json:"checkout_id" db:"checkout_id"`
 	PackType     string    `json:"pack_type" db:"pack_type"` // small/medium/large
 	Amount       int       `json:"amount" db:"amount"`
@@ -339,6 +351,7 @@ type MediaMessage struct {
 type WhatsAppTemplate struct {
 	ID           string    `json:"id" db:"id"`
 	UserID       string    `json:"user_id" db:"user_id"`
+	OrgID        string    `json:"org_id" db:"org_id"`
 	Name         string    `json:"name" db:"name"`
 	Language     string    `json:"language" db:"language"`
 	Category     string    `json:"category" db:"category"` // marketing, utility, authentication
@@ -378,6 +391,7 @@ type CampaignRecipient struct {
 	ID             string    `json:"id" db:"id"`
 	CampaignID     string    `json:"campaign_id" db:"campaign_id"`
 	UserID         string    `json:"user_id" db:"user_id"`
+	OrgID          string    `json:"org_id" db:"org_id"`
 	Phone          string    `json:"phone" db:"phone"`
 	Name           string    `json:"name" db:"name"`
 	Status         string    `json:"status" db:"status"` // pending, sent, delivered, read, failed, blocked, opted_out
@@ -392,6 +406,7 @@ type CampaignRecipient struct {
 type CampaignSchedule struct {
 	ID          string    `json:"id" db:"id"`
 	UserID      string    `json:"user_id" db:"user_id"`
+	OrgID       string    `json:"org_id" db:"org_id"`
 	Name        string    `json:"name" db:"name"`
 	StartDate   string    `json:"start_date" db:"start_date"` // stored as DATE, but handled as string
 	EndDate     string    `json:"end_date" db:"end_date"`     // stored as DATE, but handled as string

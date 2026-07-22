@@ -72,13 +72,13 @@ func (s *CampaignService) Create(ctx context.Context, userID string, req CreateC
 
 // List returns all campaigns for a user
 func (s *CampaignService) List(ctx context.Context, userID string) ([]domain.CampaignSchedule, error) {
-	return s.repos.Campaign.ListByUser(ctx, userID)
+	return s.repos.Campaign.ListByOrg(ctx, userID)
 }
 
 // Cancel cancels a campaign by ID
 func (s *CampaignService) Cancel(ctx context.Context, id, userID string) error {
 	// First verify the campaign belongs to the user
-	campaigns, err := s.repos.Campaign.ListByUser(ctx, userID)
+	campaigns, err := s.repos.Campaign.ListByOrg(ctx, userID)
 	if err != nil {
 		return err
 	}

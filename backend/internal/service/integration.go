@@ -47,11 +47,11 @@ func NewIntegrationService(cfg *config.Config, repos *repository.Repositories, r
 }
 
 func (s *IntegrationService) List(ctx context.Context, userID string) ([]domain.Integration, error) {
-	return s.repos.Integration.ListByUser(ctx, userID)
+	return s.repos.Integration.ListByOrg(ctx, userID)
 }
 
 func (s *IntegrationService) Connect(ctx context.Context, userID, channel string, cfg map[string]interface{}) (*domain.Integration, error) {
-	existing, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, channel)
+	existing, err := s.repos.Integration.GetByOrgAndChannel(ctx, userID, channel)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func (s *IntegrationService) Disconnect(ctx context.Context, userID, channel str
 		s.chat.DisconnectWhatsAppSession(ctx, userID)
 	}
 	if channel == "telegram" && s.telegram != nil {
-		if integration, err := s.repos.Integration.GetByUserAndChannel(ctx, userID, channel); err == nil && integration != nil {
+		if integration, err := s.repos.Integration.GetByOrgAndChannel(ctx, userID, channel); err == nil && integration != nil {
 			s.stopTelegramPolling(integration.ID)
 			if token, _ := integration.Config["bot_token"].(string); strings.TrimSpace(token) != "" {
 				if err := s.telegram.DeleteWebhook(ctx, token); err != nil {

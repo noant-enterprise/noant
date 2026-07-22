@@ -1182,9 +1182,9 @@ func TestStoreWhatsAppIntegration_CreatesNew(t *testing.T) {
 
 	svc.StoreWhatsAppIntegration(ctx, "user-1", "session-123", "+1234567890")
 
-	integration, err := svc.repos.Integration.GetByUserAndChannel(ctx, "user-1", "whatsapp")
+	integration, err := svc.repos.Integration.GetByOrgAndChannel(ctx, "user-1", "whatsapp")
 	if err != nil {
-		t.Fatalf("GetByUserAndChannel returned error: %v", err)
+		t.Fatalf("GetByOrgAndChannel returned error: %v", err)
 	}
 	if integration == nil {
 		t.Fatal("integration should exist after StoreWhatsAppIntegration")
@@ -1200,7 +1200,7 @@ func TestStoreWhatsAppIntegration_WithStatus(t *testing.T) {
 
 	svc.StoreWhatsAppIntegrationWithStatus(ctx, "user-1", "session-123", "+1234567890", "connecting")
 
-	integration, _ := svc.repos.Integration.GetByUserAndChannel(ctx, "user-1", "whatsapp")
+	integration, _ := svc.repos.Integration.GetByOrgAndChannel(ctx, "user-1", "whatsapp")
 	if integration == nil {
 		t.Fatal("integration should exist")
 	}
@@ -1216,7 +1216,7 @@ func TestStoreWhatsAppIntegration_UpdatesExisting(t *testing.T) {
 	svc.StoreWhatsAppIntegration(ctx, "user-1", "session-old", "+1234567890")
 	svc.StoreWhatsAppIntegration(ctx, "user-1", "session-new", "+1234567890")
 
-	integration, _ := svc.repos.Integration.GetByUserAndChannel(ctx, "user-1", "whatsapp")
+	integration, _ := svc.repos.Integration.GetByOrgAndChannel(ctx, "user-1", "whatsapp")
 	if integration == nil {
 		t.Fatal("integration should exist")
 	}
@@ -1313,7 +1313,7 @@ func TestRemoveWhatsAppIntegration(t *testing.T) {
 	svc.StoreWhatsAppIntegration(ctx, "user-1", "session-123", "+1234567890")
 	svc.RemoveWhatsAppIntegration(ctx, "user-1")
 
-	integration, _ := svc.repos.Integration.GetByUserAndChannel(ctx, "user-1", "whatsapp")
+	integration, _ := svc.repos.Integration.GetByOrgAndChannel(ctx, "user-1", "whatsapp")
 	if integration != nil && integration.Status != "inactive" {
 		t.Errorf("integration status = %q, want %q after RemoveWhatsAppIntegration", integration.Status, "inactive")
 	}

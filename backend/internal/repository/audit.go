@@ -26,21 +26,21 @@ func (r *AuditRepository) Create(ctx context.Context, log *domain.AuditLog) erro
 		detailsJSON = string(b)
 	}
 
-	query := `INSERT INTO audit_logs (id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at)
-			  VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, NOW())`
+	query := `INSERT INTO audit_logs (id, user_id, org_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at)
+			  VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
 
-	_, err := r.db.ExecContext(ctx, query, log.UserID, log.Action, log.ResourceType, log.ResourceID, detailsJSON, log.IPAddress, log.UserAgent)
+	_, err := r.db.ExecContext(ctx, query, log.UserID, log.OrgID, log.Action, log.ResourceType, log.ResourceID, detailsJSON, log.IPAddress, log.UserAgent)
 	if err != nil {
 		return fmt.Errorf("failed to create audit log: %w", err)
 	}
 	return nil
 }
 
-func (r *AuditRepository) ListByUser(ctx context.Context, userID string, limit int) ([]domain.AuditLog, error) {
+func (r *AuditRepository) ListByOrg(ctx context.Context, orgID string, limit int) ([]domain.AuditLog, error) {
 	query := `SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at 
-			  FROM audit_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`
+			  FROM audit_logs WHERE org_id = ? ORDER BY created_at DESC LIMIT ?`
 
-	rows, err := r.db.QueryContext(ctx, query, userID, limit)
+	rows, err := r.db.QueryContext(ctx, query, orgID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +83,7 @@ func (r *AuditRepository) CleanupOld(ctx context.Context, days int) (int64, erro
 }
 
 type AuditFilter struct {
+	OrgID        string
 	UserID       string
 	Action       string
 	ResourceType string
@@ -98,8 +99,8 @@ type AuditListResult struct {
 }
 
 func (r *AuditRepository) ListWithFilters(ctx context.Context, filter *AuditFilter) (*AuditListResult, error) {
-	where := "1=1"
-	args := []interface{}{}
+	where := "org_id = ?"
+	args := []interface{}{filter.OrgID}
 
 	if filter.UserID != "" {
 		where += " AND user_id = ?"

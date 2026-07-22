@@ -146,7 +146,7 @@ func (s *PlanService) CanAddInventory(ctx context.Context, userID, planID string
 	switch planID {
 	case "free":
 		// Free plan limited to 10 inventory items
-		count, err := s.repos.Inventory.CountByUser(ctx, userID)
+		count, err := s.repos.Inventory.CountByOrg(ctx, userID)
 		if err != nil {
 			return false, 0, err
 		}

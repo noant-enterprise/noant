@@ -21,9 +21,9 @@ func (r *CampaignRecipientRepository) Create(ctx context.Context, cr *domain.Cam
 		cr.ID = generateUUID()
 	}
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO campaign_recipients (id, campaign_id, user_id, phone, name, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-		cr.ID, cr.CampaignID, cr.UserID, cr.Phone, cr.Name, cr.Status)
+		`INSERT INTO campaign_recipients (id, campaign_id, user_id, org_id, phone, name, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+		cr.ID, cr.CampaignID, cr.UserID, cr.OrgID, cr.Phone, cr.Name, cr.Status)
 	return err
 }
 
@@ -64,18 +64,18 @@ func (r *CampaignRecipientRepository) UpdateStatus(ctx context.Context, id, stat
 	return err
 }
 
-func (r *CampaignRecipientRepository) MarkOptedOut(ctx context.Context, userID, phone string) error {
+func (r *CampaignRecipientRepository) MarkOptedOut(ctx context.Context, orgID, phone string) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE campaign_recipients SET status = 'opted_out' WHERE user_id = ? AND phone = ? AND status IN ('pending', 'sent')`,
-		userID, phone)
+		`UPDATE campaign_recipients SET status = 'opted_out' WHERE org_id = ? AND phone = ? AND status IN ('pending', 'sent')`,
+		orgID, phone)
 	return err
 }
 
-func (r *CampaignRecipientRepository) IsOptedOut(ctx context.Context, userID, phone string) (bool, error) {
+func (r *CampaignRecipientRepository) IsOptedOut(ctx context.Context, orgID, phone string) (bool, error) {
 	var count int
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM campaign_recipients WHERE user_id = ? AND phone = ? AND status = 'opted_out'`,
-		userID, phone).Scan(&count)
+		`SELECT COUNT(*) FROM campaign_recipients WHERE org_id = ? AND phone = ? AND status = 'opted_out'`,
+		orgID, phone).Scan(&count)
 	if err != nil {
 		return false, err
 	}

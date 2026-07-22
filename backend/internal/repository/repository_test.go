@@ -226,8 +226,8 @@ func TestMockQAPairRepo_CRUD(t *testing.T) {
 		t.Errorf("Question = %q", got.Question)
 	}
 
-	qas, err := repo.ListByUser(ctx, "user-1", "")
-	if err != nil { t.Fatalf("ListByUser: %v", err) }
+	qas, err := repo.ListByOrg(ctx, "user-1", "")
+	if err != nil { t.Fatalf("ListByOrg: %v", err) }
 	if len(qas) != 1 { t.Errorf("len = %d, want 1", len(qas)) }
 
 	if err := repo.Update(ctx, &domain.QAPair{ID: "qa-1", UserID: "user-1", Question: "Updated?", Answer: "Updated!", IsActive: true}); err != nil {
@@ -238,8 +238,8 @@ func TestMockQAPairRepo_CRUD(t *testing.T) {
 		t.Errorf("Question after update = %q, want Updated?", got.Question)
 	}
 
-	count, err := repo.CountByUser(ctx, "user-1")
-	if err != nil { t.Fatalf("CountByUser: %v", err) }
+	count, err := repo.CountByOrg(ctx, "user-1")
+	if err != nil { t.Fatalf("CountByOrg: %v", err) }
 	if count != 1 { t.Errorf("count = %d, want 1", count) }
 
 	if err := repo.Delete(ctx, "qa-1", "user-1"); err != nil {
@@ -361,12 +361,12 @@ func TestMockIntegrationRepo_CRUD(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	got, err := repo.GetByUserAndChannel(ctx, "user-1", "whatsapp")
-	if err != nil { t.Fatalf("GetByUserAndChannel: %v", err) }
-	if got == nil { t.Fatal("GetByUserAndChannel returned nil") }
+	got, err := repo.GetByOrgAndChannel(ctx, "user-1", "whatsapp")
+	if err != nil { t.Fatalf("GetByOrgAndChannel: %v", err) }
+	if got == nil { t.Fatal("GetByOrgAndChannel returned nil") }
 
-	integrations, err := repo.ListByUser(ctx, "user-1")
-	if err != nil { t.Fatalf("ListByUser: %v", err) }
+	integrations, err := repo.ListByOrg(ctx, "user-1")
+	if err != nil { t.Fatalf("ListByOrg: %v", err) }
 	if len(integrations) != 1 { t.Errorf("len = %d, want 1", len(integrations)) }
 }
 
@@ -413,9 +413,9 @@ func TestMockCreditRepo_UpsertAndGet(t *testing.T) {
 		t.Fatalf("Upsert: %v", err)
 	}
 
-	got, err := repo.GetByUserID(ctx, "user-1")
-	if err != nil { t.Fatalf("GetByUserID: %v", err) }
-	if got == nil { t.Fatal("GetByUserID returned nil") }
+	got, err := repo.GetByOrgID(ctx, "user-1")
+	if err != nil { t.Fatalf("GetByOrgID: %v", err) }
+	if got == nil { t.Fatal("GetByOrgID returned nil") }
 	if got.Balance != 100 {
 		t.Errorf("Balance = %d, want 100", got.Balance)
 	}
@@ -423,7 +423,7 @@ func TestMockCreditRepo_UpsertAndGet(t *testing.T) {
 	if err := repo.Deduct(ctx, "user-1", 30); err != nil {
 		t.Fatalf("Deduct: %v", err)
 	}
-	got, _ = repo.GetByUserID(ctx, "user-1")
+	got, _ = repo.GetByOrgID(ctx, "user-1")
 	if got.Balance != 70 {
 		t.Errorf("Balance after deduct = %d, want 70", got.Balance)
 	}
@@ -442,8 +442,8 @@ func TestMockCampaignRepo_CRUD(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	camps, err := repo.ListByUser(ctx, "user-1")
-	if err != nil { t.Fatalf("ListByUser: %v", err) }
+	camps, err := repo.ListByOrg(ctx, "user-1")
+	if err != nil { t.Fatalf("ListByOrg: %v", err) }
 	if len(camps) != 1 { t.Errorf("len = %d, want 1", len(camps)) }
 }
 
@@ -455,13 +455,13 @@ func TestMockAuditRepo_CreateAndList(t *testing.T) {
 	repo := NewMockAuditRepo()
 	ctx := context.Background()
 
-	log := &domain.AuditLog{ID: "audit-1", UserID: "user-1", Action: "login"}
+	log := &domain.AuditLog{ID: "audit-1", UserID: "user-1", OrgID: "user-1", Action: "login"}
 	if err := repo.Create(ctx, log); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	logs, err := repo.ListByUser(ctx, "user-1", 10)
-	if err != nil { t.Fatalf("ListByUser: %v", err) }
+	logs, err := repo.ListByOrg(ctx, "user-1", 10)
+	if err != nil { t.Fatalf("ListByOrg: %v", err) }
 	if len(logs) != 1 { t.Errorf("len = %d, want 1", len(logs)) }
 }
 
@@ -473,7 +473,7 @@ func TestMockWidgetConfigRepo_UpsertAndGet(t *testing.T) {
 	repo := NewMockWidgetConfigRepo()
 	ctx := context.Background()
 
-	cfg := &domain.WidgetConfig{UserID: "user-1", WidgetAPIKey: "key-123", BrandColor: "#0ea5e9", IsActive: true}
+	cfg := &domain.WidgetConfig{UserID: "user-1", OrgID: "user-1", WidgetAPIKey: "key-123", BrandColor: "#0ea5e9", IsActive: true}
 	if err := repo.Upsert(ctx, cfg); err != nil {
 		t.Fatalf("Upsert: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestMockWhatsAppTemplateRepo_CRUD(t *testing.T) {
 	repo := NewMockWhatsAppTemplateRepo()
 	ctx := context.Background()
 
-	tpl := &domain.WhatsAppTemplate{ID: "tpl-1", UserID: "user-1", Name: "Welcome", Status: "approved"}
+	tpl := &domain.WhatsAppTemplate{ID: "tpl-1", UserID: "user-1", OrgID: "user-1", Name: "Welcome", Status: "approved"}
 	if err := repo.Create(ctx, tpl); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -531,8 +531,8 @@ func TestMockWhatsAppTemplateRepo_CRUD(t *testing.T) {
 	if err != nil { t.Fatalf("GetByID: %v", err) }
 	if got == nil { t.Fatal("GetByID returned nil") }
 
-	tpls, err := repo.ListByUser(ctx, "user-1")
-	if err != nil { t.Fatalf("ListByUser: %v", err) }
+	tpls, err := repo.ListByOrg(ctx, "user-1")
+	if err != nil { t.Fatalf("ListByOrg: %v", err) }
 	if len(tpls) != 1 { t.Errorf("len = %d, want 1", len(tpls)) }
 
 	if err := repo.Delete(ctx, "tpl-1", "user-1"); err != nil {
@@ -586,13 +586,13 @@ func TestMockAPIKeyRepo_CreateAndList(t *testing.T) {
 	repo := NewMockAPIKeyRepo()
 	ctx := context.Background()
 
-	key := &domain.APIKey{ID: "key-1", UserID: "user-1", Key: "ak_test123", IsActive: true}
+	key := &domain.APIKey{ID: "key-1", UserID: "user-1", OrgID: "user-1", Key: "ak_test123", IsActive: true}
 	if err := repo.Create(ctx, key); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	keys, err := repo.ListByUser(ctx, "user-1")
-	if err != nil { t.Fatalf("ListByUser: %v", err) }
+	keys, err := repo.ListByOrg(ctx, "user-1")
+	if err != nil { t.Fatalf("ListByOrg: %v", err) }
 	if len(keys) != 1 { t.Errorf("len = %d, want 1", len(keys)) }
 
 	if err := repo.Revoke(ctx, "key-1", "user-1"); err != nil {

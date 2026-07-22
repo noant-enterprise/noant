@@ -22,15 +22,15 @@ func (r *UnknownQuestionRepository) Create(ctx context.Context, uq *domain.Unkno
 	if uq.ID == "" {
 		uq.ID = generateUUID()
 	}
-	query := `INSERT INTO unknown_questions (id, user_id, question, conversation_id, channel, status, created_at)
-	VALUES (?, ?, ?, ?, ?, ?, NOW())`
-	_, err := r.db.ExecContext(ctx, query, uq.ID, uq.UserID, uq.Question, uq.ConversationID, uq.Channel, uq.Status)
+	query := `INSERT INTO unknown_questions (id, user_id, org_id, question, conversation_id, channel, status, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`
+	_, err := r.db.ExecContext(ctx, query, uq.ID, uq.UserID, uq.OrgID, uq.Question, uq.ConversationID, uq.Channel, uq.Status)
 	return err
 }
 
-func (r *UnknownQuestionRepository) GetByIDAndUser(ctx context.Context, id, userID string) (*domain.UnknownQuestion, error) {
-	query := `SELECT id, user_id, question, conversation_id, channel, status, suggested_answer, category_id, created_at FROM unknown_questions WHERE id = ? AND user_id = ?`
-	row := r.db.QueryRowContext(ctx, query, id, userID)
+func (r *UnknownQuestionRepository) GetByIDAndOrg(ctx context.Context, id, orgID string) (*domain.UnknownQuestion, error) {
+	query := `SELECT id, user_id, question, conversation_id, channel, status, suggested_answer, category_id, created_at FROM unknown_questions WHERE id = ? AND org_id = ?`
+	row := r.db.QueryRowContext(ctx, query, id, orgID)
 	uq := &domain.UnknownQuestion{}
 	err := row.Scan(&uq.ID, &uq.UserID, &uq.Question, &uq.ConversationID, &uq.Channel, &uq.Status, &uq.SuggestedAnswer, &uq.CategoryID, &uq.CreatedAt)
 	if err != nil {
@@ -42,9 +42,9 @@ func (r *UnknownQuestionRepository) GetByIDAndUser(ctx context.Context, id, user
 	return uq, nil
 }
 
-func (r *UnknownQuestionRepository) List(ctx context.Context, userID, status string, limit, offset int) ([]domain.UnknownQuestion, error) {
-	query := `SELECT id, question, conversation_id, channel, status, suggested_answer, category_id, created_at FROM unknown_questions WHERE user_id = ?`
-	args := []interface{}{userID}
+func (r *UnknownQuestionRepository) List(ctx context.Context, orgID, status string, limit, offset int) ([]domain.UnknownQuestion, error) {
+	query := `SELECT id, question, conversation_id, channel, status, suggested_answer, category_id, created_at FROM unknown_questions WHERE org_id = ?`
+	args := []interface{}{orgID}
 	if status != "" {
 		query += " AND status = ?"
 		args = append(args, status)
@@ -68,7 +68,7 @@ func (r *UnknownQuestionRepository) List(ctx context.Context, userID, status str
 	return questions, nil
 }
 
-func (r *UnknownQuestionRepository) BatchTrain(ctx context.Context, userID, answer, categoryID string, ids []string) error {
+func (r *UnknownQuestionRepository) BatchTrain(ctx context.Context, orgID, answer, categoryID string, ids []string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -77,16 +77,16 @@ func (r *UnknownQuestionRepository) BatchTrain(ctx context.Context, userID, answ
 
 	for _, id := range ids {
 		var question string
-		err := tx.QueryRowContext(ctx, `SELECT question FROM unknown_questions WHERE id = ? AND user_id = ?`, id, userID).Scan(&question)
+		err := tx.QueryRowContext(ctx, `SELECT question FROM unknown_questions WHERE id = ? AND org_id = ?`, id, orgID).Scan(&question)
 		if err != nil {
 			continue
 		}
 		qaID := generateUUID()
-		_, err = tx.ExecContext(ctx, `INSERT INTO qa_pairs (id, user_id, category_id, question, answer, is_active, created_at) VALUES (?, ?, ?, ?, ?, true, NOW())`, qaID, userID, categoryID, question, answer)
+		_, err = tx.ExecContext(ctx, `INSERT INTO qa_pairs (id, user_id, org_id, category_id, question, answer, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, true, NOW())`, qaID, "", orgID, categoryID, question, answer)
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE unknown_questions SET status = 'trained', suggested_answer = ?, category_id = ? WHERE id = ? AND user_id = ?`, answer, categoryID, id, userID)
+		_, err = tx.ExecContext(ctx, `UPDATE unknown_questions SET status = 'trained', suggested_answer = ?, category_id = ? WHERE id = ? AND org_id = ?`, answer, categoryID, id, orgID)
 		if err != nil {
 			return err
 		}
@@ -94,7 +94,7 @@ func (r *UnknownQuestionRepository) BatchTrain(ctx context.Context, userID, answ
 	return tx.Commit()
 }
 
-func (r *UnknownQuestionRepository) BatchIgnore(ctx context.Context, userID string, ids []string) error {
+func (r *UnknownQuestionRepository) BatchIgnore(ctx context.Context, orgID string, ids []string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -102,7 +102,7 @@ func (r *UnknownQuestionRepository) BatchIgnore(ctx context.Context, userID stri
 	defer func() { _ = tx.Rollback() }()
 
 	for _, id := range ids {
-		_, err := tx.ExecContext(ctx, `UPDATE unknown_questions SET status = 'ignored' WHERE id = ? AND user_id = ?`, id, userID)
+		_, err := tx.ExecContext(ctx, `UPDATE unknown_questions SET status = 'ignored' WHERE id = ? AND org_id = ?`, id, orgID)
 		if err != nil {
 			return err
 		}
@@ -110,29 +110,29 @@ func (r *UnknownQuestionRepository) BatchIgnore(ctx context.Context, userID stri
 	return tx.Commit()
 }
 
-func (r *UnknownQuestionRepository) ExistsPending(ctx context.Context, userID, question string) (bool, error) {
+func (r *UnknownQuestionRepository) ExistsPending(ctx context.Context, orgID, question string) (bool, error) {
 	var count int
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM unknown_questions WHERE user_id = ? AND LOWER(question) = ? AND status = 'pending'`, userID, strings.ToLower(question)).Scan(&count)
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM unknown_questions WHERE org_id = ? AND LOWER(question) = ? AND status = 'pending'`, orgID, strings.ToLower(question)).Scan(&count)
 	if err != nil {
 		return false, err
 	}
 	return count > 0, nil
 }
 
-func (r *UnknownQuestionRepository) UpdateStatus(ctx context.Context, id, userID, status string, answer, categoryID *string) error {
-	query := `UPDATE unknown_questions SET status = ?, suggested_answer = ?, category_id = ? WHERE id = ? AND user_id = ?`
-	_, err := r.db.ExecContext(ctx, query, status, answer, categoryID, id, userID)
+func (r *UnknownQuestionRepository) UpdateStatus(ctx context.Context, id, orgID, status string, answer, categoryID *string) error {
+	query := `UPDATE unknown_questions SET status = ?, suggested_answer = ?, category_id = ? WHERE id = ? AND org_id = ?`
+	_, err := r.db.ExecContext(ctx, query, status, answer, categoryID, id, orgID)
 	return err
 }
 
-func (r *UnknownQuestionRepository) Clear(ctx context.Context, userID string) error {
-	query := `DELETE FROM unknown_questions WHERE user_id = ?`
-	_, err := r.db.ExecContext(ctx, query, userID)
+func (r *UnknownQuestionRepository) Clear(ctx context.Context, orgID string) error {
+	query := `DELETE FROM unknown_questions WHERE org_id = ?`
+	_, err := r.db.ExecContext(ctx, query, orgID)
 	return err
 }
 
-func (r *UnknownQuestionRepository) CountByStatus(ctx context.Context, userID string) (map[string]int, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT status, COUNT(*) as count FROM unknown_questions WHERE user_id = ? GROUP BY status`, userID)
+func (r *UnknownQuestionRepository) CountByStatus(ctx context.Context, orgID string) (map[string]int, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT status, COUNT(*) as count FROM unknown_questions WHERE org_id = ? GROUP BY status`, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -148,9 +148,9 @@ func (r *UnknownQuestionRepository) CountByStatus(ctx context.Context, userID st
 	return result, nil
 }
 
-func (r *UnknownQuestionRepository) MostPopular(ctx context.Context, userID string, limit int) ([]map[string]interface{}, error) {
-	query := `SELECT question, COUNT(*) as count FROM unknown_questions WHERE user_id = ? AND status = 'pending' GROUP BY question ORDER BY count DESC LIMIT ?`
-	rows, err := r.db.QueryContext(ctx, query, userID, limit)
+func (r *UnknownQuestionRepository) MostPopular(ctx context.Context, orgID string, limit int) ([]map[string]interface{}, error) {
+	query := `SELECT question, COUNT(*) as count FROM unknown_questions WHERE org_id = ? AND status = 'pending' GROUP BY question ORDER BY count DESC LIMIT ?`
+	rows, err := r.db.QueryContext(ctx, query, orgID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -166,9 +166,9 @@ func (r *UnknownQuestionRepository) MostPopular(ctx context.Context, userID stri
 	return result, nil
 }
 
-func (r *UnknownQuestionRepository) CountByFilter(ctx context.Context, userID, status string) (int, error) {
-	query := `SELECT COUNT(*) FROM unknown_questions WHERE user_id = ?`
-	args := []interface{}{userID}
+func (r *UnknownQuestionRepository) CountByFilter(ctx context.Context, orgID, status string) (int, error) {
+	query := `SELECT COUNT(*) FROM unknown_questions WHERE org_id = ?`
+	args := []interface{}{orgID}
 	if status != "" {
 		query += " AND status = ?"
 		args = append(args, status)
@@ -181,9 +181,9 @@ func (r *UnknownQuestionRepository) CountByFilter(ctx context.Context, userID, s
 	return total, nil
 }
 
-func (r *UnknownQuestionRepository) CountByDate(ctx context.Context, userID string, days int) ([]map[string]interface{}, error) {
-	query := `SELECT DATE(created_at) as date, COUNT(*) as count FROM unknown_questions WHERE user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) GROUP BY DATE(created_at) ORDER BY date`
-	rows, err := r.db.QueryContext(ctx, query, userID, days)
+func (r *UnknownQuestionRepository) CountByDate(ctx context.Context, orgID string, days int) ([]map[string]interface{}, error) {
+	query := `SELECT DATE(created_at) as date, COUNT(*) as count FROM unknown_questions WHERE org_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) GROUP BY DATE(created_at) ORDER BY date`
+	rows, err := r.db.QueryContext(ctx, query, orgID, days)
 	if err != nil {
 		return nil, err
 	}

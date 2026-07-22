@@ -273,7 +273,7 @@ func (s *EmbeddingService) getOrCreateCache(ctx context.Context, userID string) 
 	s.cacheMu.RUnlock()
 
 	// Load from DB
-	qas, err := s.repos.QAPair.ListByUser(ctx, userID, "")
+	qas, err := s.repos.QAPair.ListByOrg(ctx, userID, "")
 	if err != nil || len(qas) == 0 {
 		return nil
 	}

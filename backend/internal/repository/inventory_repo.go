@@ -102,9 +102,9 @@ func (r *InventoryRepository) DecreaseStock(ctx context.Context, itemID string, 
 	return err
 }
 
-func (r *InventoryRepository) CountByUser(ctx context.Context, userID string) (int, error) {
+func (r *InventoryRepository) CountByOrg(ctx context.Context, orgID string) (int, error) {
 	var count int
-	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM inventory_items WHERE user_id = ?", userID).Scan(&count)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM inventory_items WHERE user_id = ?", orgID).Scan(&count)
 	if err != nil {
 		return 0, err
 	}

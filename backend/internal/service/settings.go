@@ -56,7 +56,7 @@ func (s *SettingsService) ExportUserData(ctx context.Context, userID string) (ma
 }
 
 func (s *SettingsService) ListAPIKeys(ctx context.Context, userID string) ([]domain.APIKey, error) {
-	return s.repos.APIKey.ListByUser(ctx, userID)
+	return s.repos.APIKey.ListByOrg(ctx, userID)
 }
 
 func (s *SettingsService) CreateAPIKey(ctx context.Context, userID, name string) (*domain.APIKey, error) {

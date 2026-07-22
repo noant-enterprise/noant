@@ -86,11 +86,11 @@ func NewWidgetConfigRepository(db *sql.DB, redis *infrastructure.RedisClient) *W
 	return &WidgetConfigRepository{db: db, redis: redis}
 }
 
-func (r *WidgetConfigRepository) Get(ctx context.Context, userID string) (*domain.WidgetConfig, error) {
+func (r *WidgetConfigRepository) Get(ctx context.Context, orgID string) (*domain.WidgetConfig, error) {
 	cfg := &domain.WidgetConfig{}
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, user_id, brand_color, greeting, bot_name, position, widget_api_key, is_active, created_at, updated_at
-		FROM widget_configs WHERE user_id = ?`, userID).Scan(
+		FROM widget_configs WHERE org_id = ?`, orgID).Scan(
 		&cfg.ID, &cfg.UserID, &cfg.BrandColor, &cfg.Greeting, &cfg.BotName, &cfg.Position,
 		&cfg.WidgetAPIKey, &cfg.IsActive, &cfg.CreatedAt, &cfg.UpdatedAt)
 	if err == sql.ErrNoRows {
@@ -118,11 +118,11 @@ func (r *WidgetConfigRepository) Upsert(ctx context.Context, cfg *domain.WidgetC
 	}
 	cfg.UpdatedAt = time.Now()
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO widget_configs (id, user_id, brand_color, greeting, bot_name, position, widget_api_key, is_active, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, TRUE, NOW(), NOW())
+		INSERT INTO widget_configs (id, user_id, org_id, brand_color, greeting, bot_name, position, widget_api_key, is_active, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE, NOW(), NOW())
 		ON DUPLICATE KEY UPDATE brand_color=VALUES(brand_color), greeting=VALUES(greeting),
 		bot_name=VALUES(bot_name), position=VALUES(position), updated_at=NOW()`,
-		cfg.ID, cfg.UserID, cfg.BrandColor, cfg.Greeting, cfg.BotName, cfg.Position, cfg.WidgetAPIKey)
+		cfg.ID, cfg.UserID, cfg.OrgID, cfg.BrandColor, cfg.Greeting, cfg.BotName, cfg.Position, cfg.WidgetAPIKey)
 	return err
 }
 

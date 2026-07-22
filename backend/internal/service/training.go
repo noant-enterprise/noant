@@ -160,7 +160,7 @@ func (s *TrainingService) BatchIgnoreUnknown(ctx context.Context, userID string,
 }
 
 func (s *TrainingService) TrainUnknown(ctx context.Context, userID, id, answer, categoryID string) error {
-	target, err := s.repos.UnknownQ.GetByIDAndUser(ctx, id, userID)
+	target, err := s.repos.UnknownQ.GetByIDAndOrg(ctx, id, userID)
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func (s *TrainingService) IgnoreUnknown(ctx context.Context, userID, id string) 
 }
 
 func (s *TrainingService) ListQAPairs(ctx context.Context, userID, categoryID string) ([]domain.QAPair, error) {
-	return s.repos.QAPair.ListByCategoryAndUser(ctx, categoryID, userID)
+	return s.repos.QAPair.ListByCategoryAndOrg(ctx, categoryID, userID)
 }
 
 func (s *TrainingService) CreateQAPair(ctx context.Context, userID, categoryID, question, answer string) (*domain.QAPair, error) {
