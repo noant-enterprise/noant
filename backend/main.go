@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"os"
-	"log/slog"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -19,6 +19,8 @@ import (
 	"noant/internal/service"
 
 	"github.com/SherClockHolmes/webpush-go"
+	sentry "github.com/getsentry/sentry-go"
+	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -30,6 +32,30 @@ func main() {
 	logger := infrastructure.NewLogger(cfg.LogLevel)
 	slog.SetDefault(logger.Logger)
 	logger.Info("Starting Noant Enterprise Platform v2.0")
+
+	// Initialize Sentry error monitoring
+	if cfg.SentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              cfg.SentryDSN,
+			EnableTracing:    true,
+			TracesSampleRate: 0.2, // 20% of transactions for tracing
+			Environment:      cfg.NodeEnv,
+			Release:          "noant@2.0.0",
+			BeforeSend: func(event *sentry.Event, hint *sentry.EventHint) *sentry.Event {
+				// Scrub sensitive fields before sending
+				if event.Request != nil {
+					delete(event.Request.Headers, "Authorization")
+					delete(event.Request.Headers, "X-API-Key")
+				}
+				return event
+			},
+		}); err != nil {
+			logger.Warn("Sentry initialization failed", "error", err)
+		} else {
+			defer sentry.Flush(2 * time.Second)
+			logger.Info("Sentry error monitoring enabled", "environment", cfg.NodeEnv)
+		}
+	}
 
 	db, err := infrastructure.NewTiDBConnection(cfg)
 	if err != nil {
@@ -262,6 +288,11 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 	router.Use(infrastructure.PrometheusMiddleware())
+	if cfg.SentryDSN != "" {
+		router.Use(sentrygin.New(sentrygin.Options{
+			Repanic: true,
+		}))
+	}
 
 	router.GET("/metrics", middleware.RequireAdminMiddleware(), gin.WrapH(promhttp.Handler()))
 	router.GET("/health", healthHandler.Check)

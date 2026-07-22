@@ -8,6 +8,8 @@ import (
 
 	apperrors "noant/internal/errors"
 
+	sentry "github.com/getsentry/sentry-go"
+	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
 )
 
@@ -54,7 +56,8 @@ func ClassifyError(err error) (statusCode int, errorCode, userMessage string) {
 }
 
 // RespondError writes a standardized JSON error response to the client.
-// For 5xx status codes the error is logged with the request ID (if available).
+// For 5xx status codes the error is logged with the request ID (if available)
+// and captured to Sentry.
 func RespondError(c *gin.Context, err error) {
 	statusCode, code, message := ClassifyError(err)
 	resp := ErrorResponse{
@@ -72,6 +75,21 @@ func RespondError(c *gin.Context, err error) {
 			"request_id", reqID,
 			"error", err,
 		)
+
+		// Capture to Sentry with context
+		if hub := sentrygin.GetHubFromContext(c); hub != nil {
+			hub.WithScope(func(scope *sentry.Scope) {
+				scope.SetTag("error_code", code)
+				scope.SetTag("method", c.Request.Method)
+				scope.SetTag("path", c.Request.URL.Path)
+				if reqID != nil {
+					scope.SetTag("request_id", reqID.(string))
+				}
+				hub.CaptureException(err)
+			})
+		} else {
+			sentry.CaptureException(err)
+		}
 	}
 
 	c.JSON(statusCode, resp)

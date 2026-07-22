@@ -89,26 +89,29 @@ type Config struct {
 	VAPIDSubject    string
 
 	// OpenWA (self-hosted WhatsApp API)
-	OpenWAEnabled          bool
-	OpenWABaseURL          string
-	OpenWAApiKey           string
-	OpenWASessionID        string
-	OpenWAWebhookSecret    string
-	OpenWARateLimitText    int
-	OpenWARateLimitMedia   int
-	OpenWARateLimitTemplate int
-	OpenWARateLimitBurst   int
-	OpenWAQueueDepth       int
-	OpenWAMediaDir         string
-	OpenWAMediaRetention   time.Duration
+	OpenWAEnabled              bool
+	OpenWABaseURL              string
+	OpenWAApiKey               string
+	OpenWASessionID            string
+	OpenWAWebhookSecret        string
+	OpenWARateLimitText        int
+	OpenWARateLimitMedia       int
+	OpenWARateLimitTemplate    int
+	OpenWARateLimitBurst       int
+	OpenWAQueueDepth           int
+	OpenWAMediaDir             string
+	OpenWAMediaRetention       time.Duration
 	OpenWASessionHealthInterval time.Duration
 	OpenWAMaxReconnectAttempts   int
-	OpenWAConnPoolSize     int
-	OpenWAConnTimeout      time.Duration
-	OpenWAReqTimeout       time.Duration
-	OpenWAMessageMaxAge    time.Duration
-	OpenWAMaxMessageSize   int
-	OpenWAPerUserRateLimit int
+	OpenWAConnPoolSize         int
+	OpenWAConnTimeout          time.Duration
+	OpenWAReqTimeout           time.Duration
+	OpenWAMessageMaxAge        time.Duration
+	OpenWAMaxMessageSize       int
+	OpenWAPerUserRateLimit     int
+
+	// Sentry
+	SentryDSN string
 }
 
 func Load() *Config {
@@ -256,6 +259,9 @@ func Load() *Config {
 		OpenWAMessageMaxAge:        time.Duration(atoiDefault(getEnv("OPENWA_MESSAGE_MAX_AGE_MINUTES", "60"))) * time.Minute,
 		OpenWAMaxMessageSize:       atoiDefault(getEnv("OPENWA_MAX_MESSAGE_SIZE", "65536")),
 		OpenWAPerUserRateLimit:     atoiDefault(getEnv("OPENWA_PER_USER_RATE_LIMIT", "50")),
+
+		// Sentry
+		SentryDSN: getEnv("SENTRY_DSN", ""),
 	}
 
 	cfg.CORSOrigins = parseCSVEnv("CORS_ORIGINS", cfg.APIURL)
