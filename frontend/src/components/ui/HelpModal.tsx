@@ -24,14 +24,14 @@ export default function ChatsPage() {
 
   useEffect(() => {
     getConversations('/chats/conversations')
-  }, [])
+  }, [getConversations])
 
   useEffect(() => {
     if (activeId) {
       getMessages(`/chats/conversations/${activeId}`)
       setOptimisticMessages([])
     }
-  }, [activeId])
+  }, [activeId, getMessages])
 
   useEffect(() => {
     setShowInfo(false)
@@ -47,7 +47,7 @@ export default function ChatsPage() {
       }
     })
     return unsub
-  }, [activeId, subscribe])
+  }, [activeId, subscribe, getMessages, getConversations])
 
   const activeConv = convData?.conversations.find((c) => c.id === activeId) || null
   const allMessages = [...(msgData?.messages || []), ...optimisticMessages]

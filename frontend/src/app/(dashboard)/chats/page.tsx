@@ -40,6 +40,12 @@ export default function ChatsPage() {
   const [pendingAI, setPendingAI] = useState<Set<string>>(new Set())
   const aiPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastSentContent = useRef<string>('')
+  const streamAbortRef = useRef<AbortController | null>(null)
+
+  // Cleanup any in-flight stream on unmount
+  useEffect(() => {
+    return () => { streamAbortRef.current?.abort() }
+  }, [])
 
   // Paginated message states
   const [activeMessages, setActiveMessages] = useState<Message[]>([])
@@ -294,7 +300,8 @@ export default function ChatsPage() {
     let streamedContent = ''
 
     try {
-      api.streamPost(
+      streamAbortRef.current?.abort()
+      const controller = api.streamPost(
         `/chats/conversations/${activeId}/stream`,
         { content: text },
         (chunk) => {
@@ -319,6 +326,7 @@ export default function ChatsPage() {
           setSending(false)
         }
       )
+      streamAbortRef.current = controller
     } catch (err) {
       console.error('Send failed:', err)
       toast('Failed to send message', 'error')

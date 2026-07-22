@@ -1,34 +1,47 @@
 import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { Suspense, lazy, useEffect } from 'react'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { GuestRoute } from '@/components/auth/GuestRoute'
 import { CommandPalette } from '@/components/ui/CommandPalette'
-import LoginPage from '@/app/(auth)/login/page'
-import SignupPage from '@/app/(auth)/signup/page'
-import ForgotPasswordPage from '@/app/(auth)/forgot-password/page'
-import ResetPasswordPage from '@/app/(auth)/reset-password/page'
-import VerifyEmailPage from '@/app/(auth)/verify-email/page'
-import OverviewPage from '@/app/(dashboard)/page'
-import ChatsPage from '@/app/(dashboard)/chats/page'
-import TeachPage from '@/app/(dashboard)/teach/page'
-import InsightsPage from '@/app/(dashboard)/insights/page'
-import ChannelsPage from '@/app/(dashboard)/channels/page'
-
-import SettingsPage from '@/app/(dashboard)/settings/page'
-import NotificationsPage from '@/app/(dashboard)/notifications/page'
-import BillingPage from '@/app/(dashboard)/billing/page'
-import TeamPage from '@/app/(dashboard)/team/page'
-import WidgetPage from '@/app/(dashboard)/widget/page'
-import LeadsPage from '@/app/(dashboard)/leads/page'
-import InventoryPage from '@/app/(dashboard)/inventory/page'
-import OnboardingPage from '@/app/(dashboard)/onboarding/page'
-import UnknownQuestionsPage from '@/app/(dashboard)/teach/unknown/page'
-import LandingPage from '@/app/landing/page'
-import { useEffect } from 'react'
 import { OfflineBanner } from '@/components/OfflineBanner'
 import { refreshToken } from '@/lib/auth'
 import { PwaInstallPrompt } from '@/components/ui/PwaInstallPrompt'
+import { WidgetConfigProvider } from '@/contexts/WidgetConfigContext'
+import { SidebarAlertsProvider } from '@/contexts/SidebarAlertsContext'
+import { ModalProvider } from '@/contexts/ModalContext'
+import { RouteErrorBoundary } from '@/components/RouteErrorBoundary'
+import { Spinner } from '@/components/ui/Spinner'
+
+const LoginPage = lazy(() => import('@/app/(auth)/login/page'))
+const SignupPage = lazy(() => import('@/app/(auth)/signup/page'))
+const ForgotPasswordPage = lazy(() => import('@/app/(auth)/forgot-password/page'))
+const ResetPasswordPage = lazy(() => import('@/app/(auth)/reset-password/page'))
+const VerifyEmailPage = lazy(() => import('@/app/(auth)/verify-email/page'))
+const OverviewPage = lazy(() => import('@/app/(dashboard)/page'))
+const ChatsPage = lazy(() => import('@/app/(dashboard)/chats/page'))
+const TeachPage = lazy(() => import('@/app/(dashboard)/teach/page'))
+const InsightsPage = lazy(() => import('@/app/(dashboard)/insights/page'))
+const ChannelsPage = lazy(() => import('@/app/(dashboard)/channels/page'))
+const SettingsPage = lazy(() => import('@/app/(dashboard)/settings/page'))
+const NotificationsPage = lazy(() => import('@/app/(dashboard)/notifications/page'))
+const BillingPage = lazy(() => import('@/app/(dashboard)/billing/page'))
+const TeamPage = lazy(() => import('@/app/(dashboard)/team/page'))
+const WidgetPage = lazy(() => import('@/app/(dashboard)/widget/page'))
+const LeadsPage = lazy(() => import('@/app/(dashboard)/leads/page'))
+const InventoryPage = lazy(() => import('@/app/(dashboard)/inventory/page'))
+const OnboardingPage = lazy(() => import('@/app/(dashboard)/onboarding/page'))
+const UnknownQuestionsPage = lazy(() => import('@/app/(dashboard)/teach/unknown/page'))
+const LandingPage = lazy(() => import('@/app/landing/page'))
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-screen w-full bg-gray-50 dark:bg-gray-900">
+      <Spinner size="lg" />
+    </div>
+  )
+}
 
 function AppShell() {
   const location = useLocation()
@@ -67,16 +80,16 @@ const router = createBrowserRouter([
   {
     element: <AppShell />,
     children: [
-      // Public landing page
       {
         path: '/',
         element: (
           <RouteErrorBoundary pageName="Home">
-            <LandingPage />
+            <Suspense fallback={<PageLoader />}>
+              <LandingPage />
+            </Suspense>
           </RouteErrorBoundary>
         ),
       },
-      // Auth routes - guest protection
       {
         path: '/login',
         element: (
@@ -84,7 +97,7 @@ const router = createBrowserRouter([
             <AuthLayout />
           </GuestRoute>
         ),
-        children: [{ index: true, element: <RouteErrorBoundary pageName="Login"><LoginPage /></RouteErrorBoundary> }],
+        children: [{ index: true, element: <RouteErrorBoundary pageName="Login"><Suspense fallback={<PageLoader />}><LoginPage /></Suspense></RouteErrorBoundary> }],
       },
       {
         path: '/signup',
@@ -93,7 +106,7 @@ const router = createBrowserRouter([
             <AuthLayout />
           </GuestRoute>
         ),
-        children: [{ index: true, element: <RouteErrorBoundary pageName="Signup"><SignupPage /></RouteErrorBoundary> }],
+        children: [{ index: true, element: <RouteErrorBoundary pageName="Signup"><Suspense fallback={<PageLoader />}><SignupPage /></Suspense></RouteErrorBoundary> }],
       },
       {
         path: '/forgot-password',
@@ -102,7 +115,7 @@ const router = createBrowserRouter([
             <AuthLayout />
           </GuestRoute>
         ),
-        children: [{ index: true, element: <RouteErrorBoundary pageName="Forgot Password"><ForgotPasswordPage /></RouteErrorBoundary> }],
+        children: [{ index: true, element: <RouteErrorBoundary pageName="Forgot Password"><Suspense fallback={<PageLoader />}><ForgotPasswordPage /></Suspense></RouteErrorBoundary> }],
       },
       {
         path: '/reset-password',
@@ -111,7 +124,7 @@ const router = createBrowserRouter([
             <AuthLayout />
           </GuestRoute>
         ),
-        children: [{ index: true, element: <RouteErrorBoundary pageName="Reset Password"><ResetPasswordPage /></RouteErrorBoundary> }],
+        children: [{ index: true, element: <RouteErrorBoundary pageName="Reset Password"><Suspense fallback={<PageLoader />}><ResetPasswordPage /></Suspense></RouteErrorBoundary> }],
       },
       {
         path: '/verify-email',
@@ -120,9 +133,8 @@ const router = createBrowserRouter([
             <AuthLayout />
           </GuestRoute>
         ),
-        children: [{ index: true, element: <RouteErrorBoundary pageName="Verify Email"><VerifyEmailPage /></RouteErrorBoundary> }],
+        children: [{ index: true, element: <RouteErrorBoundary pageName="Verify Email"><Suspense fallback={<PageLoader />}><VerifyEmailPage /></Suspense></RouteErrorBoundary> }],
       },
-      // Dashboard routes - protected
       {
         path: '/',
         element: (
@@ -137,23 +149,22 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
         children: [
-          { path: 'dashboard', element: <RouteErrorBoundary pageName="Overview"><OverviewPage /></RouteErrorBoundary> },
-          { path: 'chats', element: <RouteErrorBoundary pageName="Chats"><ChatsPage /></RouteErrorBoundary> },
+          { path: 'dashboard', element: <RouteErrorBoundary pageName="Overview"><Suspense fallback={<PageLoader />}><OverviewPage /></Suspense></RouteErrorBoundary> },
+          { path: 'chats', element: <RouteErrorBoundary pageName="Chats"><Suspense fallback={<PageLoader />}><ChatsPage /></Suspense></RouteErrorBoundary> },
           { path: 'teach', children: [
-            { index: true, element: <RouteErrorBoundary pageName="Teach"><TeachPage /></RouteErrorBoundary> },
-            { path: 'unknown', element: <RouteErrorBoundary pageName="Unknown Questions"><UnknownQuestionsPage /></RouteErrorBoundary> },
+            { index: true, element: <RouteErrorBoundary pageName="Teach"><Suspense fallback={<PageLoader />}><TeachPage /></Suspense></RouteErrorBoundary> },
+            { path: 'unknown', element: <RouteErrorBoundary pageName="Unknown Questions"><Suspense fallback={<PageLoader />}><UnknownQuestionsPage /></Suspense></RouteErrorBoundary> },
           ]},
-          { path: 'insights', element: <RouteErrorBoundary pageName="Insights"><InsightsPage /></RouteErrorBoundary> },
-          { path: 'channels', element: <RouteErrorBoundary pageName="Channels"><ChannelsPage /></RouteErrorBoundary> },
-
-          { path: 'settings', element: <RouteErrorBoundary pageName="Settings"><SettingsPage /></RouteErrorBoundary> },
-          { path: 'notifications', element: <RouteErrorBoundary pageName="Notifications"><NotificationsPage /></RouteErrorBoundary> },
-          { path: 'billing', element: <RouteErrorBoundary pageName="Billing"><BillingPage /></RouteErrorBoundary> },
-          { path: 'team', element: <RouteErrorBoundary pageName="Team"><TeamPage /></RouteErrorBoundary> },
-          { path: 'widget', element: <RouteErrorBoundary pageName="Widget"><WidgetPage /></RouteErrorBoundary> },
-          { path: 'leads', element: <RouteErrorBoundary pageName="Leads"><LeadsPage /></RouteErrorBoundary> },
-          { path: 'inventory', element: <RouteErrorBoundary pageName="Inventory"><InventoryPage /></RouteErrorBoundary> },
-          { path: 'onboarding', element: <RouteErrorBoundary pageName="Onboarding"><OnboardingPage /></RouteErrorBoundary> },
+          { path: 'insights', element: <RouteErrorBoundary pageName="Insights"><Suspense fallback={<PageLoader />}><InsightsPage /></Suspense></RouteErrorBoundary> },
+          { path: 'channels', element: <RouteErrorBoundary pageName="Channels"><Suspense fallback={<PageLoader />}><ChannelsPage /></Suspense></RouteErrorBoundary> },
+          { path: 'settings', element: <RouteErrorBoundary pageName="Settings"><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></RouteErrorBoundary> },
+          { path: 'notifications', element: <RouteErrorBoundary pageName="Notifications"><Suspense fallback={<PageLoader />}><NotificationsPage /></Suspense></RouteErrorBoundary> },
+          { path: 'billing', element: <RouteErrorBoundary pageName="Billing"><Suspense fallback={<PageLoader />}><BillingPage /></Suspense></RouteErrorBoundary> },
+          { path: 'team', element: <RouteErrorBoundary pageName="Team"><Suspense fallback={<PageLoader />}><TeamPage /></Suspense></RouteErrorBoundary> },
+          { path: 'widget', element: <RouteErrorBoundary pageName="Widget"><Suspense fallback={<PageLoader />}><WidgetPage /></Suspense></RouteErrorBoundary> },
+          { path: 'leads', element: <RouteErrorBoundary pageName="Leads"><Suspense fallback={<PageLoader />}><LeadsPage /></Suspense></RouteErrorBoundary> },
+          { path: 'inventory', element: <RouteErrorBoundary pageName="Inventory"><Suspense fallback={<PageLoader />}><InventoryPage /></Suspense></RouteErrorBoundary> },
+          { path: 'onboarding', element: <RouteErrorBoundary pageName="Onboarding"><Suspense fallback={<PageLoader />}><OnboardingPage /></Suspense></RouteErrorBoundary> },
         ],
       },
       { path: '*', element: <Navigate to='/' replace /> },
@@ -161,15 +172,10 @@ const router = createBrowserRouter([
   },
 ])
 
-import { WidgetConfigProvider } from '@/contexts/WidgetConfigContext';
-import { SidebarAlertsProvider } from '@/contexts/SidebarAlertsContext';
-import { ModalProvider } from '@/contexts/ModalContext';
-import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
-
 export default function App() {
   return (
     <ModalProvider>
       <RouterProvider router={router} />
     </ModalProvider>
-  );
+  )
 }
