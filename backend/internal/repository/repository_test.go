@@ -569,12 +569,12 @@ func TestMockTeamRepo_CreateAndList(t *testing.T) {
 	ctx := context.Background()
 
 	member := &domain.TeamMember{ID: "tm-1", UserID: "user-2", Role: "agent"}
-	if err := repo.Create(ctx, "user-1", member); err != nil {
+	if err := repo.Create(ctx, "org-1", member); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	members, err := repo.ListByUser(ctx, "user-1")
-	if err != nil { t.Fatalf("ListByUser: %v", err) }
+	members, err := repo.ListByOrg(ctx, "org-1")
+	if err != nil { t.Fatalf("ListByOrg: %v", err) }
 	if len(members) != 1 { t.Errorf("len = %d, want 1", len(members)) }
 }
 

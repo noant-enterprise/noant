@@ -26,8 +26,8 @@ func setupAuthHandler(t *testing.T) (*AuthHandler, *repository.MockUserRepo) {
 	mock := repository.NewMockUserRepo()
 	cfg := &config.Config{JWTSecret: "test-secret-123"}
 	logger := infrastructure.NewNullLogger()
-	svc := service.NewAuthService(cfg, mock, nil, logger, nil)
-	return NewAuthHandler(svc, logger), mock
+	svc := service.NewAuthService(cfg, mock, repository.NewMockOrgRepo(), nil, logger, nil)
+	return NewAuthHandler(svc, nil, logger), mock
 }
 
 func setupTrainingHandler(t *testing.T) (*TrainingHandler, *repository.MockRepositories) {
@@ -62,6 +62,7 @@ func setupChatHandler(t *testing.T) (*ChatHandler, *repository.MockRepositories)
 func withUserID() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set("userID", "test-user-1")
+		c.Set("orgID", "test-org-1")
 		c.Next()
 	}
 }

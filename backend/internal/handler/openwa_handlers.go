@@ -29,6 +29,15 @@ func getUserID(c *gin.Context) string {
 	return ""
 }
 
+func getOrgID(c *gin.Context) string {
+	if orgID, ok := c.Get("orgID"); ok {
+		if s, ok := orgID.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 // ========== TEMPLATE HANDLER ==========
 
 type TemplateHandler struct {

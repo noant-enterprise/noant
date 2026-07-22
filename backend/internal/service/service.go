@@ -55,7 +55,7 @@ func NewServices(cfg *config.Config, repos *repository.Repositories, redis *infr
 	pushSvc := NewPushNotificationService(cfg, repos, logger)
 	notifSvc := NewNotificationService(cfg, repos, redis, logger, email, pushSvc)
 	return &Services{
-		Auth:         NewAuthService(cfg, repos.User, redis, logger, email),
+		Auth:         NewAuthService(cfg, repos.User, repos.Org, redis, logger, email),
 		Chat:         chatSvc,
 		Training:     NewTrainingService(cfg, repos, redis, logger, embeddings),
 		Analytics:    NewAnalyticsService(cfg, repos, redis, logger),

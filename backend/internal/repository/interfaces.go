@@ -7,6 +7,13 @@ import (
 	"noant/internal/domain"
 )
 
+type IOrgRepo interface {
+	Create(ctx context.Context, org *domain.Organization) error
+	GetByID(ctx context.Context, id string) (*domain.Organization, error)
+	GetByOwnerID(ctx context.Context, ownerID string) (*domain.Organization, error)
+	Update(ctx context.Context, org *domain.Organization) error
+}
+
 type IUserRepo interface {
 	Create(ctx context.Context, user *domain.User) error
 	RunInTx(ctx context.Context, fn func(tx *sql.Tx) error) error
@@ -187,13 +194,17 @@ type ICreditRepo interface {
 }
 
 type ITeamRepo interface {
-	ListByUser(ctx context.Context, ownerID string) ([]domain.TeamMember, error)
-	Create(ctx context.Context, ownerID string, member *domain.TeamMember) error
+	ListByOrg(ctx context.Context, orgID string) ([]domain.TeamMember, error)
+	Create(ctx context.Context, orgID string, member *domain.TeamMember) error
+	Delete(ctx context.Context, id string) error
+	GetByID(ctx context.Context, id string) (*domain.TeamMember, error)
+	GetByEmailAndOrg(ctx context.Context, email, orgID string) (*domain.TeamMember, error)
 }
 
 type IAuditRepo interface {
 	Create(ctx context.Context, log *domain.AuditLog) error
 	ListByUser(ctx context.Context, userID string, limit int) ([]domain.AuditLog, error)
+	ListWithFilters(ctx context.Context, filter *AuditFilter) (*AuditListResult, error)
 	CleanupOld(ctx context.Context, days int) (int64, error)
 }
 

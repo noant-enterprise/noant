@@ -111,12 +111,12 @@ func (h *SettingsHandler) RevokeAPIKey(c *gin.Context) {
 }
 
 func (h *SettingsHandler) ListTeam(c *gin.Context) {
-	userID := getUserID(c)
-	if userID == "" {
+	orgID := getOrgID(c)
+	if orgID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	members, err := h.service.ListTeam(c.Request.Context(), userID)
+	members, err := h.service.ListTeam(c.Request.Context(), orgID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -137,12 +137,12 @@ func (h *SettingsHandler) InviteTeamMember(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID := getUserID(c)
-	if userID == "" {
+	orgID := getOrgID(c)
+	if orgID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	member, err := h.service.InviteTeamMember(c.Request.Context(), userID, req.Email, req.Role)
+	member, err := h.service.InviteTeamMember(c.Request.Context(), orgID, req.Email, req.Role)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return

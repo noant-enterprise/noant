@@ -1220,6 +1220,55 @@ func (m *MockIntegrationRepo) CleanupStaleInactive(ctx context.Context, days int
 	return count, nil
 }
 
+type MockOrgRepo struct {
+	mu   sync.Mutex
+	orgs map[string]*domain.Organization
+}
+
+func NewMockOrgRepo() *MockOrgRepo {
+	return &MockOrgRepo{orgs: make(map[string]*domain.Organization)}
+}
+
+func (m *MockOrgRepo) Create(ctx context.Context, org *domain.Organization) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if org.ID == "" {
+		org.ID = generateUUID()
+	}
+	cp := *org
+	m.orgs[org.ID] = &cp
+	return nil
+}
+
+func (m *MockOrgRepo) GetByID(ctx context.Context, id string) (*domain.Organization, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if org, ok := m.orgs[id]; ok {
+		cp := *org
+		return &cp, nil
+	}
+	return nil, nil
+}
+
+func (m *MockOrgRepo) GetByOwnerID(ctx context.Context, ownerID string) (*domain.Organization, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, org := range m.orgs {
+		if org.OwnerID == ownerID {
+			cp := *org
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockOrgRepo) Update(ctx context.Context, org *domain.Organization) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.orgs[org.ID] = org
+	return nil
+}
+
 // ============================================================
 // MockTeamRepo
 // ============================================================
@@ -1227,22 +1276,22 @@ func (m *MockIntegrationRepo) CleanupStaleInactive(ctx context.Context, days int
 type MockTeamRepo struct {
 	mu      sync.Mutex
 	members map[string]*domain.TeamMember
-	owners  map[string]string
+	orgIDs  map[string]string
 }
 
 func NewMockTeamRepo() *MockTeamRepo {
 	return &MockTeamRepo{
 		members: make(map[string]*domain.TeamMember),
-		owners:  make(map[string]string),
+		orgIDs:  make(map[string]string),
 	}
 }
 
-func (m *MockTeamRepo) ListByUser(ctx context.Context, ownerID string) ([]domain.TeamMember, error) {
+func (m *MockTeamRepo) ListByOrg(ctx context.Context, orgID string) ([]domain.TeamMember, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var result []domain.TeamMember
 	for id, member := range m.members {
-		if m.owners[id] == ownerID {
+		if m.orgIDs[id] == orgID {
 			cp := *member
 			result = append(result, cp)
 		}
@@ -1250,7 +1299,7 @@ func (m *MockTeamRepo) ListByUser(ctx context.Context, ownerID string) ([]domain
 	return result, nil
 }
 
-func (m *MockTeamRepo) Create(ctx context.Context, ownerID string, member *domain.TeamMember) error {
+func (m *MockTeamRepo) Create(ctx context.Context, orgID string, member *domain.TeamMember) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if member.ID == "" {
@@ -1262,8 +1311,38 @@ func (m *MockTeamRepo) Create(ctx context.Context, ownerID string, member *domai
 	}
 	cp := *member
 	m.members[member.ID] = &cp
-	m.owners[member.ID] = ownerID
+	m.orgIDs[member.ID] = orgID
 	return nil
+}
+
+func (m *MockTeamRepo) Delete(ctx context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.members, id)
+	delete(m.orgIDs, id)
+	return nil
+}
+
+func (m *MockTeamRepo) GetByID(ctx context.Context, id string) (*domain.TeamMember, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if member, ok := m.members[id]; ok {
+		cp := *member
+		return &cp, nil
+	}
+	return nil, nil
+}
+
+func (m *MockTeamRepo) GetByEmailAndOrg(ctx context.Context, email, orgID string) (*domain.TeamMember, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, member := range m.members {
+		if member.Email == email && m.orgIDs[id] == orgID {
+			cp := *member
+			return &cp, nil
+		}
+	}
+	return nil, nil
 }
 
 // ============================================================
@@ -1510,6 +1589,58 @@ func (m *MockAuditRepo) CleanupOld(ctx context.Context, days int) (int64, error)
 	}
 	m.logs = kept
 	return count, nil
+}
+
+func (m *MockAuditRepo) ListWithFilters(ctx context.Context, filter *AuditFilter) (*AuditListResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []domain.AuditLog
+	for i := len(m.logs) - 1; i >= 0; i-- {
+		log := m.logs[i]
+		if filter.UserID != "" && log.UserID != filter.UserID {
+			continue
+		}
+		if filter.Action != "" && !containsStr(log.Action, filter.Action) {
+			continue
+		}
+		cp := *log
+		result = append(result, cp)
+	}
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	total := len(result)
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	if offset >= total {
+		result = []domain.AuditLog{}
+	} else {
+		result = result[offset:end]
+	}
+	if result == nil {
+		result = []domain.AuditLog{}
+	}
+	return &AuditListResult{Logs: result, Total: total}, nil
+}
+
+func containsStr(s, sub string) bool {
+	return sub == "" || len(s) >= len(sub) && (s == sub || containsSubstr(s, sub))
+}
+
+func containsSubstr(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
 }
 
 // ============================================================
@@ -2523,6 +2654,7 @@ func (m *MockPushSubscriptionRepo) DeleteByID(ctx context.Context, id string) er
 // ============================================================
 
 type MockRepositories struct {
+	Org               *MockOrgRepo
 	User              *MockUserRepo
 	Conversation      *MockConversationRepo
 	Message           *MockMessageRepo
@@ -2549,6 +2681,7 @@ type MockRepositories struct {
 
 func NewMockRepositories() *MockRepositories {
 	return &MockRepositories{
+		Org:               NewMockOrgRepo(),
 		User:              NewMockUserRepo(),
 		Conversation:      NewMockConversationRepo(),
 		Message:           NewMockMessageRepo(),

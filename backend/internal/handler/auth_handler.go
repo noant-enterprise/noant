@@ -8,6 +8,7 @@ import (
 	"noant/internal/infrastructure"
 	apperrors "noant/internal/errors"
 	"noant/internal/middleware"
+	"noant/internal/repository"
 	"noant/internal/service"
 	"noant/internal/utils"
 
@@ -15,12 +16,13 @@ import (
 )
 
 type AuthHandler struct {
-	service *service.AuthService
-	logger  *infrastructure.Logger
+	service  *service.AuthService
+	auditRepo *repository.AuditRepository
+	logger   *infrastructure.Logger
 }
 
-func NewAuthHandler(svc *service.AuthService, logger *infrastructure.Logger) *AuthHandler {
-	return &AuthHandler{service: svc, logger: logger}
+func NewAuthHandler(svc *service.AuthService, auditRepo *repository.AuditRepository, logger *infrastructure.Logger) *AuthHandler {
+	return &AuthHandler{service: svc, auditRepo: auditRepo, logger: logger}
 }
 
 // Register creates a new user account with email verification.
@@ -47,6 +49,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// Audit: user registered
+	if h.auditRepo != nil {
+		ip := c.ClientIP()
+		ua := c.Request.UserAgent()
+		middleware.AuditLog(c.Request.Context(), h.auditRepo, user.ID, "user.registered", "auth", nil, map[string]interface{}{
+			"email": req.Email,
+		}, ip, ua)
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "User registered successfully",
 		"user":    user,
@@ -69,6 +80,19 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	user, token, refreshToken, err := h.service.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
+		ip := c.ClientIP()
+		ua := c.Request.UserAgent()
+		if h.auditRepo != nil {
+			details := map[string]interface{}{"email": req.Email}
+			action := "user.login.failed"
+			if errors.Is(err, apperrors.ErrEmailNotVerified) {
+				action = "user.login.failed.email_not_verified"
+			} else if errors.Is(err, apperrors.ErrAccountLocked) {
+				action = "user.login.failed.account_locked"
+				details["reason"] = "too_many_attempts"
+			}
+			middleware.AuditLog(c.Request.Context(), h.auditRepo, "", action, "auth", nil, details, ip, ua)
+		}
 		if errors.Is(err, apperrors.ErrEmailNotVerified) {
 			h.logger.Warn("Login failed: email not verified", "email", req.Email)
 			c.JSON(http.StatusForbidden, gin.H{"error": "email_not_verified"})
@@ -82,6 +106,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		h.logger.Warn("Login failed", "email", req.Email)
 		utils.RespondUnauthorized(c, "Invalid email or password")
 		return
+	}
+
+	// Audit: login success
+	if h.auditRepo != nil {
+		ip := c.ClientIP()
+		ua := c.Request.UserAgent()
+		middleware.AuditLog(c.Request.Context(), h.auditRepo, user.ID, "user.login.success", "auth", nil, map[string]interface{}{
+			"email": req.Email,
+		}, ip, ua)
 	}
 
 	middleware.SetAuthCookies(c, token, refreshToken, 24*time.Hour, 7*24*time.Hour)
@@ -141,6 +174,15 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 
 	middleware.SetAuthCookies(c, token, refreshToken, 24*time.Hour, 7*24*time.Hour)
 	c.Header("Cache-Control", "no-store")
+
+	// Audit: email verified
+	if h.auditRepo != nil {
+		ip := c.ClientIP()
+		ua := c.Request.UserAgent()
+		middleware.AuditLog(c.Request.Context(), h.auditRepo, user.ID, "user.email_verified", "auth", nil, map[string]interface{}{
+			"email": req.Email,
+		}, ip, ua)
+	}
 
 	var trialInfo map[string]interface{}
 	if user.TrialExpiresAt != nil {
@@ -212,6 +254,10 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 func (h *AuthHandler) Logout(c *gin.Context) {
 	token := middleware.GetAccessTokenFromRequest(c)
 	refreshToken := middleware.GetRefreshTokenFromRequest(c)
+
+	// Extract user ID before clearing cookies
+	userID := getUserID(c)
+
 	if err := h.service.Logout(c.Request.Context(), token, refreshToken); err != nil {
 		utils.RespondInternalError(c, "Failed to log out")
 		return
@@ -219,6 +265,14 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	if token != "" {
 		middleware.BlacklistAccessToken(token)
 	}
+
+	// Audit: logout
+	if h.auditRepo != nil && userID != "" {
+		ip := c.ClientIP()
+		ua := c.Request.UserAgent()
+		middleware.AuditLog(c.Request.Context(), h.auditRepo, userID, "user.logout", "auth", nil, nil, ip, ua)
+	}
+
 	middleware.ClearAuthCookies(c)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
@@ -243,6 +297,13 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	if err := h.service.ChangePassword(c.Request.Context(), userID, req.CurrentPassword, req.NewPassword); err != nil {
 		utils.RespondValidationError(c, "Failed to change password")
 		return
+	}
+
+	// Audit: password changed
+	if h.auditRepo != nil {
+		ip := c.ClientIP()
+		ua := c.Request.UserAgent()
+		middleware.AuditLog(c.Request.Context(), h.auditRepo, userID, "user.password_changed", "auth", nil, nil, ip, ua)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
@@ -282,6 +343,13 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		h.logger.Error("Reset password failed", "error", err)
 		utils.RespondInternalError(c, err.Error())
 		return
+	}
+
+	// Audit: password reset via token
+	if h.auditRepo != nil {
+		ip := c.ClientIP()
+		ua := c.Request.UserAgent()
+		middleware.AuditLog(c.Request.Context(), h.auditRepo, "", "user.password_reset", "auth", nil, nil, ip, ua)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Password reset successfully"})

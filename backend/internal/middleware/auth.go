@@ -79,6 +79,9 @@ func AuthMiddleware(jwtSecret string, redis *infrastructure.RedisClient) gin.Han
 		c.Set("userEmail", claims["email"])
 		c.Set("userRole", claims["role"])
 		c.Set("tokenExpiry", exp.Unix())
+		if orgID, ok := claims["org_id"].(string); ok && orgID != "" {
+			c.Set("orgID", orgID)
+		}
 
 		c.Next()
 	}
@@ -368,6 +371,46 @@ func RequireAdminMiddleware() gin.HandlerFunc {
 		roleStr, ok := role.(string)
 		if !ok || (roleStr != "owner" && roleStr != "admin") {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// RequireRole returns middleware that restricts access to specified roles.
+// Usage: RequireRole("owner", "admin") — only owner and admin can access.
+func RequireRole(allowedRoles ...string) gin.HandlerFunc {
+	allowed := make(map[string]bool, len(allowedRoles))
+	for _, r := range allowedRoles {
+		allowed[r] = true
+	}
+	return func(c *gin.Context) {
+		role, exists := c.Get("userRole")
+		if !exists {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			return
+		}
+		roleStr, ok := role.(string)
+		if !ok || !allowed[roleStr] {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Insufficient permissions"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// RequireOwnership ensures the authenticated user owns the resource.
+// It compares the user_id in context with the owner_id set by the route param.
+func RequireOwnership() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, _ := c.Get("userID")
+		ownerID, exists := c.Get("ownerID")
+		if !exists {
+			c.Next()
+			return
+		}
+		if userID != ownerID {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Not authorized to access this resource"})
 			return
 		}
 		c.Next()

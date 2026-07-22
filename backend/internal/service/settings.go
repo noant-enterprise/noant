@@ -80,26 +80,29 @@ func (s *SettingsService) RevokeAPIKey(ctx context.Context, userID, id string) e
 	return s.repos.APIKey.Revoke(ctx, id, userID)
 }
 
-func (s *SettingsService) ListTeam(ctx context.Context, ownerID string) ([]domain.TeamMember, error) {
-	return s.repos.Team.ListByUser(ctx, ownerID)
+func (s *SettingsService) ListTeam(ctx context.Context, orgID string) ([]domain.TeamMember, error) {
+	return s.repos.Team.ListByOrg(ctx, orgID)
 }
 
-func (s *SettingsService) InviteTeamMember(ctx context.Context, ownerID, email, role string) (*domain.TeamMember, error) {
+func (s *SettingsService) InviteTeamMember(ctx context.Context, orgID, email, role string) (*domain.TeamMember, error) {
 	member := &domain.TeamMember{
 		Email:    email,
 		Role:     role,
 		IsActive: false,
 	}
-	if err := s.repos.Team.Create(ctx, ownerID, member); err != nil {
+	if err := s.repos.Team.Create(ctx, orgID, member); err != nil {
 		return nil, err
 	}
 
 	// Send invite email
 	if s.email != nil {
-		owner, _ := s.repos.User.GetByID(ctx, ownerID)
+		org, _ := s.repos.Org.GetByID(ctx, orgID)
 		ownerName := "Your team"
-		if owner != nil {
-			ownerName = owner.FirstName
+		if org != nil {
+			owner, _ := s.repos.User.GetByID(ctx, org.OwnerID)
+			if owner != nil {
+				ownerName = owner.FirstName
+			}
 		}
 		subject := fmt.Sprintf("%s invited you to join NOANT", ownerName)
 		body := fmt.Sprintf(`<!DOCTYPE html>
@@ -113,7 +116,6 @@ func (s *SettingsService) InviteTeamMember(ctx context.Context, ownerID, email, 
   <table width="100%%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 20px;">
     <tr><td align="center">
       <table width="600" cellpadding="0" cellspacing="0" style="background:linear-gradient(145deg,#111111,#1a1a1a);border:1px solid #1e1e2e;border-radius:16px;overflow:hidden;max-width:600px;width:100%%;">
-        <!-- Header -->
         <tr>
           <td style="background:linear-gradient(135deg,#1e3a5f 0%%,#0f2444 100%%);padding:40px 48px 32px;text-align:center;border-bottom:1px solid #1e2d4a;">
             <div style="display:inline-block;background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:12px;padding:10px 20px;margin-bottom:20px;">
@@ -124,7 +126,6 @@ func (s *SettingsService) InviteTeamMember(ctx context.Context, ownerID, email, 
             <p style="color:#64748b;font-size:14px;margin:10px 0 0;">Join your team on NOANT AI Support</p>
           </td>
         </tr>
-        <!-- Body -->
         <tr>
           <td style="padding:40px 48px;">
             <p style="color:#94a3b8;font-size:15px;line-height:1.7;margin:0 0 28px;">
@@ -133,7 +134,7 @@ func (s *SettingsService) InviteTeamMember(ctx context.Context, ownerID, email, 
             </p>
             <div style="text-align:center;margin:36px 0;">
               <a href="%s/team" style="display:inline-block;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 36px;border-radius:10px;letter-spacing:0.3px;box-shadow:0 4px 20px rgba(59,130,246,0.4);">
-                Accept Invitation →
+                Accept Invitation
               </a>
             </div>
             <p style="color:#475569;font-size:13px;line-height:1.6;margin:28px 0 0;padding-top:24px;border-top:1px solid #1e293b;">
@@ -142,7 +143,6 @@ func (s *SettingsService) InviteTeamMember(ctx context.Context, ownerID, email, 
             </p>
           </td>
         </tr>
-        <!-- Footer -->
         <tr>
           <td style="background:#0d0d0d;border-top:1px solid #1e1e2e;padding:24px 48px;text-align:center;">
             <p style="color:#334155;font-size:12px;margin:0;">© 2026 NOANT. All rights reserved.</p>
@@ -162,5 +162,5 @@ func (s *SettingsService) InviteTeamMember(ctx context.Context, ownerID, email, 
 }
 
 func (s *SettingsService) RemoveTeamMember(ctx context.Context, id string) error {
-	return fmt.Errorf("team member removal not yet implemented: delete the member record directly")
+	return s.repos.Team.Delete(ctx, id)
 }

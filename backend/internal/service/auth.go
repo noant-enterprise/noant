@@ -25,6 +25,7 @@ import (
 type AuthService struct {
 	cfg           *config.Config
 	userRepo      repository.IUserRepo
+	orgRepo       repository.IOrgRepo
 	redis         *infrastructure.RedisClient
 	logger        *infrastructure.Logger
 	email         *EmailService
@@ -41,8 +42,8 @@ type loginAttempt struct {
 // NewAuthService creates an AuthService with JWT generation, login attempt tracking,
 // and background cleanup of expired lockouts. Requires a valid EmailService for
 // verification code delivery.
-func NewAuthService(cfg *config.Config, userRepo repository.IUserRepo, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *AuthService {
-	s := &AuthService{cfg: cfg, userRepo: userRepo, redis: redis, logger: logger, email: email, memRL: infrastructure.NewMemoryRateLimiter(5 * time.Minute), loginAttempts: make(map[string]*loginAttempt)}
+func NewAuthService(cfg *config.Config, userRepo repository.IUserRepo, orgRepo repository.IOrgRepo, redis *infrastructure.RedisClient, logger *infrastructure.Logger, email *EmailService) *AuthService {
+	s := &AuthService{cfg: cfg, userRepo: userRepo, orgRepo: orgRepo, redis: redis, logger: logger, email: email, memRL: infrastructure.NewMemoryRateLimiter(5 * time.Minute), loginAttempts: make(map[string]*loginAttempt)}
 	// Periodic cleanup of expired lockouts
 	go func() {
 		defer func() {
@@ -132,7 +133,23 @@ func (s *AuthService) Register(ctx context.Context, email, password, firstName, 
 		VerificationCode:   &code,
 	}
 	if err := s.userRepo.RunInTx(ctx, func(tx *sql.Tx) error {
-		return s.userRepo.CreateTx(ctx, tx, user)
+		if err := s.userRepo.CreateTx(ctx, tx, user); err != nil {
+			return err
+		}
+		// Create organization for the new user
+		slug := fmt.Sprintf("org-%s", user.ID[:8])
+		org := &domain.Organization{
+			ID:      user.ID + "_org",
+			Name:    companyName,
+			Slug:    slug,
+			OwnerID: user.ID,
+			PlanID:  "free",
+		}
+		if err := s.orgRepo.Create(ctx, org); err != nil {
+			return fmt.Errorf("failed to create organization: %w", err)
+		}
+		user.OrgID = &org.ID
+		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
@@ -294,7 +311,7 @@ func (s *AuthService) ResendVerification(ctx context.Context, email string) erro
 }
 
 func (s *AuthService) generateToken(user *domain.User) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+	claims := jwt.MapClaims{
 		"user_id": user.ID,
 		"email":   user.Email,
 		"role":    user.Role,
@@ -303,7 +320,11 @@ func (s *AuthService) generateToken(user *domain.User) (string, error) {
 		"iat":     time.Now().Unix(),
 		"iss":     "noant",
 		"aud":     "noant-api",
-	})
+	}
+	if user.OrgID != nil {
+		claims["org_id"] = *user.OrgID
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.cfg.JWTSecret))
 }
 

@@ -128,7 +128,7 @@ func newTestRouter(t *testing.T, env *testEnv, cfg *config.Config) *gin.Engine {
 	auditRepo := repository.NewAuditRepository(env.db, env.redis)
 
 	services := service.NewServices(cfg, repos, env.redis, logger, nil, nil, nil)
-	handlers := handler.NewHandlers(cfg, services, logger, nil)
+	handlers := handler.NewHandlers(cfg, services, auditRepo, logger, nil)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
-import { User, Shield, Bell, Palette, Lock, Save, Eye, EyeOff, Download, Trash2, Check, Globe, Smartphone, BellOff } from 'lucide-react'
+import { User, Shield, Bell, Palette, Lock, Save, Eye, EyeOff, Download, Trash2, Check, Globe, Smartphone, BellOff, ScrollText } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '../../../lib/api'
 import { useToast } from '@/components/ui/Toast'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { AuditLogTab } from '@/components/settings/AuditLogTab'
 
-type Tab = 'profile' | 'security' | 'notifications' | 'appearance' | 'privacy'
+type Tab = 'profile' | 'security' | 'notifications' | 'appearance' | 'privacy' | 'audit'
 
 const tabs: { id: Tab; label: string; icon: typeof User }[] = [
   { id: 'profile', label: 'Profile', icon: User },
@@ -14,6 +15,7 @@ const tabs: { id: Tab; label: string; icon: typeof User }[] = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'privacy', label: 'Privacy & Data', icon: Lock },
+  { id: 'audit', label: 'Audit Log', icon: ScrollText },
 ]
 
 function ProfileTab() {
@@ -494,6 +496,7 @@ export default function SettingsPage() {
       case 'notifications': return <NotificationsTab />
       case 'appearance': return <AppearanceTab />
       case 'privacy': return <PrivacyTab />
+      case 'audit': return <AuditLogTab />
     }
   }
 

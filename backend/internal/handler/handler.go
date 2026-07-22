@@ -10,6 +10,7 @@ import (
 
 	"noant/config"
 	"noant/internal/infrastructure"
+	"noant/internal/repository"
 	"noant/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -41,9 +42,9 @@ type Handlers struct {
 	Push         *PushHandler
 }
 
-func NewHandlers(cfg *config.Config, services *service.Services, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
+func NewHandlers(cfg *config.Config, services *service.Services, auditRepo *repository.AuditRepository, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
 	return &Handlers{
-		Auth:         NewAuthHandler(services.Auth, logger),
+		Auth:         NewAuthHandler(services.Auth, auditRepo, logger),
 		Chat:         NewChatHandler(services.Chat, logger, wsHub),
 		Training:     NewTrainingHandler(services.Training, logger),
 		Analytics:    NewAnalyticsHandler(services.Analytics, logger),

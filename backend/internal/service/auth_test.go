@@ -20,6 +20,7 @@ func newTestAuthService(mockUserRepo repository.IUserRepo) *AuthService {
 	return &AuthService{
 		cfg:           &config.Config{JWTSecret: "test-secret-123"},
 		userRepo:      mockUserRepo,
+		orgRepo:       repository.NewMockOrgRepo(),
 		redis:         nil,
 		logger:        infrastructure.NewNullLogger(),
 		email:         nil,
