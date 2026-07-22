@@ -13,6 +13,12 @@ import { api } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { UpgradeModal } from '@/components/ui'
 
+type BadgeVariant = 'sky' | 'success' | 'warning' | 'error' | 'neutral'
+
+interface InventoryResponse {
+  items: InventoryItem[]
+}
+
 interface InventoryItem {
   id: string
   type: 'product' | 'service' | 'package'
@@ -26,7 +32,7 @@ interface InventoryItem {
   created_at: string
 }
 
-const typeConfig: Record<string, { label: string; color: string }> = {
+const typeConfig: Record<string, { label: string; color: BadgeVariant }> = {
   product: { label: 'Product', color: 'sky' },
   service: { label: 'Service', color: 'success' },
   package: { label: 'Package', color: 'warning' },
@@ -36,8 +42,7 @@ export default function InventoryPage() {
   const { toast } = useToast()
   const { user } = useAuth()
   const confirm = useConfirm()
-  const apiHook = useAPI() as any
-  const { data, get: getItems, loading } = apiHook
+  const { data, get: getItems, loading } = useAPI<InventoryResponse>()
   const [showModal, setShowModal] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
@@ -221,7 +226,7 @@ export default function InventoryPage() {
                         </div>
                         <div>
                           <div className="text-sm font-semibold text-primary">{item.name}</div>
-                          <Badge variant={cfg?.color as any || 'neutral'} className="text-[10px] mt-0.5">{cfg?.label || item.type}</Badge>
+                          <Badge variant={cfg?.color || 'neutral'} className="text-[10px] mt-0.5">{cfg?.label || item.type}</Badge>
                         </div>
                       </div>
                       <div className="flex gap-1">

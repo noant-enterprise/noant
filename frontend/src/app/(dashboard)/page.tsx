@@ -10,6 +10,7 @@ import { StatSkeleton } from '@/components/ui/Skeleton'
 import { Avatar } from '@/components/ui/Avatar'
 import { timeAgo } from '@/lib/utils'
 import type { Conversation } from '@/types'
+import type { ConversationListResponse, AnalyticsOverview } from '@/types/api'
 
 const channelIcons: Record<string, { icon: React.ElementType; color: string }> = {
   whatsapp: { icon: MessageCircle, color: '#25D366' },
@@ -21,11 +22,9 @@ const channelIcons: Record<string, { icon: React.ElementType; color: string }> =
 }
 
 export default function OverviewPage() {
-  const statsAPI = useAPI() as any
-  const { data: stats, get: getStats, loading: statsLoading } = statsAPI
+  const { data: stats, get: getStats, loading: statsLoading } = useAPI<AnalyticsOverview>()
   
-  const convAPI = useAPI() as any
-  const { data: conversations, get: getConversations, loading: convLoading } = convAPI
+  const { data: conversations, get: getConversations, loading: convLoading } = useAPI<ConversationListResponse>()
 
   useEffect(() => {
     getStats('/analytics/overview')

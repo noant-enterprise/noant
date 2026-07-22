@@ -8,26 +8,12 @@ import { StatCard, StatGrid } from '@/components/stats'
 import { StatSkeleton } from '@/components/ui/Skeleton'
 import { UserCheck, Phone, Package, Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
+import type { HandoffsResponse } from '@/types/api'
+import type { Handoff } from '@/types'
 
-interface Handoff {
-  id: string
-  conversation_id: string
-  customer_name: string
-  customer_phone: string
-  customer_whatsapp: string
-  customer_location: string
-  product_name: string
-  original_price: number
-  agreed_price: number
-  quantity: number
-  status: 'pending' | 'sold' | 'lost' | 'expired'
-  final_price: number | null
-  owner_notes: string
-  reminder_count: number
-  created_at: string
-}
+type BadgeVariant = 'sky' | 'success' | 'warning' | 'error' | 'neutral'
 
-const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+const statusConfig: Record<string, { label: string; color: BadgeVariant; icon: React.ElementType }> = {
   pending: { label: 'HOT', color: 'warning', icon: Clock },
   sold: { label: 'SOLD', color: 'success', icon: CheckCircle },
   lost: { label: 'LOST', color: 'error', icon: XCircle },
@@ -46,8 +32,7 @@ function timeAgo(dateStr: string): string {
 
 export default function LeadsPage() {
   const { toast } = useToast()
-  const apiHook = useAPI() as any
-  const { data, get: getHandoffs, loading } = apiHook
+  const { data, get: getHandoffs, loading } = useAPI<HandoffsResponse>()
   const [statusFilter, setStatusFilter] = useState<string>('')
 
   const handoffs: Handoff[] = data?.handoffs || []
@@ -180,7 +165,7 @@ export default function LeadsPage() {
                               )}
                             </td>
                             <td className="px-4 py-3">
-                              <Badge variant={cfg?.color as any || 'neutral'}>
+                              <Badge variant={cfg?.color || 'neutral'}>
                                 <StatusIcon className="w-3 h-3 mr-1" />
                                 {cfg?.label || h.status}
                               </Badge>
@@ -218,7 +203,7 @@ export default function LeadsPage() {
                               <div className="text-[10px] text-tertiary">{h.customer_phone || h.customer_whatsapp || 'No phone'}</div>
                             </div>
                           </div>
-                          <Badge variant={cfg?.color as any || 'neutral'}>
+                          <Badge variant={cfg?.color || 'neutral'}>
                             <StatusIcon className="w-3 h-3 mr-1" />
                             {cfg?.label || h.status}
                           </Badge>

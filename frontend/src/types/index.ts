@@ -202,6 +202,29 @@ export interface APIKey {
   created_at: string;
 }
 
+// Handoff / Leads
+export interface Handoff {
+  id: string
+  conversation_id: string
+  customer_name: string
+  customer_phone: string
+  customer_whatsapp: string
+  customer_location: string
+  product_name: string
+  original_price: number
+  agreed_price: number
+  quantity: number
+  status: 'pending' | 'sold' | 'lost' | 'expired'
+  final_price: number | null
+  owner_notes: string
+  reminder_count: number
+  created_at: string
+}
+
+export interface HandoffsResponse {
+  handoffs: Handoff[]
+}
+
 // Billing System
 export interface UserCredit {
   id: string;

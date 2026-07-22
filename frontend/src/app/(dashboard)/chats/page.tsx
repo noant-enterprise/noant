@@ -11,6 +11,7 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { ArrowLeft, Info, Sparkles } from 'lucide-react'
 import type { Conversation, Message, WSMessage } from '@/types'
+import type { ConversationListResponse, DirectChatResponse } from '@/types/api'
 
 export default function ChatsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -18,17 +19,14 @@ export default function ChatsPage() {
   const activeId = searchParams.get('id')
   const isMobileChatView = !!activeId
 
-  const convAPI = useAPI() as any
-  const { data: convData, get: getConversations, loadMore, loading: convLoading, loadingMore } = convAPI
+  const { data: convData, get: getConversations, loadMore, loading: convLoading, loadingMore } = useAPI<ConversationListResponse>()
 
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearLoading, setClearLoading] = useState(false)
 
-  const postAPI = useAPI() as any
-  const { post } = postAPI
+  const { post } = useAPI<DirectChatResponse>()
 
-  const putAPI = useAPI() as any
-  const { put } = putAPI
+  const { put } = useAPI()
 
   const { toast } = useToast()
   const { subscribe } = useWebSocket()
@@ -188,7 +186,7 @@ export default function ChatsPage() {
             id: msg.data?.id || `msg-${Date.now()}`,
             conversation_id: activeId,
             content: msg.content || '',
-            sender_type: (msg.sender_type || 'customer') as any,
+            sender_type: (msg.sender_type || 'customer') as Message['sender_type'],
             role: msg.sender_type || 'customer',
             created_at: msg.timestamp || new Date().toISOString(),
             confidence: msg.data?.confidence,

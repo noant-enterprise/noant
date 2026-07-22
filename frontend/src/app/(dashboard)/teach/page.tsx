@@ -10,6 +10,8 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { useToast } from '@/components/ui/Toast'
 import { useConfirm } from '@/hooks/useConfirm'
 import { api } from '../../../lib/api'
+import type { TrainingCategoriesResponse, TrainingUnknownQuestionsResponse } from '@/types/api'
+import type { Category, QAPair } from '@/types'
 import { useOffline } from '@/hooks/useOffline'
 import {
   Bot, Send, X, Loader2, Sparkles, Search, Plus, Trash2, Edit3,
@@ -419,7 +421,7 @@ function QAModal({
   onClose: () => void
   onSubmit: (question: string, answer: string, catId: string) => Promise<void>
   loading: boolean
-  categories: any[]
+  categories: Category[]
   initialCatId?: string
   mode: 'add' | 'edit'
   initialQuestion?: string
@@ -464,7 +466,7 @@ function QAModal({
             disabled={loading}
           >
             <option value="default">Default</option>
-            {categories.map((c: any) =>
+            {categories.map((c) =>
               c.id !== 'default' && <option key={c.id} value={c.id}>{c.name}</option>
             )}
           </select>
@@ -524,12 +526,12 @@ function QATableSheet({
   onDeleteQA,
   onDeleteCategory,
 }: {
-  category: any | null
-  qaList: any[]
+  category: Category | null
+  qaList: QAPair[]
   loading: boolean
   onClose: () => void
   onAddQA: () => void
-  onEditQA: (qa: any) => void
+  onEditQA: (qa: QAPair) => void
   onDeleteQA: (id: string) => void
   onDeleteCategory: () => void
 }) {
@@ -673,7 +675,7 @@ function QATableSheet({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-default">
-                  {filtered.map((qa: any) => (
+                  {filtered.map((qa) => (
                     <tr key={qa.id} className="hover:bg-inset/30 transition-colors group">
                       <td className="px-6 py-4 text-sm font-semibold text-primary leading-relaxed align-top break-words">
                         {qa.question}
@@ -742,10 +744,8 @@ export default function TeachPage() {
   const [clearGapsLoading, setClearGapsLoading] = useState(false)
 
   // API hooks
-  const catAPI = useAPI() as any
-  const { data: catData, get: getCategories, loading: catLoading } = catAPI
-  const uqAPI = useAPI() as any
-  const { data: uqData, get: getUnknown, loading: uqLoading } = uqAPI
+  const { data: catData, get: getCategories, loading: catLoading } = useAPI<TrainingCategoriesResponse>()
+  const { data: uqData, get: getUnknown, loading: uqLoading } = useAPI<TrainingUnknownQuestionsResponse>()
 
   // Upload state
   const [progress, setProgress] = useState(0)
@@ -754,12 +754,12 @@ export default function TeachPage() {
 
   // Search
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<QAPair[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
 
   // Category detail panel
-  const [selectedCategory, setSelectedCategory] = useState<any | null>(null)
-  const [categoryQAs, setCategoryQAs] = useState<any[]>([])
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
+  const [categoryQAs, setCategoryQAs] = useState<QAPair[]>([])
   const [categoryQALoading, setCategoryQALoading] = useState(false)
 
   // Modals
@@ -771,7 +771,7 @@ export default function TeachPage() {
   const [addQAInitialCatId, setAddQAInitialCatId] = useState('default')
 
   const [editQAOpen, setEditQAOpen] = useState(false)
-  const [editQAPair, setEditQAPair] = useState<any | null>(null)
+  const [editQAPair, setEditQAPair] = useState<QAPair | null>(null)
   const [editQALoading, setEditQALoading] = useState(false)
 
   const [confirmDeleteCatOpen, setConfirmDeleteCatOpen] = useState(false)
@@ -789,7 +789,7 @@ export default function TeachPage() {
     const t = setTimeout(async () => {
       setSearchLoading(true)
       try {
-        const res = await api.get<{ qa_pairs: any[] }>(`/training/search?q=${encodeURIComponent(searchQuery)}`)
+        const res = await api.get<{ qa_pairs: QAPair[] }>(`/training/search?q=${encodeURIComponent(searchQuery)}`)
         setSearchResults(res.qa_pairs || [])
       } catch { /* no-op */ } finally { setSearchLoading(false) }
     }, 300)
@@ -800,7 +800,7 @@ export default function TeachPage() {
   const loadCategoryQAs = async (catId: string) => {
     setCategoryQALoading(true)
     try {
-      const res = await api.get<{ qa_pairs: any[] }>(`/training/categories/${catId}/qa`)
+      const res = await api.get<{ qa_pairs: QAPair[] }>(`/training/categories/${catId}/qa`)
       setCategoryQAs(res.qa_pairs || [])
     } catch { toast('Failed to load category questions', 'error') }
     finally { setCategoryQALoading(false) }
@@ -877,7 +877,7 @@ export default function TeachPage() {
   }
 
   // Category select
-  const handleCategoryClick = (cat: any) => {
+  const handleCategoryClick = (cat: Category) => {
     setSelectedCategory(cat)
     loadCategoryQAs(cat.id)
   }
@@ -908,7 +908,7 @@ export default function TeachPage() {
   }
 
   // Edit Q&A pair
-  const handleEditQAClick = (qa: any) => {
+  const handleEditQAClick = (qa: QAPair) => {
     setEditQAPair(qa)
     setEditQAOpen(true)
   }
@@ -1035,8 +1035,8 @@ export default function TeachPage() {
               <div className="p-8 text-center text-secondary text-sm">No matching trained Q&amp;As found.</div>
             ) : (
               <div className="divide-y divide-default">
-                {searchResults.map((qa: any) => {
-                  const cat = categories.find((c: any) => c.id === qa.category_id)
+                {searchResults.map((qa) => {
+                  const cat = categories.find((c) => c.id === qa.category_id)
                   return (
                     <div key={qa.id} className="p-4 hover:bg-inset/50 transition-colors flex items-start gap-4 justify-between">
                       <div className="space-y-1 min-w-0">
@@ -1135,7 +1135,7 @@ export default function TeachPage() {
               </div>
             ) : (
               <div className="max-h-[520px] overflow-y-auto pr-1 space-y-3 scrollbar-thin">
-                {questions.map((q: any) => (
+                {questions.map((q) => (
                   <UnknownQuestionItem
                     key={q.id}
                     question={q}
@@ -1222,7 +1222,7 @@ export default function TeachPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {categories.map((c: any) => (
+              {categories.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => handleCategoryClick(c)}

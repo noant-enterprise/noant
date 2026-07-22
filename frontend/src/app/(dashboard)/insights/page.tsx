@@ -6,6 +6,11 @@ import {
 } from '@/components/stats'
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card'
 import { Skeleton, StatSkeleton } from '@/components/ui/Skeleton'
+import type {
+  AnalyticsOverview, TrendsResponse, InsightsResponse,
+  ChannelAnalyticsResponse, CSATResponse, UnknownQuestionsStatsResponse,
+  PopularQuestionsResponse, MessageTrendResponse,
+} from '@/types/api'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, PieChart, Pie, Cell,
@@ -83,29 +88,21 @@ function CSATScoreCard({ avg_score, total_ratings }: { avg_score?: number; total
 }
 
 export default function InsightsPage() {
-  const overviewAPI = useAPI() as any
-  const { data: overview, get: getOverview, loading: ovLoading } = overviewAPI
+  const { data: overview, get: getOverview, loading: ovLoading } = useAPI<AnalyticsOverview>()
 
-  const trendsAPI = useAPI() as any
-  const { data: trends, get: getTrends, loading: trLoading } = trendsAPI
+  const { data: trends, get: getTrends, loading: trLoading } = useAPI<TrendsResponse>()
 
-  const insightsAPI = useAPI() as any
-  const { data: insights, get: getInsights, loading: inLoading } = insightsAPI
+  const { data: insights, get: getInsights, loading: inLoading } = useAPI<InsightsResponse>()
 
-  const channelsAPI = useAPI() as any
-  const { data: channels, get: getChannels, loading: chLoading } = channelsAPI
+  const { data: channels, get: getChannels, loading: chLoading } = useAPI<ChannelAnalyticsResponse>()
 
-  const csatAPI = useAPI() as any
-  const { data: csat, get: getCSAT, loading: csatLoading } = csatAPI
+  const { data: csat, get: getCSAT, loading: csatLoading } = useAPI<CSATResponse>()
 
-  const uqAPI = useAPI() as any
-  const { data: unknownStats, get: getUQ, loading: uqLoading } = uqAPI
+  const { data: unknownStats, get: getUQ, loading: uqLoading } = useAPI<UnknownQuestionsStatsResponse>()
 
-  const popularAPI = useAPI() as any
-  const { data: popular, get: getPopular, loading: popLoading } = popularAPI
+  const { data: popular, get: getPopular, loading: popLoading } = useAPI<PopularQuestionsResponse>()
 
-  const msgTrendAPI = useAPI() as any
-  const { data: msgTrend, get: getMsgTrend, loading: msgLoading } = msgTrendAPI
+  const { data: msgTrend, get: getMsgTrend, loading: msgLoading } = useAPI<MessageTrendResponse>()
 
   useEffect(() => {
     getOverview('/analytics/overview')
@@ -120,10 +117,10 @@ export default function InsightsPage() {
 
   const msgChartData = useMemo(() => {
     if (!msgTrend?.trends) return []
-    return msgTrend.trends.map((d: any) => ({ ...d, dateShort: d.date.slice(-5) }))
+    return msgTrend.trends.map((d) => ({ ...d, dateShort: d.date.slice(-5) }))
   }, [msgTrend])
 
-  const byStatus = unknownStats?.by_status || {}
+  const byStatus: { pending?: number; trained?: number; ignored?: number } = unknownStats?.by_status || {}
 
   return (
     <div className="animate-fade-in space-y-5 lg:space-y-6 pt-2">
@@ -293,7 +290,7 @@ export default function InsightsPage() {
                 ))}
               </div>
             ) : (
-              (insights?.top_intents || []).map((item: any, i: number) => (
+              (insights?.top_intents || []).map((item, i) => (
                 <MetricRow
                   key={i}
                   icon={['$', '#', '?', '!', '*'][i] || '?'}
@@ -344,7 +341,7 @@ export default function InsightsPage() {
             ) : (popular?.questions || []).length === 0 ? (
               <p className="text-xs text-tertiary text-center py-8">No unanswered questions</p>
             ) : (
-              (popular?.questions || []).slice(0, 6).map((q: any, i: number) => (
+              (popular?.questions || []).slice(0, 6).map((q, i) => (
                 <div key={i} className="flex items-center justify-between gap-3 py-1.5 border-b border-border last:border-0">
                   <span className="text-xs truncate flex-1 text-secondary">{q.question}</span>
                   <span className="text-xs font-semibold text-tertiary shrink-0 ml-2">×{q.count}</span>

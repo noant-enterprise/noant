@@ -9,6 +9,8 @@ import { useToast } from '@/components/ui/Toast'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { useModal } from '@/hooks/useModal'
 import { cn } from '@/lib/utils'
+import type { ProfileResponse, TeamResponse, APIKeysResponse } from '@/types/api'
+import type { TeamMember, APIKey } from '@/types'
 import BillingPage from '../billing/page'
 
 export default function SetupPage() {
@@ -19,23 +21,17 @@ export default function SetupPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [tab, setTab] = useState<'profile' | 'team' | 'billing' | 'api'>('profile')
   
-  const profAPI = useAPI() as any
-  const { data: profile, get: getProfile, loading: profLoading } = profAPI
+  const { data: profile, get: getProfile, loading: profLoading } = useAPI<ProfileResponse>()
   
-  const teamAPI = useAPI() as any
-  const { data: teamData, get: getTeam, loading: teamLoading } = teamAPI
+  const { data: teamData, get: getTeam, loading: teamLoading } = useAPI<TeamResponse>()
   
-  const keyAPI = useAPI() as any
-  const { data: keys, get: getKeys, loading: keyLoading } = keyAPI
+  const { data: keys, get: getKeys, loading: keyLoading } = useAPI<APIKeysResponse>()
   
-  const putAPI = useAPI() as any
-  const { put } = putAPI
+  const { put } = useAPI()
   
-  const postAPI = useAPI() as any
-  const { post } = postAPI
+  const { post } = useAPI()
   
-  const delAPI = useAPI() as any
-  const { del } = delAPI
+  const { del } = useAPI()
   
   const { toast } = useToast()
 
@@ -193,7 +189,7 @@ export default function SetupPage() {
               {teamLoading ? <TeamSkeleton /> : members.length === 0 ? (
                 <EmptyTeam />
               ) : (
-                members.map((m: any) => (
+                members.map((m: TeamMember) => (
                   <div key={m.id} className="flex items-center justify-between p-4 border-b border-subtle last:border-b-0 gap-3">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-10 h-10 rounded-full bg-noant-black text-white flex items-center justify-center font-semibold shrink-0">
@@ -229,7 +225,7 @@ export default function SetupPage() {
               {keyLoading ? <ApiKeySkeleton /> : keyList.length === 0 ? (
                 <EmptyApiKeys />
               ) : (
-                keyList.map((k: any) => (
+                keyList.map((k: APIKey) => (
                   <div key={k.id} className="flex items-center justify-between p-4 border-b border-subtle last:border-b-0 gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm text-primary">{k.name}</p>

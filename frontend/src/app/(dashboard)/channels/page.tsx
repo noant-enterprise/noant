@@ -19,6 +19,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useModal } from '@/hooks/useModal'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useWidgetConfig } from '@/contexts/WidgetConfigContext'
+import type { IntegrationsResponse } from '@/types/api'
 import {
   AlertTriangle,
   Check,
@@ -73,11 +74,9 @@ function shorten(value: string, head = 10, tail = 8) {
 
 export default function ChannelsPage() {
   const { user } = useAuth()
-  const intAPI = useAPI() as any
-  const { data, get: getIntegrations, loading } = intAPI
+  const { data, get: getIntegrations, loading } = useAPI<IntegrationsResponse>()
 
-  const postAPI = useAPI() as any
-  const { post } = postAPI
+  const { post } = useAPI()
 
   const { config: widgetConfig, setConfig: setWidgetConfig } = useWidgetConfig()
   const { subscribe } = useWebSocket()
@@ -127,7 +126,7 @@ export default function ChannelsPage() {
       setShowUpgradeModal(true)
       return
     }
-    setActiveModal(channel as any)
+    setActiveModal(channel as 'telegram' | 'whatsapp' | 'gmail' | 'web')
   }
 
   const handleConnectSubmit = async (channel: string, config: any) => {

@@ -34,7 +34,7 @@ function ProfileTab() {
         last_name: user.last_name || '',
         email: user.email || '',
         company_name: user.company_name || '',
-        phone: (user as any).phone || '',
+        phone: user?.phone || '',
       })
     }
   }, [user])
