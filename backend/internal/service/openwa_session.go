@@ -56,7 +56,7 @@ type SessionManager struct {
 }
 
 func NewSessionManager(cfg *config.Config, openwa *OpenWAService, redis *infrastructure.RedisClient, logger *infrastructure.Logger, queue *SendQueue, workerPool *WorkerPool) *SessionManager {
-	return &SessionManager{
+	sm := &SessionManager{
 		cfg:        cfg,
 		openwa:     openwa,
 		redis:      redis,
@@ -67,6 +67,9 @@ func NewSessionManager(cfg *config.Config, openwa *OpenWAService, redis *infrast
 		stopCh:     make(chan struct{}),
 		doneCh:     make(chan struct{}),
 	}
+	// Fix 3: load persisted sessions from Redis on startup
+	sm.loadPersistedSessions()
+	return sm
 }
 
 func (sm *SessionManager) Start() {
@@ -109,6 +112,7 @@ func (sm *SessionManager) UnregisterSession(sessionID string) {
 
 	if exists {
 		sm.workerPool.StopWorker(sessionID)
+		sm.removePersistedSession(sessionID)
 		sm.logger.Info("Session unregistered from health monitoring", "sessionID", sessionID)
 	}
 }
@@ -163,6 +167,7 @@ func (sm *SessionManager) UpdateState(sessionID, state string) {
 			sh.LastConnected = now
 			sm.logger.Info("Session connected", "sessionID", sessionID)
 			sm.storeSessionQR(sessionID, "")
+			sm.persistSession(sh)
 		}
 	case SessionStateDisconnected, SessionStateFailed, SessionStateExpired:
 		sh.ConsecutiveFailures++
@@ -172,6 +177,7 @@ func (sm *SessionManager) UpdateState(sessionID, state string) {
 				sh.TotalDowntime += now.Sub(sh.LastConnected)
 			}
 		}
+		sm.persistSession(sh)
 	}
 	sh.mu.Unlock()
 }
@@ -475,3 +481,90 @@ func (sm *SessionMetrics) GetMetrics(sessionID string) map[string]interface{} {
 }
 
 type QRRawMessage json.RawMessage
+
+// ========== SESSION PERSISTENCE (Fix 3) ==========
+
+const sessionPersistKeyPrefix = "openwa:session:"
+const sessionPersistTTL = 24 * time.Hour
+
+type sessionPersistData struct {
+	SessionID string    `json:"session_id"`
+	UserID    string    `json:"user_id"`
+	State     string    `json:"state"`
+	SavedAt   time.Time `json:"saved_at"`
+}
+
+func (sm *SessionManager) persistSession(sh *SessionHealth) {
+	if sm.redis == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	data := sessionPersistData{
+		SessionID: sh.SessionID,
+		UserID:    sh.UserID,
+		State:     sh.State,
+		SavedAt:   time.Now(),
+	}
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	key := sessionPersistKeyPrefix + sh.SessionID
+	_ = sm.redis.SetEx(ctx, key, string(jsonData), sessionPersistTTL)
+}
+
+func (sm *SessionManager) loadPersistedSessions() {
+	if sm.redis == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	iter := sm.redis.Scan(ctx, sessionPersistKeyPrefix+"*", 100)
+	if iter == nil {
+		return
+	}
+
+	var count int
+	for iter.Next(ctx) {
+		key := iter.Val()
+		data, err := sm.redis.Get(ctx, key)
+		if err != nil {
+			continue
+		}
+		var persisted sessionPersistData
+		if err := json.Unmarshal([]byte(data), &persisted); err != nil {
+			continue
+		}
+
+		// Only restore sessions saved within the last hour
+		if time.Since(persisted.SavedAt) > 1*time.Hour {
+			continue
+		}
+
+		sm.mu.Lock()
+		sm.sessions[persisted.SessionID] = &SessionHealth{
+			SessionID:     persisted.SessionID,
+			UserID:        persisted.UserID,
+			State:         persisted.State,
+			StopReconnect: make(chan struct{}),
+		}
+		sm.workerPool.EnsureWorker(persisted.SessionID)
+		sm.mu.Unlock()
+		count++
+	}
+	if count > 0 {
+		sm.logger.Info("Restored persisted sessions from Redis", "count", count)
+	}
+}
+
+func (sm *SessionManager) removePersistedSession(sessionID string) {
+	if sm.redis == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = sm.redis.Delete(ctx, sessionPersistKeyPrefix+sessionID)
+}

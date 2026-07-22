@@ -106,6 +106,9 @@ type Config struct {
 	OpenWAConnPoolSize     int
 	OpenWAConnTimeout      time.Duration
 	OpenWAReqTimeout       time.Duration
+	OpenWAMessageMaxAge    time.Duration
+	OpenWAMaxMessageSize   int
+	OpenWAPerUserRateLimit int
 }
 
 func Load() *Config {
@@ -250,6 +253,9 @@ func Load() *Config {
 		OpenWAConnPoolSize:         atoiDefault(getEnv("OPENWA_CONN_POOL_SIZE", "10")),
 		OpenWAConnTimeout:          time.Duration(atoiDefault(getEnv("OPENWA_CONN_TIMEOUT", "30"))) * time.Second,
 		OpenWAReqTimeout:           time.Duration(atoiDefault(getEnv("OPENWA_REQ_TIMEOUT", "60"))) * time.Second,
+		OpenWAMessageMaxAge:        time.Duration(atoiDefault(getEnv("OPENWA_MESSAGE_MAX_AGE_MINUTES", "60"))) * time.Minute,
+		OpenWAMaxMessageSize:       atoiDefault(getEnv("OPENWA_MAX_MESSAGE_SIZE", "65536")),
+		OpenWAPerUserRateLimit:     atoiDefault(getEnv("OPENWA_PER_USER_RATE_LIMIT", "50")),
 	}
 
 	cfg.CORSOrigins = parseCSVEnv("CORS_ORIGINS", cfg.APIURL)

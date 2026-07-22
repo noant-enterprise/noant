@@ -602,10 +602,11 @@ func main() {
 	logger.Info("Shutting down server...")
 
 	// Gracefully stop background systems
-	services.OpenWA.StopSessionManager()
-	if pool := services.OpenWA.GetWorkerPool(); pool != nil {
-		pool.StopAll()
-	}
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	// Shutdown OpenWA with queue drain (Fix 1: graceful shutdown)
+	services.OpenWA.Shutdown(shutdownCtx)
 	services.Background.Shutdown()
 	jobQueue.Shutdown()
 

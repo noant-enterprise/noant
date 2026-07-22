@@ -403,12 +403,12 @@ func TestLogoutSession_Error(t *testing.T) {
 // ========== CIRCUIT BREAKER TESTS ==========
 
 func TestCircuitBreaker_InitiallyClosed(t *testing.T) {
-	cb := NewOpenWACircuitBreaker()
+	cb := NewSessionCircuitBreaker()
 	assertEqual(t, false, cb.IsOpen())
 }
 
 func TestCircuitBreaker_OpensAfterFiveFailures(t *testing.T) {
-	cb := NewOpenWACircuitBreaker()
+	cb := NewSessionCircuitBreaker()
 
 	for i := 0; i < 4; i++ {
 		cb.RecordFailure()
@@ -420,7 +420,7 @@ func TestCircuitBreaker_OpensAfterFiveFailures(t *testing.T) {
 }
 
 func TestCircuitBreaker_ClosesAfterSuccess(t *testing.T) {
-	cb := NewOpenWACircuitBreaker()
+	cb := NewSessionCircuitBreaker()
 
 	for i := 0; i < 5; i++ {
 		cb.RecordFailure()
@@ -432,7 +432,7 @@ func TestCircuitBreaker_ClosesAfterSuccess(t *testing.T) {
 }
 
 func TestCircuitBreaker_HalfOpenAfterTimeout(t *testing.T) {
-	cb := NewOpenWACircuitBreaker()
+	cb := NewSessionCircuitBreaker()
 
 	for i := 0; i < 5; i++ {
 		cb.RecordFailure()

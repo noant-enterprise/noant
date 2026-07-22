@@ -11,9 +11,6 @@ import (
 	"noant/internal/infrastructure"
 )
 
-// Ensure min from parent package is used
-// (defined in service.go)
-
 // ========== MESSAGE TYPES ==========
 
 const (
@@ -32,35 +29,38 @@ const (
 	QueueStatusDeadLetter = "dead_letter"
 
 	MaxRetries = 5
+
+	dedupKeyPrefix = "openwa:dedup:"
+	dedupTTL       = 2 * time.Hour
 )
 
 // retryDelays in seconds for each retry attempt
 var retryDelays = []time.Duration{
-	0,           // attempt 1: immediate
-	30 * time.Second,  // attempt 2
-	2 * time.Minute,   // attempt 3
-	5 * time.Minute,   // attempt 4
-	15 * time.Minute,  // attempt 5
+	0,                // attempt 1: immediate
+	30 * time.Second, // attempt 2
+	2 * time.Minute,  // attempt 3
+	5 * time.Minute,  // attempt 4
+	15 * time.Minute, // attempt 5
 }
 
 // ========== QUEUE ENTRY ==========
 
 type QueueEntry struct {
-	ID         string     `json:"id"`
-	SessionID  string     `json:"session_id"`
-	UserID     string     `json:"user_id"`
-	ChatID     string     `json:"chat_id"`
-	MsgType    string     `json:"msg_type"`
-	Content    string     `json:"content"`
-	MediaURL   string     `json:"media_url,omitempty"`
-	Caption    string     `json:"caption,omitempty"`
-	Priority   int        `json:"priority"`
-	Status     string     `json:"status"`
-	RetryCount int        `json:"retry_count"`
-	LastError  string     `json:"last_error,omitempty"`
-	NextRetry  *time.Time `json:"next_retry,omitempty"`
-	ScheduledAt time.Time `json:"scheduled_at"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID          string     `json:"id"`
+	SessionID   string     `json:"session_id"`
+	UserID      string     `json:"user_id"`
+	ChatID      string     `json:"chat_id"`
+	MsgType     string     `json:"msg_type"`
+	Content     string     `json:"content"`
+	MediaURL    string     `json:"media_url,omitempty"`
+	Caption     string     `json:"caption,omitempty"`
+	Priority    int        `json:"priority"`
+	Status      string     `json:"status"`
+	RetryCount  int        `json:"retry_count"`
+	LastError   string     `json:"last_error,omitempty"`
+	NextRetry   *time.Time `json:"next_retry,omitempty"`
+	ScheduledAt time.Time  `json:"scheduled_at"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // ========== RATE LIMITER ==========
@@ -152,33 +152,100 @@ func (rl *MessageRateLimiter) Allow(sessionID, msgType string) (allowed bool, re
 // ========== SEND QUEUE ==========
 
 type SendQueue struct {
-	mu       sync.Mutex
-	entries  []*QueueEntry
+	mu        sync.Mutex
+	entries   []*QueueEntry
 	bySession map[string][]*QueueEntry // sessionID -> entries for quick lookup
-	redis    *infrastructure.RedisClient
-	logger   *infrastructure.Logger
-	cfg      *config.Config
+	byUser    map[string]int           // userID -> queued message count (Fix 9)
+	redis     *infrastructure.RedisClient
+	logger    *infrastructure.Logger
+	cfg       *config.Config
+
+	// Fix 8: condition variable for efficient worker wake-up
+	cond     *sync.Cond
+	stopCh   chan struct{}
+	doneCh   chan struct{}
 }
 
 func NewSendQueue(cfg *config.Config, redis *infrastructure.RedisClient, logger *infrastructure.Logger) *SendQueue {
 	sq := &SendQueue{
 		entries:   make([]*QueueEntry, 0),
 		bySession: make(map[string][]*QueueEntry),
+		byUser:    make(map[string]int),
 		redis:     redis,
 		logger:    logger,
 		cfg:       cfg,
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
 	}
+	sq.cond = sync.NewCond(&sq.mu)
 	if redis != nil {
 		sq.loadFromRedis()
 	}
+	go sq.evictExpiredLoop()
 	return sq
+}
+
+// evictExpiredLoop removes entries older than MessageMaxAge (Fix 7)
+func (sq *SendQueue) evictExpiredLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	defer close(sq.doneCh)
+
+	for {
+		select {
+		case <-sq.stopCh:
+			return
+		case <-ticker.C:
+			sq.evictExpired()
+		}
+	}
+}
+
+func (sq *SendQueue) evictExpired() {
+	if sq.cfg.OpenWAMessageMaxAge <= 0 {
+		return
+	}
+	sq.mu.Lock()
+	defer sq.mu.Unlock()
+
+	cutoff := time.Now().Add(-sq.cfg.OpenWAMessageMaxAge)
+	var remaining []*QueueEntry
+	for _, e := range sq.entries {
+		if e.Status == QueueStatusQueued && e.CreatedAt.Before(cutoff) {
+			sq.logger.Warn("Evicting expired queue entry", "id", e.ID, "age", time.Since(e.CreatedAt).String())
+			sq.removeFromRedisUnlocked(context.Background(), e.ID)
+			sq.byUser[e.UserID]--
+			if sq.byUser[e.UserID] <= 0 {
+				delete(sq.byUser, e.UserID)
+			}
+			continue
+		}
+		remaining = append(remaining, e)
+	}
+	if len(remaining) < len(sq.entries) {
+		sq.entries = remaining
+		sq.rebuildSessionIndex()
+		sq.cond.Broadcast()
+	}
+}
+
+func (sq *SendQueue) rebuildSessionIndex() {
+	sq.bySession = make(map[string][]*QueueEntry)
+	for _, e := range sq.entries {
+		sq.bySession[e.SessionID] = append(sq.bySession[e.SessionID], e)
+	}
+}
+
+// Stop shuts down the eviction loop
+func (sq *SendQueue) Stop() {
+	close(sq.stopCh)
+	<-sq.doneCh
 }
 
 func (sq *SendQueue) loadFromRedis() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Use SCAN to find all queue keys
 	iter := sq.redis.Scan(ctx, "openwa:queue:*", 100)
 	if iter == nil {
 		sq.logger.Warn("Redis SCAN not available, skipping queue load")
@@ -200,6 +267,7 @@ func (sq *SendQueue) loadFromRedis() {
 			sq.mu.Lock()
 			sq.entries = append(sq.entries, &entry)
 			sq.bySession[entry.SessionID] = append(sq.bySession[entry.SessionID], &entry)
+			sq.byUser[entry.UserID]++
 			sq.mu.Unlock()
 			count++
 		}
@@ -221,7 +289,7 @@ func (sq *SendQueue) persist(ctx context.Context, entry *QueueEntry) {
 	}
 }
 
-func (sq *SendQueue) removeFromRedis(ctx context.Context, entryID string) {
+func (sq *SendQueue) removeFromRedisUnlocked(ctx context.Context, entryID string) {
 	if sq.redis == nil {
 		return
 	}
@@ -230,18 +298,75 @@ func (sq *SendQueue) removeFromRedis(ctx context.Context, entryID string) {
 	}
 }
 
+// isDuplicate checks if a message ID has been processed recently (Fix 4)
+func (sq *SendQueue) isDuplicate(messageID string) bool {
+	if sq.redis == nil || messageID == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	key := dedupKeyPrefix + messageID
+	exists, err := sq.redis.Exists(ctx, key)
+	if err != nil {
+		return false
+	}
+	return exists
+}
+
+// markProcessed records a message ID as processed (Fix 4)
+func (sq *SendQueue) markProcessed(messageID string) {
+	if sq.redis == nil || messageID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_ = sq.redis.SetEx(ctx, dedupKeyPrefix+messageID, "1", dedupTTL)
+}
+
 // Enqueue adds a message to the queue with FIFO ordering within priority
+// Validates: message size (Fix 6), dedup (Fix 4), per-user rate (Fix 9)
 func (sq *SendQueue) Enqueue(entry *QueueEntry) error {
 	sq.mu.Lock()
 	defer sq.mu.Unlock()
+
+	// Fix 6: message size validation
+	maxSize := sq.cfg.OpenWAMaxMessageSize
+	if maxSize <= 0 {
+		maxSize = 65536
+	}
+	if len(entry.Content) > maxSize {
+		return fmt.Errorf("message too large: %d bytes exceeds limit of %d", len(entry.Content), maxSize)
+	}
+
+	// Fix 4: dedup check on message ID
+	if sq.isDuplicate(entry.ID) {
+		return fmt.Errorf("duplicate message: %s already processed", entry.ID)
+	}
 
 	// Check queue depth per session
 	if len(sq.bySession[entry.SessionID]) >= sq.cfg.OpenWAQueueDepth {
 		return fmt.Errorf("queue depth exceeded for session %s: max %d", entry.SessionID, sq.cfg.OpenWAQueueDepth)
 	}
 
+	// Fix 9: per-user rate limit
+	perUserLimit := sq.cfg.OpenWAPerUserRateLimit
+	if perUserLimit > 0 && entry.UserID != "" {
+		if sq.byUser[entry.UserID] >= perUserLimit {
+			return fmt.Errorf("per-user queue limit exceeded for user %s: max %d", entry.UserID, perUserLimit)
+		}
+	}
+
+	// Set creation time if zero
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now()
+	}
+	if entry.ScheduledAt.IsZero() {
+		entry.ScheduledAt = time.Now()
+	}
+
 	// Insert in priority order (lower number = higher priority)
-	// Within same priority, FIFO (append)
 	insertIdx := len(sq.entries)
 	for i, e := range sq.entries {
 		if e.Priority > entry.Priority {
@@ -259,16 +384,20 @@ func (sq *SendQueue) Enqueue(entry *QueueEntry) error {
 	}
 
 	sq.bySession[entry.SessionID] = append(sq.bySession[entry.SessionID], entry)
+	sq.byUser[entry.UserID]++
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	sq.persist(ctx, entry)
 
 	sq.logger.Debug("Message queued", "id", entry.ID, "session", entry.SessionID, "type", entry.MsgType, "priority", entry.Priority, "queueDepth", len(sq.entries))
+
+	// Wake up waiting workers (Fix 8)
+	sq.cond.Broadcast()
 	return nil
 }
 
-// Dequeue retrieves the next ready message (respects next_retry timing)
+// Dequeue retrieves the next ready message (respects next_retry timing and message TTL)
 func (sq *SendQueue) Dequeue() *QueueEntry {
 	sq.mu.Lock()
 	defer sq.mu.Unlock()
@@ -309,11 +438,14 @@ func (sq *SendQueue) Complete(entryID string) {
 	defer sq.mu.Unlock()
 
 	for i, entry := range sq.entries {
-		if entry.ID == entryID {
-			entry.Status = QueueStatusSent
-			sq.removeEntry(i, entry)
-			return
+		if entry.ID != entryID {
+			continue
 		}
+		entry.Status = QueueStatusSent
+		sq.markProcessed(entryID)
+		sq.removeEntry(i, entry)
+		sq.cond.Broadcast()
+		return
 	}
 }
 
@@ -333,6 +465,7 @@ func (sq *SendQueue) Fail(entryID string, err error) {
 			entry.Status = QueueStatusDeadLetter
 			sq.logger.Error("Message moved to dead letter queue", "id", entryID, "session", entry.SessionID, "error", entry.LastError)
 			sq.removeEntry(i, entry)
+			sq.cond.Broadcast()
 			return
 		}
 
@@ -353,7 +486,6 @@ func (sq *SendQueue) Fail(entryID string, err error) {
 func (sq *SendQueue) removeEntry(idx int, entry *QueueEntry) {
 	sq.entries = append(sq.entries[:idx], sq.entries[idx+1:]...)
 
-	// Remove from bySession
 	sessionEntries := sq.bySession[entry.SessionID]
 	for j, se := range sessionEntries {
 		if se.ID == entry.ID {
@@ -362,9 +494,40 @@ func (sq *SendQueue) removeEntry(idx int, entry *QueueEntry) {
 		}
 	}
 
+	sq.byUser[entry.UserID]--
+	if sq.byUser[entry.UserID] <= 0 {
+		delete(sq.byUser, entry.UserID)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	sq.removeFromRedis(ctx, entry.ID)
+	sq.removeFromRedisUnlocked(ctx, entry.ID)
+}
+
+// DrainQueue processes all remaining queued entries (Fix 1: graceful shutdown)
+func (sq *SendQueue) DrainQueue(ctx context.Context, sender func(entry *QueueEntry) error) int {
+	var processed int
+	for {
+		select {
+		case <-ctx.Done():
+			sq.logger.Warn("Queue drain context expired", "remaining", sq.Depth())
+			return processed
+		default:
+		}
+
+		entry := sq.Dequeue()
+		if entry == nil {
+			return processed
+		}
+
+		if err := sender(entry); err != nil {
+			sq.Fail(entry.ID, err)
+			sq.logger.Warn("Drain: message failed", "id", entry.ID, "error", err)
+		} else {
+			sq.Complete(entry.ID)
+			processed++
+		}
+	}
 }
 
 func (sq *SendQueue) Depth() int {
@@ -404,7 +567,7 @@ func (sq *SendQueue) Stats() map[string]interface{} {
 	}
 }
 
-// ========== SEND WORKER ==========
+// ========== SEND WORKER (Fix 8: sync.Cond instead of busy poll) ==========
 
 type SessionWorker struct {
 	sessionID  string
@@ -434,26 +597,33 @@ func (w *SessionWorker) Start() {
 
 func (w *SessionWorker) Stop() {
 	close(w.stopCh)
+	// Wake up the worker so it can check stopCh
+	w.queue.cond.Broadcast()
 	<-w.doneCh
 }
 
 func (w *SessionWorker) run() {
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
 	defer close(w.doneCh)
 
 	for {
+		w.processNext()
+
+		// Wait efficiently for new messages
+		w.queue.mu.Lock()
 		select {
 		case <-w.stopCh:
+			w.queue.mu.Unlock()
 			return
-		case <-ticker.C:
-			w.processNext()
+		default:
 		}
+		// sync.Cond.Wait atomically unlocks the mutex and suspends the goroutine
+		w.queue.cond.Wait()
+		w.queue.mu.Unlock()
 	}
 }
 
 func (w *SessionWorker) processNext() {
-	if w.queue == nil {
+	if w.queue == nil || w.openwa == nil {
 		return
 	}
 
@@ -471,7 +641,6 @@ func (w *SessionWorker) processNext() {
 	// Rate limit check
 	allowed, remaining := w.rateLimiter.Allow(w.sessionID, entry.MsgType)
 	if !allowed {
-		// Put it back as queued
 		entry.Status = QueueStatusQueued
 		w.logger.Warn("Rate limited, re-queuing", "id", entry.ID, "session", w.sessionID, "type", entry.MsgType)
 		return
@@ -567,4 +736,9 @@ func (wp *WorkerPool) StopAll() {
 	}
 }
 
-
+// WorkerCount returns the number of active workers
+func (wp *WorkerPool) WorkerCount() int {
+	wp.mu.Lock()
+	defer wp.mu.Unlock()
+	return len(wp.workers)
+}

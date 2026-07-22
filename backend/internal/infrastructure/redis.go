@@ -165,3 +165,27 @@ func (r *RedisClient) Scan(ctx context.Context, pattern string, count int64) *Sc
 
 // ErrRedisNil is returned when a key does not exist
 var ErrRedisNil = redis.Nil
+
+// SAdd adds one or more members to a set
+func (r *RedisClient) SAdd(ctx context.Context, key string, members ...interface{}) (int64, error) {
+	return r.client.SAdd(ctx, key, members...).Result()
+}
+
+// SIsMember checks if a value is a member of a set
+func (r *RedisClient) SIsMember(ctx context.Context, key string, member interface{}) (bool, error) {
+	return r.client.SIsMember(ctx, key, member).Result()
+}
+
+// SAddWithExpiry adds members to a set and sets the key expiry atomically
+func (r *RedisClient) SAddWithExpiry(ctx context.Context, key string, ttl time.Duration, members ...interface{}) error {
+	pipe := r.client.Pipeline()
+	pipe.SAdd(ctx, key, members...)
+	pipe.Expire(ctx, key, ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// HMSet sets multiple hash fields
+func (r *RedisClient) HMSet(ctx context.Context, key string, values map[string]interface{}) error {
+	return r.client.HSet(ctx, key, values).Err()
+}

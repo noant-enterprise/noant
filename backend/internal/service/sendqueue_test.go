@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,13 +11,18 @@ import (
 )
 
 func newTestQueue() *SendQueue {
-	cfg := &config.Config{OpenWAQueueDepth: 100}
-	return &SendQueue{
+	cfg := &config.Config{OpenWAQueueDepth: 100, OpenWAMaxMessageSize: 65536, OpenWAPerUserRateLimit: 50}
+	sq := &SendQueue{
 		entries:   make([]*QueueEntry, 0),
 		bySession: make(map[string][]*QueueEntry),
+		byUser:    make(map[string]int),
 		cfg:       cfg,
 		logger:    infrastructure.NewNullLogger(),
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
 	}
+	sq.cond = sync.NewCond(&sq.mu)
+	return sq
 }
 
 func TestEnqueueFIFO(t *testing.T) {
@@ -167,13 +173,17 @@ func TestRetryBackoff(t *testing.T) {
 }
 
 func TestQueueDepthLimit(t *testing.T) {
-	cfg := &config.Config{OpenWAQueueDepth: 2}
+	cfg := &config.Config{OpenWAQueueDepth: 2, OpenWAMaxMessageSize: 65536, OpenWAPerUserRateLimit: 50}
 	q := &SendQueue{
 		entries:   make([]*QueueEntry, 0),
 		bySession: make(map[string][]*QueueEntry),
+		byUser:    make(map[string]int),
 		cfg:       cfg,
 		logger:    infrastructure.NewNullLogger(),
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
 	}
+	q.cond = sync.NewCond(&q.mu)
 	_ = q.Enqueue(&QueueEntry{ID: "1", Priority: PriorityNormal, Status: QueueStatusQueued, SessionID: "s1", ChatID: "c1"})
 	_ = q.Enqueue(&QueueEntry{ID: "2", Priority: PriorityNormal, Status: QueueStatusQueued, SessionID: "s1", ChatID: "c1"})
 	err := q.Enqueue(&QueueEntry{ID: "3", Priority: PriorityNormal, Status: QueueStatusQueued, SessionID: "s1", ChatID: "c1"})

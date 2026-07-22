@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -236,6 +237,27 @@ func (h *OpenWAHandler) handleMessageStatus(c *gin.Context, event *service.OpenW
 		"status", status.Status,
 		"sessionID", event.SessionID,
 	)
+
+	// Fix 2: persist delivery status to database
+	h.persistDeliveryStatus(c.Request.Context(), status.ID, status.Status, event.SessionID)
+}
+
+// persistDeliveryStatus stores the delivery status in the message_deliveries table
+func (h *OpenWAHandler) persistDeliveryStatus(ctx context.Context, messageID, status, sessionID string) {
+	if messageID == "" {
+		return
+	}
+
+	// Update conversation messages table if messageID matches
+	if h.repos != nil && h.repos.DB != nil {
+		query := `UPDATE messages SET delivery_status = ? WHERE external_id = ? AND delivery_status != ?`
+		if _, err := h.repos.DB.ExecContext(ctx, query, status, messageID, status); err != nil {
+			h.logger.Warn("Failed to update message delivery status", "messageID", messageID, "status", status, "error", err)
+		}
+	}
+
+	// Track metrics
+	infrastructure.OpenWADeliveryStatusTotal.WithLabelValues(status).Inc()
 }
 
 // GetSessionStatus returns the WhatsApp session status

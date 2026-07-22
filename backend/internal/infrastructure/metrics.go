@@ -68,4 +68,26 @@ var (
 		Name: "noant_groq_rate_limited",
 		Help: "Total number of Groq API calls rate limited",
 	})
+
+	// Fix 10: Queue health metrics
+	OpenWAQueueDepthGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "noant_openwa_queue_depth_by_session",
+		Help: "OpenWA queue depth by session",
+	}, []string{"session_id"})
+
+	OpenWAMessagesInFlight = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "noant_openwa_messages_in_flight",
+		Help: "Messages currently being processed by workers",
+	})
+
+	OpenWACircuitBreakerOpen = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "noant_openwa_circuit_breaker_open",
+		Help: "Whether a session circuit breaker is open (1) or closed (0)",
+	}, []string{"session_id"})
+
+	// Fix 2: Delivery tracking
+	OpenWADeliveryStatusTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "noant_openwa_delivery_status_total",
+		Help: "WhatsApp message delivery status updates",
+	}, []string{"status"})
 )

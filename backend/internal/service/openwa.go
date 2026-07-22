@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"sync"
@@ -55,19 +56,20 @@ func (rlh *OpenWARateLimitHeaders) ShouldBackoff(sessionID string) bool {
 	return false
 }
 
-// Circuit breaker for OpenWA API calls
-type OpenWACircuitBreaker struct {
+// ========== FIX 5: PER-SESSION CIRCUIT BREAKER ==========
+
+type SessionCircuitBreaker struct {
 	mu          sync.Mutex
 	failures    int
 	lastFailure time.Time
 	state       string // closed, open, half-open
 }
 
-func NewOpenWACircuitBreaker() *OpenWACircuitBreaker {
-	return &OpenWACircuitBreaker{state: "closed"}
+func NewSessionCircuitBreaker() *SessionCircuitBreaker {
+	return &SessionCircuitBreaker{state: "closed"}
 }
 
-func (cb *OpenWACircuitBreaker) IsOpen() bool {
+func (cb *SessionCircuitBreaker) IsOpen() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
@@ -81,7 +83,7 @@ func (cb *OpenWACircuitBreaker) IsOpen() bool {
 	return false
 }
 
-func (cb *OpenWACircuitBreaker) RecordFailure() {
+func (cb *SessionCircuitBreaker) RecordFailure() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 	cb.failures++
@@ -91,11 +93,47 @@ func (cb *OpenWACircuitBreaker) RecordFailure() {
 	}
 }
 
-func (cb *OpenWACircuitBreaker) RecordSuccess() {
+func (cb *SessionCircuitBreaker) RecordSuccess() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 	cb.failures = 0
 	cb.state = "closed"
+}
+
+// CircuitBreakerManager manages per-session circuit breakers
+type CircuitBreakerManager struct {
+	mu       sync.Mutex
+	breakers map[string]*SessionCircuitBreaker
+}
+
+func NewCircuitBreakerManager() *CircuitBreakerManager {
+	return &CircuitBreakerManager{
+		breakers: make(map[string]*SessionCircuitBreaker),
+	}
+}
+
+func (m *CircuitBreakerManager) Get(sessionID string) *SessionCircuitBreaker {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	cb, ok := m.breakers[sessionID]
+	if !ok {
+		cb = NewSessionCircuitBreaker()
+		m.breakers[sessionID] = cb
+	}
+	return cb
+}
+
+func (m *CircuitBreakerManager) IsOpen(sessionID string) bool {
+	return m.Get(sessionID).IsOpen()
+}
+
+func (m *CircuitBreakerManager) RecordFailure(sessionID string) {
+	m.Get(sessionID).RecordFailure()
+}
+
+func (m *CircuitBreakerManager) RecordSuccess(sessionID string) {
+	m.Get(sessionID).RecordSuccess()
 }
 
 // ========== OpenWA SERVICE ==========
@@ -105,7 +143,7 @@ type OpenWAService struct {
 	httpClient       *http.Client
 	logger           *infrastructure.Logger
 	rateLimitHeaders *OpenWARateLimitHeaders
-	circuitBreaker   *OpenWACircuitBreaker
+	cbManager        *CircuitBreakerManager
 
 	queue       *SendQueue
 	rateLimiter *MessageRateLimiter
@@ -133,10 +171,9 @@ func NewOpenWAService(cfg *config.Config, logger *infrastructure.Logger) *OpenWA
 		},
 		logger:           logger,
 		rateLimitHeaders: NewOpenWARateLimitHeaders(),
-		circuitBreaker:   NewOpenWACircuitBreaker(),
+		cbManager:        NewCircuitBreakerManager(),
 	}
 
-	// Initialize subsystems after OpenWAService creation
 	svc.rateLimiter = NewMessageRateLimiter(cfg)
 	svc.queue = NewSendQueue(cfg, nil, logger)
 	svc.workerPool = NewWorkerPool(svc, svc.queue, svc.rateLimiter, logger)
@@ -218,27 +255,22 @@ func (s *OpenWAService) GetMediaHandler() *MediaHandler {
 	return s.mediaHandler
 }
 
-// ShouldBackoff returns true if the OpenWA API rate limit headers indicate
-// that we should back off for the given session.
 func (s *OpenWAService) ShouldBackoff(sessionID string) bool {
 	return s.rateLimitHeaders.ShouldBackoff(sessionID)
 }
 
-// StartSessionManager starts the background session health monitor
 func (s *OpenWAService) StartSessionManager() {
 	if s.sessionMgr != nil {
 		s.sessionMgr.Start()
 	}
 }
 
-// StopSessionManager stops the background session health monitor
 func (s *OpenWAService) StopSessionManager() {
 	if s.sessionMgr != nil {
 		s.sessionMgr.Stop()
 	}
 }
 
-// InjectDependencies sets Redis after initialization (since Redis is optional)
 func (s *OpenWAService) InjectDependencies(redis *infrastructure.RedisClient) {
 	if redis == nil {
 		return
@@ -246,4 +278,28 @@ func (s *OpenWAService) InjectDependencies(redis *infrastructure.RedisClient) {
 	s.queue = NewSendQueue(s.cfg, redis, s.logger)
 	s.sessionMgr = NewSessionManager(s.cfg, s, redis, s.logger, s.queue, s.workerPool)
 	s.mediaHandler = NewMediaHandler(s.cfg, s, redis, s.logger)
+}
+
+// Shutdown performs a graceful drain of the queue before exiting (Fix 1)
+func (s *OpenWAService) Shutdown(ctx context.Context) {
+	s.logger.Info("OpenWA: starting graceful shutdown")
+
+	// Stop session manager first
+	s.StopSessionManager()
+
+	// Stop workers (they stop dequeuing)
+	if s.workerPool != nil {
+		s.workerPool.StopAll()
+	}
+
+	// Drain remaining queued messages
+	if s.queue != nil {
+		drained := s.queue.DrainQueue(ctx, func(entry *QueueEntry) error {
+			return s.sendTextMessageInternal(entry.SessionID, entry.ChatID, entry.Content)
+		})
+		s.logger.Info("OpenWA: queue drained", "sent", drained, "remaining", s.queue.Depth())
+
+		// Stop the queue eviction loop
+		s.queue.Stop()
+	}
 }

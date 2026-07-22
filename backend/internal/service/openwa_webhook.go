@@ -135,7 +135,7 @@ func (s *OpenWAService) ConfigureWebhook(sessionID, webhookURL, secret string) e
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		s.circuitBreaker.RecordFailure()
+		s.cbManager.RecordFailure(sessionID)
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -145,8 +145,10 @@ func (s *OpenWAService) ConfigureWebhook(sessionID, webhookURL, secret string) e
 
 	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
 		s.logger.Info("Webhook configured successfully", "sessionID", sessionID, "url", webhookURL)
+		s.cbManager.RecordSuccess(sessionID)
 		return nil
 	}
 
+	s.cbManager.RecordFailure(sessionID)
 	return fmt.Errorf("webhook config failed: %d %s", resp.StatusCode, string(body))
 }

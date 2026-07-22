@@ -111,8 +111,8 @@ func (s *OpenWAService) SendMediaMessage(sessionID, chatID, mediaURL, caption st
 
 // sendTextMessageInternal sends a text message and tracks rate limit headers
 func (s *OpenWAService) sendTextMessageInternal(sessionID, chatID, text string) error {
-	if s.circuitBreaker.IsOpen() {
-		return fmt.Errorf("circuit breaker open for OpenWA API calls")
+	if s.cbManager.IsOpen(sessionID) {
+		return fmt.Errorf("circuit breaker open for session %s", sessionID)
 	}
 
 	url := fmt.Sprintf("%s/api/sessions/%s/messages/send-text", s.cfg.OpenWABaseURL, sessionID)
@@ -130,12 +130,11 @@ func (s *OpenWAService) sendTextMessageInternal(sessionID, chatID, text string) 
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		s.circuitBreaker.RecordFailure()
+		s.cbManager.RecordFailure(sessionID)
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Track rate limit headers
 	remaining := resp.Header.Get("X-RateLimit-Remaining")
 	if remaining != "" {
 		var rem int
@@ -145,23 +144,24 @@ func (s *OpenWAService) sendTextMessageInternal(sessionID, chatID, text string) 
 	}
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		s.circuitBreaker.RecordFailure()
+		s.cbManager.RecordFailure(sessionID)
 		return fmt.Errorf("rate limited by OpenWA (429)")
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
+		s.cbManager.RecordFailure(sessionID)
 		return fmt.Errorf("openwa returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	s.circuitBreaker.RecordSuccess()
+	s.cbManager.RecordSuccess(sessionID)
 	return nil
 }
 
 // sendMediaMessageInternal sends a media message internally (used by queue worker)
 func (s *OpenWAService) sendMediaMessageInternal(sessionID, chatID, mediaURL, caption string) error {
-	if s.circuitBreaker.IsOpen() {
-		return fmt.Errorf("circuit breaker open for OpenWA API calls")
+	if s.cbManager.IsOpen(sessionID) {
+		return fmt.Errorf("circuit breaker open for session %s", sessionID)
 	}
 
 	url := fmt.Sprintf("%s/api/sessions/%s/messages/send-media", s.cfg.OpenWABaseURL, sessionID)
@@ -179,29 +179,30 @@ func (s *OpenWAService) sendMediaMessageInternal(sessionID, chatID, mediaURL, ca
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		s.circuitBreaker.RecordFailure()
+		s.cbManager.RecordFailure(sessionID)
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		s.circuitBreaker.RecordFailure()
+		s.cbManager.RecordFailure(sessionID)
 		return fmt.Errorf("rate limited by OpenWA (429)")
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
+		s.cbManager.RecordFailure(sessionID)
 		return fmt.Errorf("openwa media send failed: %d %s", resp.StatusCode, string(body))
 	}
 
-	s.circuitBreaker.RecordSuccess()
+	s.cbManager.RecordSuccess(sessionID)
 	return nil
 }
 
 // sendTemplateMessageInternal sends a template message via OpenWA
 func (s *OpenWAService) sendTemplateMessageInternal(sessionID, chatID string, params map[string]interface{}) error {
-	if s.circuitBreaker.IsOpen() {
-		return fmt.Errorf("circuit breaker open for OpenWA API calls")
+	if s.cbManager.IsOpen(sessionID) {
+		return fmt.Errorf("circuit breaker open for session %s", sessionID)
 	}
 
 	url := fmt.Sprintf("%s/api/sessions/%s/messages/send-template", s.cfg.OpenWABaseURL, sessionID)
@@ -243,13 +244,13 @@ func (s *OpenWAService) sendRawMessage(url string, payload map[string]interface{
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		s.circuitBreaker.RecordFailure()
+		s.cbManager.RecordFailure("")
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		s.circuitBreaker.RecordFailure()
+		s.cbManager.RecordFailure("")
 		return fmt.Errorf("rate limited by OpenWA (429)")
 	}
 
@@ -258,7 +259,7 @@ func (s *OpenWAService) sendRawMessage(url string, payload map[string]interface{
 		return fmt.Errorf("openwa request failed: %d %s", resp.StatusCode, string(body))
 	}
 
-	s.circuitBreaker.RecordSuccess()
+	s.cbManager.RecordSuccess("")
 	return nil
 }
 
