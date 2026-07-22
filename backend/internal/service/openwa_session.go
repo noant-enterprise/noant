@@ -23,21 +23,25 @@ const (
 	SessionStateUnknown     = "unknown"
 
 	MaxConsecutiveFailures = 3
+
+	// SessionRotateAfter: auto-rotate session after this many messages sent
+	SessionRotateAfter = 5000
 )
 
 // SessionHealth holds runtime health data for a WhatsApp session
 type SessionHealth struct {
-	SessionID          string
-	UserID             string
-	State              string
+	SessionID           string
+	UserID              string
+	State               string
 	ConsecutiveFailures int
 	ReconnectAttempts   int
-	LastConnected      time.Time
-	LastDisconnected   time.Time
-	TotalDowntime      time.Duration
-	IsReconnecting     bool
-	StopReconnect      chan struct{}
-	mu                 sync.Mutex
+	MessagesSent        int64
+	LastConnected       time.Time
+	LastDisconnected    time.Time
+	TotalDowntime       time.Duration
+	IsReconnecting      bool
+	StopReconnect       chan struct{}
+	mu                  sync.Mutex
 }
 
 type SessionManager struct {
@@ -142,6 +146,70 @@ func (sm *SessionManager) ListSessions() []*SessionHealth {
 		result = append(result, sh)
 	}
 	return result
+}
+
+// RecordMessageSent increments the message counter and triggers rotation if threshold reached
+func (sm *SessionManager) RecordMessageSent(sessionID string) {
+	sm.mu.Lock()
+	sh, exists := sm.sessions[sessionID]
+	sm.mu.Unlock()
+
+	if !exists {
+		return
+	}
+
+	sh.mu.Lock()
+	sh.MessagesSent++
+	shouldRotate := sh.MessagesSent >= SessionRotateAfter && !sh.IsReconnecting
+	sh.mu.Unlock()
+
+	if shouldRotate {
+		sm.logger.Warn("Session approaching message limit, scheduling rotation",
+			"sessionID", sessionID, "messagesSent", sh.MessagesSent, "limit", SessionRotateAfter)
+		go sm.rotateSession(sessionID)
+	}
+}
+
+// rotateSession stops the current session, creates a new one, and registers it
+func (sm *SessionManager) rotateSession(sessionID string) {
+	sm.mu.Lock()
+	sh, exists := sm.sessions[sessionID]
+	sm.mu.Unlock()
+
+	if !exists {
+		return
+	}
+
+	// Stop the current session's worker
+	sm.workerPool.StopWorker(sessionID)
+
+	// Create new session with same name
+	sessionName := "noant-rotated-" + sessionID[:min(16, len(sessionID))]
+	newID, err := sm.openwa.CreateSession(sessionName)
+	if err != nil {
+		sm.logger.Error("Failed to create rotated session", "error", err, "oldSession", sessionID)
+		// Restart old session's worker as fallback
+		sm.workerPool.EnsureWorker(sessionID)
+		return
+	}
+
+	// Start new session
+	if err := sm.openwa.StartSession(newID); err != nil {
+		sm.logger.Error("Failed to start rotated session", "error", err, "newSession", newID)
+		sm.workerPool.EnsureWorker(sessionID)
+		return
+	}
+
+	// Configure webhook on new session
+	webhookURL := sm.cfg.APIURL + "/api/v1/openwa/webhook"
+	_ = sm.openwa.ConfigureWebhook(newID, webhookURL, sm.cfg.OpenWAWebhookSecret)
+
+	// Unregister old session, register new one
+	sm.UnregisterSession(sessionID)
+	sm.RegisterSession(newID, sh.UserID)
+
+	sm.logger.Info("Session rotated", "oldSession", sessionID, "newSession", newID, "messagesSent", sh.MessagesSent)
+	sm.notifyAdmin(sh.UserID, "WhatsApp session rotated", fmt.Sprintf("Session rotated after %d messages. New session: %s", sh.MessagesSent, newID))
 }
 
 func (sm *SessionManager) UpdateState(sessionID, state string) {
@@ -380,6 +448,48 @@ func (sm *SessionManager) verifyWebhook(sessionID, userID string) {
 
 func (sm *SessionManager) notifyAdmin(userID, title, body string) {
 	sm.logger.Info("Admin notification", "userID", userID, "title", title, "body", body)
+}
+
+// SessionHealthSnapshot is a thread-safe copy of session health data for external access
+type SessionHealthSnapshot struct {
+	SessionID           string        `json:"session_id"`
+	State               string        `json:"state"`
+	ConsecutiveFailures int           `json:"consecutive_failures"`
+	ReconnectAttempts   int           `json:"reconnect_attempts"`
+	MessagesSent        int64         `json:"messages_sent"`
+	IsReconnecting      bool          `json:"is_reconnecting"`
+	LastConnected       time.Time     `json:"last_connected"`
+	TotalDowntime       time.Duration `json:"total_downtime"`
+	QueueDepth          int           `json:"queue_depth"`
+}
+
+// ListSessionSnapshots returns thread-safe copies of all session health data
+func (sm *SessionManager) ListSessionSnapshots() []SessionHealthSnapshot {
+	sm.mu.Lock()
+	sessions := make([]*SessionHealth, 0, len(sm.sessions))
+	for _, sh := range sm.sessions {
+		sessions = append(sessions, sh)
+	}
+	sm.mu.Unlock()
+
+	result := make([]SessionHealthSnapshot, 0, len(sessions))
+	for _, sh := range sessions {
+		sh.mu.Lock()
+		snap := SessionHealthSnapshot{
+			SessionID:           sh.SessionID,
+			State:               sh.State,
+			ConsecutiveFailures: sh.ConsecutiveFailures,
+			ReconnectAttempts:   sh.ReconnectAttempts,
+			MessagesSent:        sh.MessagesSent,
+			IsReconnecting:      sh.IsReconnecting,
+			LastConnected:       sh.LastConnected,
+			TotalDowntime:       sh.TotalDowntime,
+			QueueDepth:          sm.queue.DepthBySession(sh.SessionID),
+		}
+		sh.mu.Unlock()
+		result = append(result, snap)
+	}
+	return result
 }
 
 func (sm *SessionManager) Stats() map[string]interface{} {

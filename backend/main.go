@@ -439,6 +439,7 @@ func main() {
 	channels.POST("/whatsapp/ping", handlers.OpenWA.PhonePing)
 	channels.POST("/whatsapp/check", handlers.OpenWA.CheckNumber)
 	channels.GET("/whatsapp/health", handlers.OpenWA.HealthCheck)
+	channels.GET("/whatsapp/sessions/health", handlers.OpenWA.SessionHealthDashboard)
 
 	// Credit endpoints (30 req/min per user)
 	credits := api.Group("/credits")

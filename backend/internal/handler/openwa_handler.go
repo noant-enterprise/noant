@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"noant/config"
@@ -16,17 +17,98 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ========== INCOMING MESSAGE RETRY QUEUE ==========
+
+type IncomingRetryEntry struct {
+	Attempt   int
+	MaxRetry  int
+	Delay     time.Duration
+	ProcessFn func() error
+	StopCh    chan struct{}
+}
+
+type IncomingRetryQueue struct {
+	mu      sync.Mutex
+	entries map[string]*IncomingRetryEntry // messageID -> entry
+	logger  *infrastructure.Logger
+}
+
+func NewIncomingRetryQueue(logger *infrastructure.Logger) *IncomingRetryQueue {
+	return &IncomingRetryQueue{
+		entries: make(map[string]*IncomingRetryEntry),
+		logger:  logger,
+	}
+}
+
+func (rq *IncomingRetryQueue) Enqueue(messageID string, maxRetry int, delay time.Duration, fn func() error) {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+
+	if _, exists := rq.entries[messageID]; exists {
+		return
+	}
+
+	entry := &IncomingRetryEntry{
+		Attempt:   0,
+		MaxRetry:  maxRetry,
+		Delay:     delay,
+		ProcessFn: fn,
+		StopCh:    make(chan struct{}),
+	}
+	rq.entries[messageID] = entry
+	go rq.processEntry(messageID, entry)
+}
+
+func (rq *IncomingRetryQueue) processEntry(messageID string, entry *IncomingRetryEntry) {
+	for attempt := 1; attempt <= entry.MaxRetry; attempt++ {
+		entry.Attempt = attempt
+		err := entry.ProcessFn()
+		if err == nil {
+			rq.mu.Lock()
+			delete(rq.entries, messageID)
+			rq.mu.Unlock()
+			rq.logger.Info("Incoming retry succeeded", "messageID", messageID, "attempt", attempt)
+			return
+		}
+		rq.logger.Warn("Incoming retry failed", "messageID", messageID, "attempt", attempt, "error", err)
+
+		select {
+		case <-entry.StopCh:
+			rq.mu.Lock()
+			delete(rq.entries, messageID)
+			rq.mu.Unlock()
+			return
+		case <-time.After(entry.Delay):
+		}
+	}
+
+	rq.mu.Lock()
+	delete(rq.entries, messageID)
+	rq.mu.Unlock()
+	rq.logger.Error("Incoming message exhausted retries", "messageID", messageID, "maxRetry", entry.MaxRetry)
+}
+
+func (rq *IncomingRetryQueue) Stop() {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	for id, entry := range rq.entries {
+		close(entry.StopCh)
+		delete(rq.entries, id)
+	}
+}
+
 type OpenWAHandler struct {
-	cfg    *config.Config
-	openwa *service.OpenWAService
-	chat   *service.ChatService
-	repos  *repository.Repositories
-	logger *infrastructure.Logger
-	wsHub  *WebSocketHub
+	cfg         *config.Config
+	openwa      *service.OpenWAService
+	chat        *service.ChatService
+	repos       *repository.Repositories
+	logger      *infrastructure.Logger
+	wsHub       *WebSocketHub
+	retryQueue  *IncomingRetryQueue
 }
 
 func NewOpenWAHandler(cfg *config.Config, openwa *service.OpenWAService, chat *service.ChatService, repos *repository.Repositories, logger *infrastructure.Logger, wsHub *WebSocketHub) *OpenWAHandler {
-	return &OpenWAHandler{cfg: cfg, openwa: openwa, chat: chat, repos: repos, logger: logger, wsHub: wsHub}
+	return &OpenWAHandler{cfg: cfg, openwa: openwa, chat: chat, repos: repos, logger: logger, wsHub: wsHub, retryQueue: NewIncomingRetryQueue(logger)}
 }
 
 // WhatsAppWebhook receives incoming messages from OpenWA
@@ -109,8 +191,23 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 		return
 	}
 
-	// Resolve identity using multiple fallbacks so a partial payload still becomes a usable customer profile.
-	identity, err := h.chat.ResolveWhatsAppIdentity(c.Request.Context(), userID, event.SessionID, msg)
+	// Retry wrapper: if processing fails, schedule up to 3 retries with 5s delay
+	processMsg := func() error {
+		return h.processIncomingMessage(c.Request.Context(), msg, event, chatID, customerPhone, userID)
+	}
+
+	if err := processMsg(); err != nil {
+		h.logger.Warn("Incoming message processing failed, scheduling retry", "messageID", msg.ID, "error", err)
+		h.retryQueue.Enqueue(msg.ID, 3, 5*time.Second, processMsg)
+	}
+}
+
+// processIncomingMessage does the actual message processing (extracted for retry)
+func (h *OpenWAHandler) processIncomingMessage(ctx context.Context, msg *service.OpenWAMessageData, event *service.OpenWAWebhookPayload, chatID, customerPhone, userID string) error {
+	content := msg.Body
+
+	// Resolve identity using multiple fallbacks
+	identity, err := h.chat.ResolveWhatsAppIdentity(ctx, userID, event.SessionID, msg)
 	if err != nil {
 		h.logger.Warn("WhatsApp identity resolution failed, using basic fallback", "error", err)
 	}
@@ -126,7 +223,6 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 		if identity.Avatar != "" {
 			customerAvatar = identity.Avatar
 		}
-		h.logger.Info("WhatsApp identity resolved", "methods", identity.Methods, "name", customerName, "phone", customerPhone, "avatar", customerAvatar != "")
 	} else {
 		if msg.Sender.Pushname != "" {
 			customerName = msg.Sender.Pushname
@@ -139,11 +235,11 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 		customerName = customerPhone
 	}
 
-	// Handle media messages (image, document, audio, video, etc.)
+	// Handle media messages
 	if msg.HasMedia && msg.MediaURL != "" {
 		h.logger.Info("Processing incoming media message", "type", msg.Type, "mediaType", msg.MediaType, "from", customerPhone)
 		mediaHandler := h.openwa.GetMediaHandler()
-		filePath, thumbPath, err := mediaHandler.HandleIncomingMedia(c.Request.Context(), event.SessionID, userID, &service.OpenWAMediaData{
+		filePath, thumbPath, err := mediaHandler.HandleIncomingMedia(ctx, event.SessionID, userID, &service.OpenWAMediaData{
 			HasMedia:  true,
 			MediaURL:  msg.MediaURL,
 			MediaType: msg.MediaType,
@@ -155,35 +251,31 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 			Duration:  msg.Duration,
 		})
 		if err != nil {
-			h.logger.Error("Failed to process incoming media", "error", err)
-		} else {
-			conv, _ := h.chat.EnsureConversation(c.Request.Context(), userID, customerName, customerPhone, "whatsapp", customerAvatar)
-			if conv != nil {
-				_ = h.chat.StoreMediaRecord(c.Request.Context(), conv.ID, userID, event.SessionID, msg)
-			}
-			h.logger.Info("Incoming media stored", "path", filePath, "thumb", thumbPath)
+			return fmt.Errorf("failed to process incoming media: %w", err)
 		}
-		// Don't send AI reply for media-only messages
-		return
+		conv, _ := h.chat.EnsureConversation(ctx, userID, customerName, customerPhone, "whatsapp", customerAvatar)
+		if conv != nil {
+			_ = h.chat.StoreMediaRecord(ctx, conv.ID, userID, event.SessionID, msg)
+		}
+		h.logger.Info("Incoming media stored", "path", filePath, "thumb", thumbPath)
+		return nil
 	}
 
 	// Ignore non-text messages that aren't media
 	if msg.Type != "text" && msg.Type != "chat" && msg.Type != "" {
 		h.logger.Info("Ignoring non-text message", "type", msg.Type)
-		return
+		return nil
 	}
 
-	content := msg.Body
 	h.logger.Info("OpenWA incoming message", "from", customerPhone, "body", content)
 
-	// Process through chat service (same flow as web widget)
-	conv, aiResp, err := h.chat.DirectChat(c.Request.Context(), userID, customerName, customerPhone, content, "whatsapp", customerAvatar)
+	// Process through chat service
+	conv, aiResp, err := h.chat.DirectChat(ctx, userID, customerName, customerPhone, content, "whatsapp", customerAvatar)
 	if err != nil {
-		h.logger.Error("Failed to process OpenWA message", "error", err)
-		return
+		return fmt.Errorf("failed to process OpenWA message: %w", err)
 	}
 
-	// Send AI reply back via OpenWA (routed through queue for rate-limit + retry protection)
+	// Send AI reply back via OpenWA (routed through queue)
 	if aiResp != nil && aiResp.Content != "" {
 		queue := h.openwa.GetQueue()
 		workerPool := h.openwa.GetWorkerPool()
@@ -202,7 +294,6 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 				h.logger.Error("Failed to enqueue AI reply", "error", err, "chatID", chatID)
 			}
 		} else {
-			// Fallback to direct send if queue unavailable
 			if err := h.openwa.SendTextMessage(event.SessionID, chatID, aiResp.Content); err != nil {
 				h.logger.Error("Failed to send OpenWA reply", "error", err, "chatID", chatID)
 			}
@@ -222,6 +313,8 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 			},
 		})
 	}
+
+	return nil
 }
 
 // handleMessageStatus handles delivery/read status updates
@@ -329,6 +422,25 @@ func (h *OpenWAHandler) HealthCheck(c *gin.Context) {
 		"status":   "healthy",
 		"openwa":   h.cfg.OpenWABaseURL,
 		"sessions": len(sessions),
+	})
+}
+
+// SessionHealthDashboard returns per-session health data for the monitoring dashboard
+func (h *OpenWAHandler) SessionHealthDashboard(c *gin.Context) {
+	mgr := h.openwa.GetSessionManager()
+	if mgr == nil {
+		utils.RespondInternalError(c, "Session manager not available")
+		return
+	}
+
+	snaps := mgr.ListSessionSnapshots()
+	queueStats := h.openwa.GetQueueStats()
+	workerCount := h.openwa.GetWorkerPool().WorkerCount()
+
+	c.JSON(http.StatusOK, gin.H{
+		"sessions":    snaps,
+		"queue_stats": queueStats,
+		"workers":     workerCount,
 	})
 }
 

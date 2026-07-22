@@ -180,6 +180,13 @@ func NewOpenWAService(cfg *config.Config, logger *infrastructure.Logger) *OpenWA
 	svc.sessionMgr = NewSessionManager(cfg, svc, nil, logger, svc.queue, svc.workerPool)
 	svc.mediaHandler = NewMediaHandler(cfg, svc, nil, logger)
 
+	// Wire up message completion callback for session rotation tracking
+	svc.queue.OnComplete = func(entry *QueueEntry) {
+		if svc.sessionMgr != nil {
+			svc.sessionMgr.RecordMessageSent(entry.SessionID)
+		}
+	}
+
 	return svc
 }
 
@@ -276,6 +283,11 @@ func (s *OpenWAService) InjectDependencies(redis *infrastructure.RedisClient) {
 		return
 	}
 	s.queue = NewSendQueue(s.cfg, redis, s.logger)
+	s.queue.OnComplete = func(entry *QueueEntry) {
+		if s.sessionMgr != nil {
+			s.sessionMgr.RecordMessageSent(entry.SessionID)
+		}
+	}
 	s.sessionMgr = NewSessionManager(s.cfg, s, redis, s.logger, s.queue, s.workerPool)
 	s.mediaHandler = NewMediaHandler(s.cfg, s, redis, s.logger)
 }

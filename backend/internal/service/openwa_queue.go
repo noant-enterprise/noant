@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -32,6 +34,9 @@ const (
 
 	dedupKeyPrefix = "openwa:dedup:"
 	dedupTTL       = 2 * time.Hour
+
+	// PriorityAgingThreshold: bulk messages older than this age up to Normal priority
+	PriorityAgingThreshold = 5 * time.Minute
 )
 
 // retryDelays in seconds for each retry attempt
@@ -164,6 +169,9 @@ type SendQueue struct {
 	cond     *sync.Cond
 	stopCh   chan struct{}
 	doneCh   chan struct{}
+
+	// OnComplete is called after a message is successfully sent (used for rotation tracking)
+	OnComplete func(entry *QueueEntry)
 }
 
 func NewSendQueue(cfg *config.Config, redis *infrastructure.RedisClient, logger *infrastructure.Logger) *SendQueue {
@@ -197,6 +205,7 @@ func (sq *SendQueue) evictExpiredLoop() {
 			return
 		case <-ticker.C:
 			sq.evictExpired()
+			sq.ageBulkPriority()
 		}
 	}
 }
@@ -226,6 +235,29 @@ func (sq *SendQueue) evictExpired() {
 		sq.entries = remaining
 		sq.rebuildSessionIndex()
 		sq.cond.Broadcast()
+	}
+}
+
+// ageBulkPriority promotes Bulk priority messages to Normal after PriorityAgingThreshold
+// so they don't starve while waiting behind urgent messages indefinitely.
+func (sq *SendQueue) ageBulkPriority() {
+	sq.mu.Lock()
+	defer sq.mu.Unlock()
+
+	threshold := time.Now().Add(-PriorityAgingThreshold)
+	var aged int
+	for _, e := range sq.entries {
+		if e.Priority == PriorityBulk && e.Status == QueueStatusQueued && e.CreatedAt.Before(threshold) {
+			e.Priority = PriorityNormal
+			aged++
+		}
+	}
+	if aged > 0 {
+		// Re-sort entries by priority (stable within priority level)
+		sort.SliceStable(sq.entries, func(i, j int) bool {
+			return sq.entries[i].Priority < sq.entries[j].Priority
+		})
+		sq.logger.Debug("Aged bulk messages to normal priority", "count", aged)
 	}
 }
 
@@ -445,6 +477,11 @@ func (sq *SendQueue) Complete(entryID string) {
 		sq.markProcessed(entryID)
 		sq.removeEntry(i, entry)
 		sq.cond.Broadcast()
+
+		// Notify rotation tracking
+		if sq.OnComplete != nil {
+			sq.OnComplete(entry)
+		}
 		return
 	}
 }
@@ -470,8 +507,10 @@ func (sq *SendQueue) Fail(entryID string, err error) {
 		}
 
 		entry.Status = QueueStatusFailed
-		delay := retryDelays[min(entry.RetryCount, len(retryDelays)-1)]
-		nextRetry := time.Now().Add(delay)
+		baseDelay := retryDelays[min(entry.RetryCount, len(retryDelays)-1)]
+		// ±30% jitter to prevent thundering herd on shared sessions
+		jitter := time.Duration(float64(baseDelay) * (0.7 + rand.Float64()*0.6))
+		nextRetry := time.Now().Add(jitter)
 		entry.NextRetry = &nextRetry
 
 		sq.logger.Warn("Message queued for retry", "id", entryID, "attempt", entry.RetryCount, "nextRetry", nextRetry)

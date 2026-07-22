@@ -246,3 +246,113 @@ groups:
         annotations:
           summary: "Instance unreachable"
           description: "A monitored instance is down and unreachable."
+
+      - uid: noant-queue-dead-letter
+        title: QueueDeadLetter
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: noant_openwa_delivery_status_total{status="dead_letter"} > 0
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels:
+          severity: warning
+          team: messaging
+        annotations:
+          summary: "Messages hitting dead letter queue"
+          description: "One or more messages exhausted all retries and were dead-lettered."
+
+      - uid: noant-circuit-breaker-open
+        title: CircuitBreakerOpen
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: noant_openwa_circuit_breaker_open == 1
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        labels:
+          severity: warning
+          team: messaging
+        annotations:
+          summary: "WhatsApp session circuit breaker open"
+          description: "A session circuit breaker has tripped after 5 consecutive failures."
+
+      - uid: noant-queue-depth-critical
+        title: QueueDepthCritical
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: noant_openwa_queue_depth > 500
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: critical
+          team: messaging
+        annotations:
+          summary: "OpenWA queue depth critical"
+          description: "Message queue depth exceeds 500 for 5 minutes. Messages may be delayed."
+
+      - uid: noant-messages-in-flight-stuck
+        title: MessagesInFlightStuck
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: noant_openwa_messages_in_flight > 0
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        labels:
+          severity: warning
+          team: messaging
+        annotations:
+          summary: "Messages stuck in-flight"
+          description: "Messages have been processing for over 15 minutes. Workers may be stalled."
+
+      - uid: noant-session-disconnected
+        title: SessionDisconnected
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: noant_openwa_circuit_breaker_open == 1
+              instant: false
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: critical
+          team: messaging
+        annotations:
+          summary: "WhatsApp session disconnected"
+          description: "A session has been in circuit-breaker-open state for 10+ minutes. Manual reconnection may be required."
