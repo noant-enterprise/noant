@@ -292,6 +292,7 @@ func main() {
 		router.Use(sentrygin.New(sentrygin.Options{
 			Repanic: true,
 		}))
+		router.Use(middleware.SentryContextMiddleware())
 	}
 
 	router.GET("/metrics", middleware.RequireAdminMiddleware(), gin.WrapH(promhttp.Handler()))

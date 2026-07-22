@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"noant/internal/infrastructure"
+	"noant/internal/middleware"
 	"noant/internal/service"
 	"noant/internal/utils"
 
@@ -46,12 +47,24 @@ func (h *ChatHandler) DirectChat(c *gin.Context) {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
+	middleware.AddBreadcrumb(c, "chat", "direct_chat request", map[string]interface{}{
+		"channel": req.Channel,
+		"user_id": userID,
+	})
 	conv, msg, err := h.service.DirectChat(c.Request.Context(), userID, req.CustomerName, req.CustomerName, req.Message, req.Channel, "")
 	if err != nil {
 		h.logger.Error("Direct chat failed", "error", err)
+		middleware.AddBreadcrumb(c, "chat", "direct_chat failed", map[string]interface{}{
+			"error": err.Error(),
+		})
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
+
+	middleware.AddBreadcrumb(c, "chat", "direct_chat success", map[string]interface{}{
+		"conversation_id": conv.ID,
+		"channel":         req.Channel,
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"conversation": conv,

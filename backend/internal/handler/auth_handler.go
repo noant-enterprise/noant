@@ -12,6 +12,7 @@ import (
 	"noant/internal/service"
 	"noant/internal/utils"
 
+	sentry "github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 )
 
@@ -104,11 +105,25 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			return
 		}
 		h.logger.Warn("Login failed", "email", req.Email)
+		middleware.AddBreadcrumb(c, "auth", "login failed", map[string]interface{}{
+			"email": req.Email,
+			"error": err.Error(),
+		})
 		utils.RespondUnauthorized(c, "Invalid email or password")
 		return
 	}
 
 	// Audit: login success
+	middleware.AddBreadcrumb(c, "auth", "login success", map[string]interface{}{
+		"user_id": user.ID,
+		"email":   req.Email,
+	})
+	hub := sentry.GetHubFromContext(c.Request.Context())
+	if hub != nil {
+		hub.ConfigureScope(func(scope *sentry.Scope) {
+			scope.SetUser(sentry.User{ID: user.ID, Email: req.Email})
+		})
+	}
 	if h.auditRepo != nil {
 		ip := c.ClientIP()
 		ua := c.Request.UserAgent()

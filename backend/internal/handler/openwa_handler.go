@@ -10,10 +10,12 @@ import (
 
 	"noant/config"
 	"noant/internal/infrastructure"
+	"noant/internal/middleware"
 	"noant/internal/repository"
 	"noant/internal/service"
 	"noant/internal/utils"
 
+	sentry "github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 )
 
@@ -148,6 +150,11 @@ func (h *OpenWAHandler) WhatsAppWebhook(c *gin.Context) {
 
 	h.logger.Info("OpenWA webhook received", "event", event.Event, "session", event.SessionID)
 
+	middleware.AddBreadcrumb(c, "whatsapp", "webhook received", map[string]interface{}{
+		"event":   event.Event,
+		"session": event.SessionID,
+	})
+
 	switch event.Event {
 	case "message.received":
 		h.handleIncomingMessage(c, event)
@@ -277,6 +284,16 @@ func (h *OpenWAHandler) processIncomingMessage(ctx context.Context, msg *service
 
 	// Send AI reply back via OpenWA (routed through queue)
 	if aiResp != nil && aiResp.Content != "" {
+		sentry.AddBreadcrumb(&sentry.Breadcrumb{
+			Category: "whatsapp",
+			Message:  "AI reply generated",
+			Level:    sentry.LevelInfo,
+			Data: map[string]interface{}{
+				"chat_id":    chatID,
+				"reply_len":  len(aiResp.Content),
+				"session_id": event.SessionID,
+			},
+		})
 		queue := h.openwa.GetQueue()
 		workerPool := h.openwa.GetWorkerPool()
 		if queue != nil && workerPool != nil {

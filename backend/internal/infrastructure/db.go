@@ -16,7 +16,7 @@ import (
 )
 
 func NewTiDBConnection(cfg *config.Config) (*sql.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?tls=skip-verify&charset=utf8mb4&parseTime=true&loc=Local",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?tls=skip-verify&charset=utf8mb4&parseTime=true&loc=Local&multiStatements=true",
 		cfg.TiDBUser,
 		cfg.TiDBPassword,
 		cfg.TiDBHost,

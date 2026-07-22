@@ -8,6 +8,7 @@ import (
 
 	"noant/internal/infrastructure"
 
+	sentry "github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -85,7 +86,7 @@ func (h *WebSocketHub) Run() {
 	defer func() {
 		if r := recover(); r != nil {
 			h.logger.Error("Panic in WebSocket hub", "recover", r)
-			// restart the hub on panic
+			sentry.CaptureMessage("WebSocket hub panic recovered")
 			go h.Run()
 		}
 	}()

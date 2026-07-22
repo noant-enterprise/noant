@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	sentry "github.com/getsentry/sentry-go"
 )
 
 // JobStatus represents the status of a background job
@@ -212,6 +214,18 @@ func (jq *JobQueue) failJob(job *Job, errMsg string) {
 	job.UpdatedAt = time.Now()
 	job.Retries = job.MaxRetries
 	jq.logger.Error("Job failed permanently", "job_id", job.ID, "type", job.Type, "error", errMsg)
+
+	sentry.AddBreadcrumb(&sentry.Breadcrumb{
+		Category: "background_job",
+		Message:  "job failed permanently",
+		Level:    sentry.LevelError,
+		Data: map[string]interface{}{
+			"job_id": job.ID,
+			"type":   job.Type,
+			"error":  errMsg,
+		},
+	})
+
 	if jq.redis != nil {
 		data, _ := json.Marshal(job)
 		_ = jq.redis.Set(context.Background(), "job:failed:"+job.ID, string(data), 7*24*time.Hour)
