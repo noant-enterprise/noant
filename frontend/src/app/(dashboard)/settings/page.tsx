@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { api } from '../../../lib/api'
 import { useToast } from '@/components/ui/Toast'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
 type Tab = 'profile' | 'security' | 'notifications' | 'appearance' | 'privacy'
 
@@ -75,7 +76,7 @@ function ProfileTab() {
             type="text"
             value={form.first_name}
             onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
-            className="w-full px-3 py-2.5 rounded-lg border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all"
+            className="w-full px-3 py-2.5 rounded-xl border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all"
           />
         </div>
         <div>
@@ -84,7 +85,7 @@ function ProfileTab() {
             type="text"
             value={form.last_name}
             onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
-            className="w-full px-3 py-2.5 rounded-lg border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all"
+            className="w-full px-3 py-2.5 rounded-xl border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all"
           />
         </div>
         <div>
@@ -93,7 +94,7 @@ function ProfileTab() {
             type="email"
             value={form.email}
             disabled
-            className="w-full px-3 py-2.5 rounded-lg border border-default bg-inset text-tertiary text-sm cursor-not-allowed"
+            className="w-full px-3 py-2.5 rounded-xl border border-default bg-inset text-tertiary text-sm cursor-not-allowed"
           />
         </div>
         <div>
@@ -103,7 +104,7 @@ function ProfileTab() {
             value={form.phone}
             onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
             placeholder="+234 800 000 0000"
-            className="w-full px-3 py-2.5 rounded-lg border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all placeholder:text-tertiary"
+            className="w-full px-3 py-2.5 rounded-xl border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all placeholder:text-tertiary"
           />
         </div>
         <div className="sm:col-span-2">
@@ -113,7 +114,7 @@ function ProfileTab() {
             value={form.company_name}
             onChange={e => setForm(f => ({ ...f, company_name: e.target.value }))}
             placeholder="Your business name"
-            className="w-full px-3 py-2.5 rounded-lg border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all placeholder:text-tertiary"
+            className="w-full px-3 py-2.5 rounded-xl border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all placeholder:text-tertiary"
           />
         </div>
       </div>
@@ -168,7 +169,7 @@ function SecurityTab() {
           type={show[showKey] ? 'text' : 'password'}
           value={form[field]}
           onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
-          className="w-full pr-10 px-3 py-2.5 rounded-lg border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all"
+          className="w-full pr-10 px-3 py-2.5 rounded-xl border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky focus:ring-1 focus:ring-noant-sky/20 transition-all"
         />
         <button
           type="button"
@@ -268,6 +269,7 @@ function NotificationsTab() {
               disabled={push.loading}
               className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-noant-sky ${push.subscribed ? 'bg-noant-sky' : 'bg-border-strong'} disabled:opacity-60`}
               aria-checked={push.subscribed}
+              aria-label="Desktop notifications"
               role="switch"
             >
               <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transform transition duration-200 ${push.subscribed ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -294,6 +296,7 @@ function NotificationsTab() {
               onClick={() => setPrefs(p => ({ ...p, [item.key]: !p[item.key] }))}
               className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-noant-sky ${prefs[item.key] ? 'bg-noant-sky' : 'bg-border-strong'}`}
               aria-checked={prefs[item.key]}
+              aria-label="Email notifications"
               role="switch"
             >
               <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transform transition duration-200 ${prefs[item.key] ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -384,7 +387,7 @@ function AppearanceTab() {
           <select
             value={language}
             onChange={e => { setLanguage(e.target.value); localStorage.setItem('noant_language', e.target.value) }}
-            className="flex-1 px-3 py-2.5 rounded-lg border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky transition-all"
+            className="flex-1 px-3 py-2.5 rounded-xl border border-default bg-inset text-primary text-sm focus:outline-none focus:border-noant-sky transition-all"
           >
             <option value="en">English</option>
             <option value="yo">Yoruba (coming soon)</option>
@@ -404,7 +407,7 @@ function PrivacyTab() {
   const { toast: showToast } = useToast()
   const [exporting, setExporting] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const handleExport = async () => {
     setExporting(true)
@@ -425,8 +428,7 @@ function PrivacyTab() {
     }
   }
 
-  const handleDelete = async () => {
-    if (!confirmDelete) { setConfirmDelete(true); return }
+  const handleDeleteAccount = async () => {
     setDeleting(true)
     try {
       await api.delete('/settings/account')
@@ -435,7 +437,7 @@ function PrivacyTab() {
     } catch {
       showToast('Failed to delete account', 'error')
       setDeleting(false)
-      setConfirmDelete(false)
+      setShowDeleteConfirm(false)
     }
   }
 
@@ -457,25 +459,27 @@ function PrivacyTab() {
       <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/5">
         <h3 className="font-semibold text-red-500 mb-1">Delete Account</h3>
         <p className="text-sm text-secondary mb-4">Permanently delete your NOANT account and all associated data. This action cannot be undone.</p>
-        {confirmDelete && (
-          <div className="mb-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
-            ⚠️ Are you absolutely sure? This will delete all your conversations, training data, and team members.
-          </div>
-        )}
         <button
-          onClick={handleDelete}
+          onClick={() => setShowDeleteConfirm(true)}
           disabled={deleting}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600 active:scale-[0.98] transition-all disabled:opacity-60"
         >
           <Trash2 className="w-4 h-4" />
-          {deleting ? 'Deleting…' : confirmDelete ? 'Yes, delete everything' : 'Delete my account'}
+          Delete my account
         </button>
-        {confirmDelete && (
-          <button onClick={() => setConfirmDelete(false)} className="mt-2 ml-2 text-sm text-secondary hover:text-primary transition-colors">
-            Cancel
-          </button>
-        )}
       </div>
+
+      <ConfirmModal
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDeleteAccount}
+        title="Delete Account"
+        description="This action cannot be undone. All your data, conversations, and settings will be permanently deleted."
+        confirmText="Delete Account"
+        requireTypeConfirm
+        confirmPhrase="DELETE"
+        loading={deleting}
+      />
     </div>
   )
 }

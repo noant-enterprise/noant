@@ -79,6 +79,7 @@ function ModalHeader({
       </div>
       <button
         onClick={onClose}
+        aria-label="Close"
         className="p-1.5 rounded-lg text-tertiary hover:text-primary hover:bg-inset transition-all active:scale-95"
       >
         <X className="w-4 h-4" />
@@ -172,6 +173,7 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
           </div>
           <button
             onClick={onClose}
+            aria-label="Close test panel"
             className="text-tertiary hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-inset active:scale-95"
           >
             <X className="w-4 h-4" />
@@ -245,6 +247,7 @@ function TestAIDrawer({ open, onClose }: { open: boolean; onClose: () => void })
             />
             <button
               onClick={send}
+              aria-label="Send message"
               disabled={!input.trim() || loading}
               className="w-10 h-10 rounded-xl bg-noant-sky hover:bg-noant-sky-deep disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center shrink-0 btn-press"
             >
@@ -485,6 +488,7 @@ function QAModal({
             required
             disabled={loading}
             autoFocus={!isEdit}
+            maxLength={1000}
           />
         </div>
 
@@ -500,6 +504,7 @@ function QAModal({
             rows={4}
             required
             disabled={loading}
+            maxLength={5000}
           />
         </div>
 
@@ -603,6 +608,7 @@ function QATableSheet({
             )}
             <button
               onClick={onClose}
+              aria-label="Close panel"
               className="p-2.5 rounded-xl hover:bg-inset text-tertiary hover:text-primary active:scale-95 transition-colors cursor-pointer border border-default bg-surface shadow-sm"
               title="Close Panel"
             >
@@ -687,6 +693,7 @@ function QATableSheet({
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => onEditQA(qa)}
+                            aria-label="Edit"
                             className="p-2 rounded-xl text-tertiary hover:text-noant-sky hover:bg-inset active:scale-95 transition-all cursor-pointer border border-transparent hover:border-default bg-surface shadow-sm"
                             title="Edit Q&A"
                           >
@@ -694,6 +701,7 @@ function QATableSheet({
                           </button>
                           <button
                             onClick={() => onDeleteQA(qa.id)}
+                            aria-label="Delete"
                             className="p-2 rounded-xl text-tertiary hover:text-red-500 hover:bg-inset active:scale-95 transition-all cursor-pointer border border-transparent hover:border-default bg-surface shadow-sm"
                             title="Delete Q&A"
                           >
@@ -808,6 +816,14 @@ export default function TeachPage() {
 
   // CSV Upload
   const handleUpload = async (file: File) => {
+    if (!file.name.endsWith('.csv')) {
+      toast('Please upload a CSV file', 'error')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast('File too large. Maximum size is 10MB', 'error')
+      return
+    }
     setUploading(true)
     setProgress(20)
     const formData = new FormData()
@@ -1015,6 +1031,7 @@ export default function TeachPage() {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
+              aria-label="Clear search"
               className="mr-3 p-1 rounded-full text-tertiary hover:bg-inset hover:text-primary transition-all active:scale-95 shrink-0"
             >
               <X className="w-3.5 h-3.5" />
@@ -1097,6 +1114,7 @@ export default function TeachPage() {
                   <button
                     onClick={handleClearGapsClick}
                     disabled={isOffline}
+                    aria-label="Clear all pending AI gaps"
                     title="Clear all pending gaps"
                     className="p-1 rounded-lg hover:bg-red-500/10 text-tertiary hover:text-red-500 transition-colors active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >

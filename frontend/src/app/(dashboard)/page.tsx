@@ -22,7 +22,7 @@ const channelIcons: Record<string, { icon: React.ElementType; color: string }> =
 }
 
 export default function OverviewPage() {
-  const { data: stats, get: getStats, loading: statsLoading } = useAPI<AnalyticsOverview>()
+  const { data: stats, get: getStats, loading: statsLoading, error: statsError } = useAPI<AnalyticsOverview>()
   
   const { data: conversations, get: getConversations, loading: convLoading } = useAPI<ConversationListResponse>()
 
@@ -43,6 +43,13 @@ export default function OverviewPage() {
             <StatSkeleton />
             <StatSkeleton />
             <StatSkeleton />
+          </div>
+        ) : statsError ? (
+          <div className="text-center py-12">
+            <p className="text-secondary mb-4">Failed to load dashboard data</p>
+            <button onClick={() => getStats('/analytics/overview')} className="text-sm text-noant-sky hover:underline">
+              Retry
+            </button>
           </div>
         ) : (
           <StatGrid>
@@ -76,7 +83,7 @@ export default function OverviewPage() {
                 </Badge>
               )}
             </div>
-            <Link to="/chats" className="hidden sm:block">
+            <Link to="/chats">
               <Button variant="ghost" size="sm">
                 See all <ArrowRight className="w-4 h-4 ml-1" />
               </Button>

@@ -53,6 +53,7 @@ export default function ChatsPage() {
   const [msgHasMore, setMsgHasMore] = useState(false)
   const [msgLoadingMore, setMsgLoadingMore] = useState(false)
   const [messagesLoading, setMessagesLoading] = useState(false)
+  const [msgLoadError, setMsgLoadError] = useState(false)
 
   // Safe data extraction
   const conversations = convData?.conversations || []
@@ -147,6 +148,7 @@ export default function ChatsPage() {
       setMsgPage(1)
       setMsgHasMore(false)
       setMessagesLoading(true)
+      setMsgLoadError(false)
 
       const loadInitialMessages = async () => {
         try {
@@ -155,6 +157,7 @@ export default function ChatsPage() {
           setMsgHasMore(res.has_more || false)
         } catch (err) {
           console.error('Failed to load initial messages:', err)
+          setMsgLoadError(true)
         } finally {
           setMessagesLoading(false)
         }
@@ -513,6 +516,19 @@ export default function ChatsPage() {
               </button>
             </div>
 
+            {msgLoadError && allMessages.length === 0 && !messagesLoading && (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <p className="text-secondary mb-2">Failed to load messages</p>
+                  <button
+                    onClick={() => { setMsgLoadError(false); setMessagesLoading(true); api.get<any>(`/chats/conversations/${activeId}?limit=30&page=1`).then(res => { setActiveMessages(res.messages || []); setMsgHasMore(res.has_more || false) }).catch(() => setMsgLoadError(true)).finally(() => setMessagesLoading(false)) }}
+                    className="text-sm text-noant-sky hover:underline"
+                  >
+                    Try again
+                  </button>
+                </div>
+              </div>
+            )}
             <ChatMessages
               messages={allMessages}
               hasMore={msgHasMore}
