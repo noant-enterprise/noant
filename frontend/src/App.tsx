@@ -6,6 +6,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { GuestRoute } from '@/components/auth/GuestRoute'
 import { CommandPalette } from '@/components/ui/CommandPalette'
 import { OfflineBanner } from '@/components/OfflineBanner'
+import { ServerDownBanner } from '@/components/ServerDownBanner'
 import { refreshToken } from '@/lib/auth'
 import { PwaInstallPrompt } from '@/components/ui/PwaInstallPrompt'
 import { WidgetConfigProvider } from '@/contexts/WidgetConfigContext'
@@ -13,6 +14,7 @@ import { SidebarAlertsProvider } from '@/contexts/SidebarAlertsContext'
 import { ModalProvider } from '@/contexts/ModalContext'
 import { RouteErrorBoundary } from '@/components/RouteErrorBoundary'
 import { Spinner } from '@/components/ui/Spinner'
+import { useToast } from '@/components/ui/Toast'
 
 const LoginPage = lazy(() => import('@/app/(auth)/login/page'))
 const SignupPage = lazy(() => import('@/app/(auth)/signup/page'))
@@ -45,6 +47,7 @@ function PageLoader() {
 
 function AppShell() {
   const location = useLocation()
+  const { toast } = useToast()
 
   useEffect(() => {
     const authPaths = ['/login', '/signup', '/forgot-password', '/reset-password', '/verify-email']
@@ -57,6 +60,7 @@ function AppShell() {
         await refreshToken()
       } catch (err) {
         console.error('Failed to refresh session in background:', err)
+        toast('Session expired. Please log in again.', 'error')
       }
     }
 
@@ -64,11 +68,12 @@ function AppShell() {
 
     const interval = setInterval(refreshSession, 20 * 60 * 1000)
     return () => clearInterval(interval);
-  }, [location.pathname]);
+  }, [location.pathname, toast]);
 
   return (
     <>
       <OfflineBanner />
+      <ServerDownBanner />
       <CommandPalette />
       <PwaInstallPrompt />
       <Outlet />

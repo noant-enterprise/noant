@@ -20,6 +20,10 @@ interface LastRequest {
 }
 
 const MAX_RETRIES = 3
+const TOAST_DEDUP_MS = 5_000
+
+let lastToastMsg = ''
+let lastToastTime = 0
 
 function getRetryDelay(attempt: number): number {
   return Math.min(1000 * Math.pow(2, attempt), 8000)
@@ -48,6 +52,16 @@ function mergeData(existing: any, incoming: any): any {
     return result
   }
   return incoming
+}
+
+function dedupedToast(toastFn: (msg: string, type: 'error' | 'success' | 'info') => void, msg: string, type: 'error' | 'success' | 'info') {
+  const now = Date.now()
+  if (msg === lastToastMsg && now - lastToastTime < TOAST_DEDUP_MS) {
+    return
+  }
+  lastToastMsg = msg
+  lastToastTime = now
+  toastFn(msg, type)
 }
 
 export function useAPI<T>() {
@@ -94,7 +108,7 @@ export function useAPI<T>() {
       }
       
       setState(prev => ({ ...prev, loading: false, loadingMore: false, error }))
-      toast(error.message || 'Request failed. Tap Retry to try again.', 'error')
+      dedupedToast(toast, error.message || 'Request failed. Tap Retry to try again.', 'error')
       throw error
     }
   }, [toast])

@@ -78,7 +78,7 @@ noant/
 │   │   │   ├── auth.go               # JWT auth, CSP, rate limiting, token blacklist
 │   │   │   ├── csrf.go               # Origin/Referer CSRF validation
 │   │   │   ├── bodylimit.go          # 1 MB request body limit
-│   │   │   ├── sanitize.go           # XSS sanitization middleware
+│   │   │   ├── sanitize_middleware.go  # XSS sanitization middleware
 │   │   │   ├── audit.go              # Request audit logging
 │   │   │   └── websocket_auth.go     # WebSocket origin validation
 │   │   ├── handler/                   # HTTP handlers (25 files, split by domain)
@@ -129,7 +129,7 @@ noant/
 │   │   │   └── ...                   # 14 more domain-specific repos
 │   │   └── utils/
 │   │       ├── errors.go             # Standardized ErrorResponse + helpers
-│   │       └── sanitize.go           # Reflection-based struct sanitizer
+│   │       └── sanitize_middleware.go  # Reflection-based struct sanitizer
 │   ├── .golangci.yaml                 # Linter configuration
 │   └── .env.example                   # Environment variable template
 ├── frontend/
@@ -683,7 +683,7 @@ All configuration is via environment variables. Copy `backend/.env.example` to `
 |---|---|---|
 | `OPENWA_BASE_URL` | — | OpenWA self-hosted server URL |
 | `OPENWA_API_KEY` | — | OpenWA API authentication key |
-| `OPENWA_WEBOOK_SECRET` | — | OpenWA webhook verification secret |
+| `OPENWA_WEBHOOK_SECRET` | — | OpenWA webhook verification secret |
 | `OPENWA_RATE_LIMIT_TEXT` | `20` | Text messages per minute per session |
 | `OPENWA_RATE_LIMIT_MEDIA` | `10` | Media messages per minute per session |
 | `OPENWA_RATE_LIMIT_TEMPLATE` | `30` | Template messages per minute per session |
@@ -717,7 +717,7 @@ All configuration is via environment variables. Copy `backend/.env.example` to `
 | Variable | Default | Description |
 |---|---|---|
 | `POLAR_ACCESS_TOKEN` | — | Polar API authentication token |
-| `POLAL_WEBHOOK_SECRET` | — | Polar webhook signing secret |
+| `POLAR_WEBHOOK_SECRET` | — | Polar webhook signing secret |
 | `POLAR_ORGANIZATION_ID` | — | Polar organization identifier |
 
 ---

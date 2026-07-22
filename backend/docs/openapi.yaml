@@ -818,7 +818,7 @@ components:
           type: string
           format: date-time
 
-    # ── OpenAI Assistant ────────────────────────────────────
+    # ── Onboarding Assistant ──────────────────────────────
     AssistantResponse:
       type: object
       properties:
