@@ -263,6 +263,11 @@ func generateJobID() string {
 // ScheduleRecurring schedules a recurring job
 func (jq *JobQueue) ScheduleRecurring(jobType string, payload map[string]interface{}, interval time.Duration, opts ...JobOption) {
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				jq.logger.Error("Panic in recurring job scheduler", "job_type", jobType, "error", r)
+			}
+		}()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {

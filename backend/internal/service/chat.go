@@ -398,7 +398,12 @@ func (s *ChatService) ListConversations(ctx context.Context, userID, status stri
 					}
 					wg.Add(1)
 					go func(idx int, convID, phone string) {
-						defer wg.Done()
+						defer func() {
+							if r := recover(); r != nil {
+								s.logger.Error("Panic in contact resolver goroutine", "error", r)
+							}
+							wg.Done()
+						}()
 						contactID := FormatContactID(phone)
 						contact, err := s.openwa.GetContactInfo(sessionID, contactID)
 						if err != nil || contact == nil {
@@ -586,6 +591,11 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, conversationID, s
 					s.logger.Info("Sending manual agent WhatsApp reply", "session", sessionID, "chatID", chatID)
 					// Send text message asynchronously to avoid blocking the HTTP response
 					go func() {
+						defer func() {
+							if r := recover(); r != nil {
+								s.logger.Error("Panic in WhatsApp send goroutine", "error", r)
+							}
+						}()
 						if err := s.openwa.SendTextMessage(sessionID, chatID, content); err != nil {
 							s.logger.Error("Failed to send manual agent WhatsApp message", "error", err)
 						}
@@ -599,9 +609,14 @@ func (s *ChatService) SendMessage(ctx context.Context, userID, conversationID, s
 				if botToken, _ := integration.Config["bot_token"].(string); botToken != "" {
 					chatID, err := strconv.ParseInt(conv.CustomerPhone, 10, 64)
 					if err == nil {
-						s.logger.Info("Sending manual agent Telegram reply", "chatID", chatID)
-						go func() {
-							if err := s.telegram.SendTextMessage(context.Background(), botToken, chatID, content); err != nil {
+					s.logger.Info("Sending manual agent Telegram reply", "chatID", chatID)
+					go func() {
+						defer func() {
+							if r := recover(); r != nil {
+								s.logger.Error("Panic in Telegram send goroutine", "error", r)
+							}
+						}()
+						if err := s.telegram.SendTextMessage(context.Background(), botToken, chatID, content); err != nil {
 								s.logger.Error("Failed to send manual agent Telegram message", "error", err)
 							}
 						}()

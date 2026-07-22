@@ -35,6 +35,11 @@ func (s *NotificationService) Create(ctx context.Context, n *domain.Notification
 	// Also send push notification if VAPID keys are configured
 	if n.UserID != "" && n.Title != "" {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Error("Panic in push notification goroutine", "error", r)
+				}
+			}()
 			pushCtx := context.Background()
 			if err := s.push.SendToUser(pushCtx, n.UserID, n.Title, n.Body, n.Link); err != nil {
 				s.logger.Warn("Push notification send failed", "error", err)
@@ -216,9 +221,14 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey, message, convers
 				}
 				
 				// Send email if configured
-				if s.email != nil {
-					go func() {
-						_, emailErr := s.email.SendNotificationEmail(
+			if s.email != nil {
+				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							s.logger.Error("Panic in escalation email goroutine", "error", r)
+						}
+					}()
+					_, emailErr := s.email.SendNotificationEmail(
 							context.Background(),
 							user.Email,
 							"NOANT Escalation Alert: Support agent needed",

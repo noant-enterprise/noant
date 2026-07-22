@@ -45,6 +45,11 @@ func NewAuthService(cfg *config.Config, userRepo repository.IUserRepo, redis *in
 	s := &AuthService{cfg: cfg, userRepo: userRepo, redis: redis, logger: logger, email: email, memRL: infrastructure.NewMemoryRateLimiter(5 * time.Minute), loginAttempts: make(map[string]*loginAttempt)}
 	// Periodic cleanup of expired lockouts
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.logger.Error("Panic in auth cleanup goroutine", "error", r)
+			}
+		}()
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {

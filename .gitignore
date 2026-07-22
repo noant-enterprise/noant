@@ -2,6 +2,8 @@ node_modules/
 frontend/node_modules/
 backend/node_modules/
 .env
+.env.*
+!*.env.example
 dist/
 build/
 .DS_Store
@@ -34,3 +36,4 @@ vendor/
 
 # Windows temp files
 *.exe~
+frontend/.env.production

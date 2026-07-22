@@ -211,11 +211,21 @@ func (b *AIBrain) generateResponseCore(ctx context.Context, conversationID, user
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
-		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				b.logger.Error("Panic in conversation fetch goroutine", "error", r)
+			}
+			wg.Done()
+		}()
 		convRes.conv, convRes.err = b.repos.Conversation.GetByID(ctx, conversationID)
 	}()
 	go func() {
-		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				b.logger.Error("Panic in history fetch goroutine", "error", r)
+			}
+			wg.Done()
+		}()
 		histRes.turns = b.recentConversationTurns(ctx, conversationID, userQuery, conversationTurnLimit)
 	}()
 	wg.Wait()
@@ -320,11 +330,21 @@ func (b *AIBrain) generateResponseCore(ctx context.Context, conversationID, user
 	var searchWg sync.WaitGroup
 	searchWg.Add(2)
 	go func() {
-		defer searchWg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				b.logger.Error("Panic in knowledge base search goroutine", "error", r)
+			}
+			searchWg.Done()
+		}()
 		qaPairs = b.searchKnowledgeBase(ctx, userID, userQuery, qaSearchLimit)
 	}()
 	go func() {
-		defer searchWg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				b.logger.Error("Panic in inventory search goroutine", "error", r)
+			}
+			searchWg.Done()
+		}()
 		inventory = b.searchInventoryContext(ctx, userID, userQuery, inventorySearchLimit)
 	}()
 	searchWg.Wait()

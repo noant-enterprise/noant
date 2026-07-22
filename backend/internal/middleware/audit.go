@@ -25,7 +25,9 @@ func AuditMiddleware(auditRepo *repository.AuditRepository, logger *infrastructu
 		userID, _ := c.Get("userID")
 		userIDStr := ""
 		if userID != nil {
-			userIDStr = userID.(string)
+			if s, ok := userID.(string); ok {
+				userIDStr = s
+			}
 		}
 
 		action := method + " " + c.FullPath()

@@ -456,6 +456,11 @@ func (h *OpenWAHandler) ConnectWhatsApp(c *gin.Context) {
 
 	// Step 5: Start session and configure webhook asynchronously in background
 	go func(sid string, uid string, phone string) {
+		defer func() {
+			if r := recover(); r != nil {
+				h.logger.Error("Panic in WhatsApp session setup goroutine", "sessionID", sid, "error", r)
+			}
+		}()
 		h.logger.Info("Background: Starting session and configuring webhook", "sessionID", sid)
 
 		// Start session with retry
@@ -674,6 +679,11 @@ func (h *OpenWAHandler) RefreshWhatsAppQR(c *gin.Context) {
 
 	// Start the new session and configure webhook asynchronously in background
 	go func(nid string, uid string, phoneNum string) {
+		defer func() {
+			if r := recover(); r != nil {
+				h.logger.Error("Panic in WhatsApp QR refresh goroutine", "sessionID", nid, "error", r)
+			}
+		}()
 		h.logger.Info("Background QR Refresh: Starting session and configuring webhook", "sessionID", nid)
 
 		// Start the new session with retry
