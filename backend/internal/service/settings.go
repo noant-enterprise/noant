@@ -66,6 +66,7 @@ func (s *SettingsService) CreateAPIKey(ctx context.Context, userID, name string)
 	}
 	apiKey := &domain.APIKey{
 		UserID:   userID,
+		OrgID:    userID,
 		Name:     name,
 		Key:      "noant_" + hex.EncodeToString(keyBytes),
 		IsActive: true,

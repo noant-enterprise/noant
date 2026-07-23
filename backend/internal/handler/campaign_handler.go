@@ -27,7 +27,7 @@ func NewCampaignHandler(campaignSvc *service.CampaignService, logger *infrastruc
 
 // List returns all campaigns for the current user
 func (h *CampaignHandler) List(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -47,7 +47,7 @@ func (h *CampaignHandler) List(c *gin.Context) {
 
 // Create creates a new campaign schedule
 func (h *CampaignHandler) Create(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -74,7 +74,7 @@ func (h *CampaignHandler) Create(c *gin.Context) {
 
 // Cancel cancels a campaign by ID
 func (h *CampaignHandler) Cancel(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return

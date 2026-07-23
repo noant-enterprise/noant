@@ -66,6 +66,7 @@ func (s *IntegrationService) Connect(ctx context.Context, userID, channel string
 	} else {
 		integration = &domain.Integration{
 			UserID:     userID,
+			OrgID:      userID,
 			Channel:    channel,
 			Status:     "active",
 			Config:     mergedConfig,
@@ -401,6 +402,7 @@ func (s *IntegrationService) startTelegramPolling(integration *domain.Integratio
 	pollIntegration := &domain.Integration{
 		ID:         integration.ID,
 		UserID:     integration.UserID,
+		OrgID:      integration.OrgID,
 		Channel:    integration.Channel,
 		Status:     integration.Status,
 		Config:     cloneIntegrationConfig(integration.Config),

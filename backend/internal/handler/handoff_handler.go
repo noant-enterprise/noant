@@ -20,7 +20,7 @@ func NewHandoffHandler(svc *service.HandoffService, logger *infrastructure.Logge
 }
 
 func (h *HandoffHandler) List(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -38,7 +38,7 @@ func (h *HandoffHandler) List(c *gin.Context) {
 }
 
 func (h *HandoffHandler) GetByID(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -73,7 +73,7 @@ func (h *HandoffHandler) UpdateStatus(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return

@@ -50,7 +50,7 @@ func NewTemplateHandler(templateSvc *service.TemplateService, logger *infrastruc
 }
 
 func (h *TemplateHandler) List(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -65,7 +65,7 @@ func (h *TemplateHandler) List(c *gin.Context) {
 }
 
 func (h *TemplateHandler) Create(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -86,7 +86,7 @@ func (h *TemplateHandler) Create(c *gin.Context) {
 }
 
 func (h *TemplateHandler) GetByID(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -110,7 +110,7 @@ func (h *TemplateHandler) GetByID(c *gin.Context) {
 }
 
 func (h *TemplateHandler) Update(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -144,7 +144,7 @@ func (h *TemplateHandler) Update(c *gin.Context) {
 }
 
 func (h *TemplateHandler) Delete(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -163,7 +163,7 @@ func (h *TemplateHandler) Delete(c *gin.Context) {
 }
 
 func (h *TemplateHandler) SubmitForApproval(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -182,7 +182,7 @@ func (h *TemplateHandler) SubmitForApproval(c *gin.Context) {
 }
 
 func (h *TemplateHandler) Send(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -208,7 +208,7 @@ func (h *TemplateHandler) GetCommon(c *gin.Context) {
 // ========== OPENWA EXTENDED HANDLERS ==========
 
 func (h *OpenWAHandler) BroadcastCampaign(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -252,7 +252,7 @@ func (h *OpenWAHandler) BroadcastCampaign(c *gin.Context) {
 }
 
 func (h *OpenWAHandler) CampaignAnalytics(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -273,7 +273,7 @@ func (h *OpenWAHandler) CampaignAnalytics(c *gin.Context) {
 }
 
 func (h *OpenWAHandler) UploadMedia(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -368,7 +368,7 @@ func (h *OpenWAHandler) UploadMedia(c *gin.Context) {
 }
 
 func (h *OpenWAHandler) ListMedia(c *gin.Context) {
-	userID := 	getUserID(c)
+	userID := 	getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return

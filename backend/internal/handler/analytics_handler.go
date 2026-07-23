@@ -20,7 +20,7 @@ func NewAnalyticsHandler(svc *service.AnalyticsService, logger *infrastructure.L
 }
 
 func (h *AnalyticsHandler) Overview(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -35,7 +35,7 @@ func (h *AnalyticsHandler) Overview(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) ChannelDistribution(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -50,7 +50,7 @@ func (h *AnalyticsHandler) ChannelDistribution(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) Insights(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -65,7 +65,7 @@ func (h *AnalyticsHandler) Insights(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) Trends(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -82,7 +82,7 @@ func (h *AnalyticsHandler) Trends(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) Satisfaction(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -96,7 +96,7 @@ func (h *AnalyticsHandler) Satisfaction(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) UnknownQuestions(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -110,7 +110,7 @@ func (h *AnalyticsHandler) UnknownQuestions(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) PopularQuestions(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -124,7 +124,7 @@ func (h *AnalyticsHandler) PopularQuestions(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) MessagesTrend(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -139,7 +139,7 @@ func (h *AnalyticsHandler) MessagesTrend(c *gin.Context) {
 }
 
 func (h *AnalyticsHandler) Uptime(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return

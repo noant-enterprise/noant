@@ -107,7 +107,7 @@ func NewWidgetHandler(svc *service.WidgetService, logger *infrastructure.Logger)
 }
 
 func (h *WidgetHandler) Get(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -122,7 +122,7 @@ func (h *WidgetHandler) Get(c *gin.Context) {
 }
 
 func (h *WidgetHandler) Upsert(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return

@@ -56,7 +56,7 @@ func (h *SettingsHandler) UpdateProfile(c *gin.Context) {
 }
 
 func (h *SettingsHandler) ListAPIKeys(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -81,7 +81,7 @@ func (h *SettingsHandler) CreateAPIKey(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -97,7 +97,7 @@ func (h *SettingsHandler) CreateAPIKey(c *gin.Context) {
 
 func (h *SettingsHandler) RevokeAPIKey(c *gin.Context) {
 	id := c.Param("id")
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return

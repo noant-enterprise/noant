@@ -154,6 +154,7 @@ func (cb *CampaignBridge) createRecipientRecord(ctx context.Context, campaignID,
 	recipient := &domain.CampaignRecipient{
 		CampaignID: campaignID,
 		UserID:     userID,
+		OrgID:      userID,
 		Phone:      phone,
 		Status:     "pending",
 	}

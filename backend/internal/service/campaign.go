@@ -57,6 +57,7 @@ func (s *CampaignService) Create(ctx context.Context, userID string, req CreateC
 	// Create campaign record
 	campaign := &domain.CampaignSchedule{
 		UserID:   userID,
+		OrgID:    userID,
 		Name:     req.Name,
 		StartDate: req.StartDate,
 		EndDate:   req.EndDate,

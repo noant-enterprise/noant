@@ -20,7 +20,7 @@ func NewArchiveHandler(svc *service.ArchiveService, logger *infrastructure.Logge
 }
 
 func (h *ArchiveHandler) ListFolders(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -53,7 +53,7 @@ func (h *ArchiveHandler) CreateFolder(c *gin.Context) {
 		req.Type = "custom"
 	}
 
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -89,7 +89,7 @@ func (h *ArchiveHandler) MoveChat(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -113,7 +113,7 @@ func (h *ArchiveHandler) RemoveFromArchive(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -127,7 +127,7 @@ func (h *ArchiveHandler) RemoveFromArchive(c *gin.Context) {
 }
 
 func (h *ArchiveHandler) GetStatus(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return

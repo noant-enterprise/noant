@@ -29,6 +29,7 @@ func (s *ArchiveService) ListFolders(ctx context.Context, userID, folderType str
 func (s *ArchiveService) CreateFolder(ctx context.Context, userID, name, folderType, color string) (*domain.ArchiveFolder, error) {
 	folder := &domain.ArchiveFolder{
 		UserID: userID,
+		OrgID:  userID,
 		Name:   name,
 		Type:   folderType,
 		Color:  color,

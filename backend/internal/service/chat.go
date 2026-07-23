@@ -728,6 +728,7 @@ func (s *ChatService) StoreWhatsAppIntegrationWithStatus(ctx context.Context, us
 	}
 	integration := &domain.Integration{
 		UserID:     userID,
+		OrgID:      userID,
 		Channel:    "whatsapp",
 		Status:     status,
 		WebhookURL: fmt.Sprintf("%s/api/v1/openwa/webhook", s.cfg.APIURL),

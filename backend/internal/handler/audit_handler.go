@@ -22,7 +22,7 @@ func NewAuditHandler(svc *service.AuditService, logger *infrastructure.Logger) *
 }
 
 func (h *AuditHandler) ListLogs(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return

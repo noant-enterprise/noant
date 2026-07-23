@@ -92,6 +92,7 @@ func (s *WidgetService) Get(ctx context.Context, userID string) (*domain.WidgetC
 		// Return a default config if none exists yet
 		cfg = &domain.WidgetConfig{
 			UserID:       userID,
+			OrgID:        userID,
 			BrandColor:   "#3b82f6",
 			Greeting:     "Hello! How can we help you today?",
 			BotName:      "Noant Bot",

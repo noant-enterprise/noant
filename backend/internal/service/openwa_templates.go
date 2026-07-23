@@ -71,6 +71,7 @@ type OpenWATemplatePayload struct {
 func (ts *TemplateService) Create(ctx context.Context, userID string, req *CreateTemplateRequest) (*domain.WhatsAppTemplate, error) {
 	tpl := &domain.WhatsAppTemplate{
 		UserID:     userID,
+		OrgID:      userID,
 		Name:       req.Name,
 		Language:   req.Language,
 		Category:   req.Category,

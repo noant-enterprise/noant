@@ -26,13 +26,22 @@ func NewTrainingHandler(svc *service.TrainingService, logger *infrastructure.Log
 	return &TrainingHandler{service: svc, logger: logger}
 }
 
+func getScopeID(c *gin.Context) string {
+	if orgID, ok := c.Get("orgID"); ok {
+		if s, ok := orgID.(string); ok && s != "" {
+			return s
+		}
+	}
+	return getUserID(c)
+}
+
 func (h *TrainingHandler) ListCategories(c *gin.Context) {
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	categories, err := h.service.ListCategories(c.Request.Context(), userID)
+	categories, err := h.service.ListCategories(c.Request.Context(), scopeID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -54,12 +63,12 @@ func (h *TrainingHandler) CreateCategory(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	category, err := h.service.CreateCategory(c.Request.Context(), userID, req.Name, req.Description, req.Color)
+	category, err := h.service.CreateCategory(c.Request.Context(), scopeID, req.Name, req.Description, req.Color)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -93,12 +102,12 @@ func (h *TrainingHandler) BulkImport(c *gin.Context) {
 		})
 	}
 
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	if err := h.service.BulkImport(c.Request.Context(), userID, req.CategoryID, pairs); err != nil {
+	if err := h.service.BulkImport(c.Request.Context(), scopeID, req.CategoryID, pairs); err != nil {
 		h.logger.Error("Bulk import failed", "error", err)
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -160,12 +169,12 @@ func (h *TrainingHandler) UploadCSV(c *gin.Context) {
 		return
 	}
 
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	count, err := h.service.UploadCSV(c.Request.Context(), userID, categoryID, data)
+	count, err := h.service.UploadCSV(c.Request.Context(), scopeID, categoryID, data)
 	if err != nil {
 		h.logger.Error("CSV upload failed", "error", err)
 		utils.RespondInternalError(c, err.Error())
@@ -180,25 +189,25 @@ func (h *TrainingHandler) ListUnknownQuestions(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	questions, err := h.service.ListUnknownQuestions(c.Request.Context(), userID, status, limit, offset)
+	questions, err := h.service.ListUnknownQuestions(c.Request.Context(), scopeID, status, limit, offset)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}
 
-	total, _ := h.service.CountUnknownQuestions(c.Request.Context(), userID, status)
+	total, _ := h.service.CountUnknownQuestions(c.Request.Context(), scopeID, status)
 
 	c.JSON(http.StatusOK, gin.H{"questions": questions, "total": total, "limit": limit, "offset": offset})
 }
 
 func (h *TrainingHandler) BatchTrainUnknown(c *gin.Context) {
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
@@ -212,7 +221,7 @@ func (h *TrainingHandler) BatchTrainUnknown(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.BatchTrainUnknown(c.Request.Context(), userID, req.Answer, req.CategoryID, req.IDs); err != nil {
+	if err := h.service.BatchTrainUnknown(c.Request.Context(), scopeID, req.Answer, req.CategoryID, req.IDs); err != nil {
 		h.logger.Error("Batch train failed", "error", err)
 		utils.RespondInternalError(c, "")
 		return
@@ -222,8 +231,8 @@ func (h *TrainingHandler) BatchTrainUnknown(c *gin.Context) {
 }
 
 func (h *TrainingHandler) BatchIgnoreUnknown(c *gin.Context) {
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
@@ -235,7 +244,7 @@ func (h *TrainingHandler) BatchIgnoreUnknown(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.BatchIgnoreUnknown(c.Request.Context(), userID, req.IDs); err != nil {
+	if err := h.service.BatchIgnoreUnknown(c.Request.Context(), scopeID, req.IDs); err != nil {
 		h.logger.Error("Batch ignore failed", "error", err)
 		utils.RespondInternalError(c, "")
 		return
@@ -257,12 +266,12 @@ func (h *TrainingHandler) TrainUnknown(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	if err := h.service.TrainUnknown(c.Request.Context(), userID, id, req.Answer, req.CategoryID); err != nil {
+	if err := h.service.TrainUnknown(c.Request.Context(), scopeID, id, req.Answer, req.CategoryID); err != nil {
 		if errors.Is(err, apperrors.ErrUnknownQuestion) || errors.Is(err, apperrors.ErrNotFound) {
 			utils.RespondNotFound(c, "Unknown question")
 			return
@@ -276,13 +285,13 @@ func (h *TrainingHandler) TrainUnknown(c *gin.Context) {
 
 func (h *TrainingHandler) IgnoreUnknown(c *gin.Context) {
 	id := c.Param("id")
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	if err := h.service.IgnoreUnknown(c.Request.Context(), userID, id); err != nil {
+	if err := h.service.IgnoreUnknown(c.Request.Context(), scopeID, id); err != nil {
 		if errors.Is(err, apperrors.ErrUnknownQuestion) || errors.Is(err, apperrors.ErrNotFound) {
 			utils.RespondNotFound(c, "Unknown question")
 			return
@@ -296,13 +305,13 @@ func (h *TrainingHandler) IgnoreUnknown(c *gin.Context) {
 }
 
 func (h *TrainingHandler) ClearUnknown(c *gin.Context) {
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	if err := h.service.ClearUnknownQuestions(c.Request.Context(), userID); err != nil {
+	if err := h.service.ClearUnknownQuestions(c.Request.Context(), scopeID); err != nil {
 		h.logger.Error("Clear unknown questions failed", "error", err)
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -313,13 +322,13 @@ func (h *TrainingHandler) ClearUnknown(c *gin.Context) {
 
 func (h *TrainingHandler) ListQAPairs(c *gin.Context) {
 	categoryID := c.Param("id")
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	qaPairs, err := h.service.ListQAPairs(c.Request.Context(), userID, categoryID)
+	qaPairs, err := h.service.ListQAPairs(c.Request.Context(), scopeID, categoryID)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -343,12 +352,12 @@ func (h *TrainingHandler) CreateQAPair(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	qa, err := h.service.CreateQAPair(c.Request.Context(), userID, req.CategoryID, req.Question, req.Answer)
+	qa, err := h.service.CreateQAPair(c.Request.Context(), scopeID, req.CategoryID, req.Question, req.Answer)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -371,12 +380,12 @@ func (h *TrainingHandler) UpdateQAPair(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
-	err := h.service.UpdateQAPair(c.Request.Context(), userID, id, req.CategoryID, req.Question, req.Answer)
+	err := h.service.UpdateQAPair(c.Request.Context(), scopeID, id, req.CategoryID, req.Question, req.Answer)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -387,13 +396,13 @@ func (h *TrainingHandler) UpdateQAPair(c *gin.Context) {
 
 func (h *TrainingHandler) DeleteQAPair(c *gin.Context) {
 	id := c.Param("id")
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	err := h.service.DeleteQAPair(c.Request.Context(), userID, id)
+	err := h.service.DeleteQAPair(c.Request.Context(), scopeID, id)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -404,13 +413,13 @@ func (h *TrainingHandler) DeleteQAPair(c *gin.Context) {
 
 func (h *TrainingHandler) DeleteCategory(c *gin.Context) {
 	id := c.Param("id")
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	err := h.service.DeleteCategory(c.Request.Context(), userID, id)
+	err := h.service.DeleteCategory(c.Request.Context(), scopeID, id)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
@@ -421,13 +430,13 @@ func (h *TrainingHandler) DeleteCategory(c *gin.Context) {
 
 func (h *TrainingHandler) SearchQAPairs(c *gin.Context) {
 	query := c.Query("q")
-	userID := getUserID(c)
-	if userID == "" {
+	scopeID := getScopeID(c)
+	if scopeID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
 	}
 
-	qaPairs, err := h.service.SearchQAPairs(c.Request.Context(), userID, query)
+	qaPairs, err := h.service.SearchQAPairs(c.Request.Context(), scopeID, query)
 	if err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return

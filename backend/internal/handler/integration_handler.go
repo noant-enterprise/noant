@@ -20,7 +20,7 @@ func NewIntegrationHandler(svc *service.IntegrationService, logger *infrastructu
 }
 
 func (h *IntegrationHandler) List(c *gin.Context) {
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -46,7 +46,7 @@ func (h *IntegrationHandler) Connect(c *gin.Context) {
 	}
 	utils.SanitizeStruct(&req)
 
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return
@@ -62,7 +62,7 @@ func (h *IntegrationHandler) Connect(c *gin.Context) {
 
 func (h *IntegrationHandler) Disconnect(c *gin.Context) {
 	channel := c.Param("channel")
-	userID := getUserID(c)
+	userID := getScopeID(c)
 	if userID == "" {
 		utils.RespondUnauthorized(c, "Unauthorized")
 		return

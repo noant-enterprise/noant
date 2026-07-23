@@ -456,6 +456,7 @@ func (b *AIBrain) generateResponseCore(ctx context.Context, conversationID, user
 	if !alreadyPending {
 		err := b.repos.UnknownQ.Create(ctx, &domain.UnknownQuestion{
 			UserID:         userID,
+			OrgID:          userID,
 			Question:       normalizedQuery,
 			ConversationID: conversationID,
 			Channel:        escChannel,

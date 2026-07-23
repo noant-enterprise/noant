@@ -39,6 +39,7 @@ func (s *TrainingService) ClearUnknownQuestions(ctx context.Context, userID stri
 func (s *TrainingService) CreateCategory(ctx context.Context, userID, name, description, color string) (*domain.Category, error) {
 	cat := &domain.Category{
 		UserID:      userID,
+		OrgID:       userID,
 		Name:        name,
 		Description: description,
 		Color:       color,
@@ -56,6 +57,7 @@ func (s *TrainingService) ListCategories(ctx context.Context, userID string) ([]
 func (s *TrainingService) BulkImport(ctx context.Context, userID, categoryID string, qaPairs []domain.QAPair) error {
 	for i := range qaPairs {
 		qaPairs[i].UserID = userID
+		qaPairs[i].OrgID = userID
 		qaPairs[i].CategoryID = categoryID
 		qaPairs[i].IsActive = true
 	}
@@ -97,12 +99,13 @@ func (s *TrainingService) UploadCSV(ctx context.Context, userID, categoryID stri
 			if existing != nil {
 				catID = existing.ID
 			} else {
-				cat := &domain.Category{
-					UserID:      userID,
-					Name:        categoryName,
-					Description: "Auto-imported from CSV",
-					Color:       "#3b82f6",
-				}
+			cat := &domain.Category{
+				UserID:      userID,
+				OrgID:       userID,
+				Name:        categoryName,
+				Description: "Auto-imported from CSV",
+				Color:       "#3b82f6",
+			}
 				if err := s.repos.Category.Create(ctx, cat); err != nil {
 					s.logger.Warn("Failed to create category", "name", categoryName, "error", err)
 					continue
@@ -121,6 +124,7 @@ func (s *TrainingService) UploadCSV(ctx context.Context, userID, categoryID stri
 		} else {
 			qaPairs = append(qaPairs, domain.QAPair{
 				UserID:     userID,
+				OrgID:      userID,
 				CategoryID: catID,
 				Category:   categoryName,
 				Question:   question,
@@ -169,6 +173,7 @@ func (s *TrainingService) TrainUnknown(ctx context.Context, userID, id, answer, 
 	}
 	qa := &domain.QAPair{
 		UserID:     target.UserID,
+		OrgID:      userID,
 		CategoryID: categoryID,
 		Question:   target.Question,
 		Answer:     answer,
@@ -197,6 +202,7 @@ func (s *TrainingService) ListQAPairs(ctx context.Context, userID, categoryID st
 func (s *TrainingService) CreateQAPair(ctx context.Context, userID, categoryID, question, answer string) (*domain.QAPair, error) {
 	qa := &domain.QAPair{
 		UserID:     userID,
+		OrgID:      userID,
 		CategoryID: categoryID,
 		Question:   question,
 		Answer:     answer,
@@ -215,6 +221,7 @@ func (s *TrainingService) UpdateQAPair(ctx context.Context, userID, qaID, catego
 	qa := &domain.QAPair{
 		ID:         qaID,
 		UserID:     userID,
+		OrgID:      userID,
 		CategoryID: categoryID,
 		Question:   question,
 		Answer:     answer,

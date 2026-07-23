@@ -187,6 +187,7 @@ func (s *OnboardingService) AutoCreateCategories(ctx context.Context, userID, in
 	for _, name := range template.Categories {
 		cat := &domain.Category{
 			UserID: userID,
+			OrgID:  userID,
 			Name:   name,
 			Description: fmt.Sprintf("Questions about %s", name),
 		}
