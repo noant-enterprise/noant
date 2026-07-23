@@ -23,7 +23,7 @@ describe('StatGrid', () => {
     const gridEl = container.firstChild as HTMLElement
     expect(gridEl.className).toContain('grid')
     expect(gridEl.className).toContain('grid-cols-2')
-    expect(gridEl.className).toContain('lg:grid-cols-4')
+    expect(gridEl.className).toContain('lg:grid-cols-5')
   })
 
   it('applies gap classes', () => {

@@ -5,12 +5,12 @@ import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Link } from 'react-router-dom'
-import { ArrowRight, MessageCircle, Instagram, Globe, Inbox, Radio, GraduationCap, BarChart3 } from 'lucide-react'
+import { ArrowRight, MessageCircle, Instagram, Globe, Inbox, Radio, GraduationCap, BarChart3, HelpCircle } from 'lucide-react'
 import { StatSkeleton } from '@/components/ui/Skeleton'
 import { Avatar } from '@/components/ui/Avatar'
 import { timeAgo } from '@/lib/utils'
 import type { Conversation } from '@/types'
-import type { ConversationListResponse, AnalyticsOverview } from '@/types/api'
+import type { ConversationListResponse, AnalyticsOverview, UnknownQuestionsStatsResponse } from '@/types/api'
 
 const channelIcons: Record<string, { icon: React.ElementType; color: string }> = {
   whatsapp: { icon: MessageCircle, color: '#25D366' },
@@ -26,19 +26,24 @@ export default function OverviewPage() {
   
   const { data: conversations, get: getConversations, loading: convLoading } = useAPI<ConversationListResponse>()
 
+  const { data: unknownStats, get: getUnknownStats } = useAPI<UnknownQuestionsStatsResponse>()
+
   useEffect(() => {
     getStats('/analytics/overview')
     getConversations('/chats/conversations?limit=6')
+    getUnknownStats('/analytics/unknown-questions')
   }, [])
 
   const recentCount = conversations?.conversations?.length || 0
+  const pendingUnknown = unknownStats?.by_status?.pending || 0
 
   return (
     <div className="animate-page-in space-y-5 lg:space-y-6 pt-2">
       {/* Stats */}
       <div className="px-1">
         {statsLoading ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <StatSkeleton />
             <StatSkeleton />
             <StatSkeleton />
             <StatSkeleton />
@@ -57,6 +62,7 @@ export default function OverviewPage() {
             <StatCard label="Resolved auto" value={stats?.resolved_today || 0} change={8} variant="success" />
             <StatCard label="Avg response" value={`${stats?.avg_response_time || 0}s`} change={-15} variant="info" />
             <StatCard label="Satisfaction" value={`${stats?.satisfaction || 0}%`} change={5} variant="warning" />
+            <StatCard label="Unknown questions" value={pendingUnknown} variant="error" />
           </StatGrid>
         )}
       </div>
@@ -70,6 +76,34 @@ export default function OverviewPage() {
           <QuickAction to="/insights" icon={BarChart3} label="Insights" color="#5865F2" />
         </div>
       </div>
+
+      {/* Unknown questions alert */}
+      {pendingUnknown > 0 && (
+        <div className="px-1">
+          <Card className="border-amber-500/30 bg-amber-500/5">
+            <CardBody className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                    <HelpCircle className="w-5 h-5 text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-primary">
+                      {pendingUnknown} unknown {pendingUnknown === 1 ? 'question' : 'questions'}
+                    </p>
+                    <p className="text-xs text-secondary">Your AI couldn't answer these. Train it to improve.</p>
+                  </div>
+                </div>
+                <Link to="/teach">
+                  <Button variant="ghost" size="sm">
+                    Train now <ArrowRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </Link>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      )}
 
       {/* Recent activity with count */}
       <div className="px-1 pb-4">
