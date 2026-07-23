@@ -40,11 +40,11 @@ test.describe('Login page', () => {
     const passwordInput = page.getByPlaceholder('********')
     await expect(passwordInput).toHaveAttribute('type', 'password')
 
-    const toggle = page.locator('button[tabindex="-1"]').first()
+    const toggle = page.getByRole('button', { name: /show password/i })
     await toggle.click()
     await expect(passwordInput).toHaveAttribute('type', 'text')
 
-    await toggle.click()
+    await page.getByRole('button', { name: /hide password/i }).click()
     await expect(passwordInput).toHaveAttribute('type', 'password')
   })
 
