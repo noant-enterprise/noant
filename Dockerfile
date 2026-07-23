@@ -15,7 +15,7 @@ COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o bin/main main.go
 
 # Stage 3: Runtime
-FROM alpine:3.19
+FROM alpine:3.24
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=backend /app/backend/bin/main ./backend/main
