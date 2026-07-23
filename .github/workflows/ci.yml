@@ -220,7 +220,7 @@ jobs:
     name: Load Tests
     runs-on: ubuntu-latest
     needs: build-backend
-    continue-on-error: true
+    if: github.event_name == 'schedule'
     services:
       mysql:
         image: mysql:8.0
