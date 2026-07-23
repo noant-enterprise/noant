@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 
+	"noant/internal/domain"
 	"noant/internal/infrastructure"
 	"noant/internal/service"
 	"noant/internal/utils"
@@ -113,7 +114,7 @@ func (h *SettingsHandler) RevokeAPIKey(c *gin.Context) {
 func (h *SettingsHandler) ListTeam(c *gin.Context) {
 	orgID := getOrgID(c)
 	if orgID == "" {
-		utils.RespondUnauthorized(c, "Unauthorized")
+		c.JSON(http.StatusOK, gin.H{"team": []domain.TeamMember{}})
 		return
 	}
 	members, err := h.service.ListTeam(c.Request.Context(), orgID)
@@ -139,7 +140,7 @@ func (h *SettingsHandler) InviteTeamMember(c *gin.Context) {
 
 	orgID := getOrgID(c)
 	if orgID == "" {
-		utils.RespondUnauthorized(c, "Unauthorized")
+		utils.RespondValidationError(c, "Organization required for team management")
 		return
 	}
 	member, err := h.service.InviteTeamMember(c.Request.Context(), orgID, req.Email, req.Role)
