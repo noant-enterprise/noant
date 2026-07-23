@@ -3,6 +3,7 @@ import { Bell, BellOff, Check, CheckCheck, AlertTriangle, HelpCircle, CreditCard
 import { api } from '../../../lib/api'
 import { useToast } from '@/components/ui/Toast'
 import { useNavigate } from 'react-router-dom'
+import { useSidebarAlerts } from '@/contexts/SidebarAlertsContext'
 
 interface Notification {
   id: string
@@ -54,6 +55,7 @@ export default function NotificationsPage() {
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
   const { toast: showToast } = useToast()
   const navigate = useNavigate()
+  const { refreshAlerts } = useSidebarAlerts()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -73,6 +75,7 @@ export default function NotificationsPage() {
     try {
       await api.post(`/notifications/${id}/read`, {})
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
+      refreshAlerts()
     } catch {}
   }
 
@@ -80,6 +83,7 @@ export default function NotificationsPage() {
     try {
       await api.post('/notifications/read-all', {})
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+      refreshAlerts()
       showToast('All notifications marked as read', 'success')
     } catch {
       showToast('Failed to mark all as read', 'error')

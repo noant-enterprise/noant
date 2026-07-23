@@ -71,6 +71,7 @@ describe('BottomNav', () => {
       billingAlert: false,
       unreadNotifications: 0,
       total: 5,
+      refreshAlerts: vi.fn(),
     })
     renderWithRouter(<BottomNav />)
     expect(screen.getByText('5')).toBeInTheDocument()
@@ -85,6 +86,7 @@ describe('BottomNav', () => {
       billingAlert: false,
       unreadNotifications: 0,
       total: 15,
+      refreshAlerts: vi.fn(),
     })
     renderWithRouter(<BottomNav />)
     expect(screen.getByText('9+')).toBeInTheDocument()

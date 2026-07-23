@@ -27,7 +27,11 @@ const defaultAlerts: SidebarAlerts = {
   total: 0,
 }
 
-const SidebarAlertsContext = createContext<SidebarAlerts>(defaultAlerts)
+interface SidebarAlertsContextValue extends SidebarAlerts {
+  refreshAlerts: () => void
+}
+
+const SidebarAlertsContext = createContext<SidebarAlertsContextValue>({ ...defaultAlerts, refreshAlerts: () => {} })
 
 export function SidebarAlertsProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -120,6 +124,11 @@ export function SidebarAlertsProvider({ children }: { children: React.ReactNode 
     }
   }, [user])
 
+  const refreshAlerts = useCallback(() => {
+    lastFetchRef.current = 0
+    fetchAlerts()
+  }, [fetchAlerts])
+
   // Initial fetch + poll every 30s
   useEffect(() => {
     fetchAlerts()
@@ -144,12 +153,12 @@ export function SidebarAlertsProvider({ children }: { children: React.ReactNode 
   }, [subscribe, fetchAlerts])
 
   return (
-    <SidebarAlertsContext.Provider value={alerts}>
+    <SidebarAlertsContext.Provider value={{ ...alerts, refreshAlerts }}>
       {children}
     </SidebarAlertsContext.Provider>
   )
 }
 
-export function useSidebarAlerts(): SidebarAlerts {
+export function useSidebarAlerts(): SidebarAlertsContextValue {
   return useContext(SidebarAlertsContext)
 }

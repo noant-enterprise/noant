@@ -4,6 +4,7 @@ import { Sun, Moon, Bell, AlertTriangle, HelpCircle, CreditCard, Shield, Users, 
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/components/ui/Toast'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { useSidebarAlerts } from '@/contexts/SidebarAlertsContext'
 import { api } from '../../lib/api'
 
 const titles: Record<string, string> = {
@@ -68,6 +69,7 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
 
   const { subscribe } = useWebSocket()
   const { toast: showToast } = useToast()
+  const { refreshAlerts } = useSidebarAlerts()
 
   const loadNotifications = useCallback(() => {
     api.get<{ notifications: Notification[] }>('/notifications?limit=5').then(res => {
@@ -113,6 +115,7 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
     try {
       await api.post(`/notifications/${id}/read`, {})
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
+      refreshAlerts()
     } catch {}
   }
 
