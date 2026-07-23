@@ -111,8 +111,6 @@ func (b *AIBrain) localPlatformAnswer(userID, query string, qaPairs []domain.QAP
 		content := strings.TrimSpace(first.Answer)
 		if content == "" {
 			content = "Let me know if you want me to explain anything else."
-		} else if len(strings.Fields(query)) > 3 && !strings.HasSuffix(content, "?") {
-			content += " If you want, I can also help you with the next best option."
 		}
 		return &AIResponse{
 			Content:    content,
