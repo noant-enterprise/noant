@@ -7,6 +7,7 @@
 ## Table of Contents
 
 - [users](#users)
+- [organizations](#organizations)
 - [conversations](#conversations)
 - [messages](#messages)
 - [categories](#categories)
@@ -75,6 +76,27 @@ Core user accounts. Each user owns a workspace (conversations, QA pairs, integra
 
 ---
 
+## organizations
+
+Multi-tenant organization workspaces. Each user belongs to one organization.
+
+| Column | Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| id | VARCHAR(36) | NO | — | Primary key (UUID) |
+| name | VARCHAR(255) | NO | — | Organization display name |
+| slug | VARCHAR(100) | NO | — | URL-safe unique slug |
+| owner_id | VARCHAR(36) | NO | — | Workspace owner (FK -> users.id CASCADE) |
+| plan_id | VARCHAR(50) | YES | 'free' | Organization subscription plan |
+| settings | JSON | YES | NULL | Organization-specific settings |
+| created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
+| updated_at | TIMESTAMP | YES | CURRENT_TIMESTAMP ON UPDATE | Last update time |
+
+**Indexes:** `idx_org_owner (owner_id)`, `idx_org_slug (slug) UNIQUE`
+
+**Foreign Keys:** `owner_id -> users(id) ON DELETE CASCADE`
+
+---
+
 ## conversations
 
 Customer support conversations. Each conversation belongs to one user workspace and has a channel source.
@@ -100,6 +122,7 @@ Customer support conversations. Each conversation belongs to one user workspace 
 | location_lng | DECIMAL(11,8) | YES | NULL | Customer longitude |
 | location_city | VARCHAR(100) | YES | NULL | Customer city |
 | location_country | VARCHAR(100) | YES | NULL | Customer country |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
 | updated_at | TIMESTAMP | YES | CURRENT_TIMESTAMP ON UPDATE | Last update time |
 
@@ -125,6 +148,8 @@ Individual messages within a conversation. Tracks sender, content, AI confidence
 | language | VARCHAR(10) | YES | 'en' | Detected message language |
 | source | VARCHAR(50) | YES | NULL | Message source (e.g. channel plugin) |
 | sequence | INT | NO | — | Ordered position within conversation |
+| delivery_status | VARCHAR(20) | YES | 'sent' | Delivery confirmation status |
+| external_id | VARCHAR(255) | YES | NULL | External provider message ID |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Message timestamp |
 
 **Indexes:** `idx_conversation (conversation_id, created_at)`, `idx_sender (sender_id)`, `idx_messages_conv_seq (conversation_id, sequence)`
@@ -142,6 +167,7 @@ QA training categories. Each category groups related QA pairs for a user workspa
 | description | TEXT | YES | NULL | Category description |
 | color | VARCHAR(7) | YES | '#3b82f6' | Hex color for UI display |
 | user_id | VARCHAR(36) | YES | NULL | Owning workspace user |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
 
 **Indexes:** `idx_name (name)`, `idx_categories_user (user_id)`
@@ -163,6 +189,7 @@ Question-and-answer training data. These drive the AI response engine. Supports 
 | is_active | BOOLEAN | YES | true | Whether this QA is active |
 | usage_count | INT | YES | 0 | Times this QA was matched |
 | user_id | VARCHAR(36) | YES | NULL | Owning workspace user |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
 | updated_at | TIMESTAMP | YES | CURRENT_TIMESTAMP ON UPDATE | Last update time |
 
@@ -184,6 +211,7 @@ Questions from customers that could not be matched to any QA pair. Used for trai
 | suggested_answer | TEXT | YES | NULL | AI-suggested answer for review |
 | category_id | VARCHAR(36) | YES | NULL | Suggested category assignment |
 | user_id | VARCHAR(36) | YES | NULL | Owning workspace user |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | When the question was logged |
 
 **Indexes:** `idx_status (status)`, `idx_created (created_at)`, `idx_uq_user_status (user_id, status)`
@@ -203,6 +231,7 @@ Channel integrations (Telegram, WhatsApp, Instagram, etc.) configured per worksp
 | config | JSON | YES | NULL | Channel-specific configuration |
 | webhook_url | VARCHAR(500) | YES | NULL | Registered webhook URL |
 | last_error | TEXT | YES | NULL | Last connection error message |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
 | updated_at | TIMESTAMP | YES | CURRENT_TIMESTAMP ON UPDATE | Last update time |
 
@@ -221,6 +250,7 @@ Workspace team membership. Links owner workspaces to agent/admin users.
 | user_id | VARCHAR(36) | NO | — | Team member user ID |
 | role | ENUM('admin','agent') | YES | 'agent' | Role within workspace |
 | is_active | BOOLEAN | YES | true | Membership active flag |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | joined_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | When member joined |
 
 **Indexes:** `idx_owner (owner_id)`, `idx_user (user_id)`
@@ -239,6 +269,7 @@ Programmatic API keys for external integrations. Stored as hashes.
 | key_hash | VARCHAR(255) | NO | — | SHA-256 hash of the API key |
 | last_used | TIMESTAMP | YES | NULL | Last usage timestamp |
 | is_active | BOOLEAN | YES | true | Key enabled flag |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
 
 **Indexes:** `idx_user (user_id)`, `idx_key (key_hash)`
@@ -257,6 +288,7 @@ Folders for archiving conversations, contacts, and locations.
 | type | ENUM('chats','contacts','locations') | YES | 'chats' | Archive content type |
 | color | VARCHAR(7) | YES | '#6b7280' | UI display color |
 | item_count | INT | YES | 0 | Number of items in folder |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
 
 **Indexes:** `idx_user_type (user_id, type)`
@@ -275,6 +307,7 @@ Active and historical subscriptions per user.
 | status | ENUM('active','cancelled','expired') | YES | 'active' | Subscription status |
 | current_period_start | TIMESTAMP | NO | — | Period start timestamp |
 | current_period_end | TIMESTAMP | NO | — | Period end timestamp |
+| org_id | VARCHAR(36) | NO | — | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
 | updated_at | TIMESTAMP | YES | CURRENT_TIMESTAMP ON UPDATE | Last update time |
 
@@ -316,6 +349,7 @@ Immutable audit trail for all user actions.
 | details | JSON | YES | NULL | Action-specific metadata |
 | ip_address | VARCHAR(45) | YES | NULL | Client IP (supports IPv6) |
 | user_agent | TEXT | YES | NULL | Client user agent string |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Event timestamp |
 
 **Indexes:** `idx_audit_user (user_id)`, `idx_audit_created (created_at)`, `idx_audit_action (action)`
@@ -355,6 +389,7 @@ Embedded chat widget configuration per workspace.
 | position | VARCHAR(20) | YES | 'bottom-right' | Widget position on page |
 | widget_api_key | VARCHAR(100) | NO | — | Public API key for embed |
 | is_active | BOOLEAN | YES | TRUE | Widget enabled flag |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
 | updated_at | TIMESTAMP | YES | CURRENT_TIMESTAMP ON UPDATE | Last update time |
 
@@ -378,6 +413,7 @@ Product, service, or package catalog for sales handoff workflows.
 | stock_quantity | INT | YES | NULL | Available stock count |
 | image_url | VARCHAR(500) | YES | NULL | Product image URL |
 | is_active | BOOLEAN | YES | TRUE | Listed flag |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
 | updated_at | TIMESTAMP | YES | CURRENT_TIMESTAMP ON UPDATE | Last update time |
 
@@ -408,6 +444,7 @@ Sales handoff records when AI transfers a buying conversation to a human agent.
 | owner_notified_at | TIMESTAMP | YES | NULL | When owner was notified |
 | reminder_count | INT | YES | 0 | Number of reminders sent |
 | next_reminder_at | TIMESTAMP | YES | NULL | Next scheduled reminder |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | created_at | TIMESTAMP | YES | CURRENT_TIMESTAMP | Creation time |
 | updated_at | TIMESTAMP | YES | CURRENT_TIMESTAMP ON UPDATE | Last update time |
 
@@ -423,6 +460,7 @@ Pulse AI response credit balance per user.
 |---|---|---|---|---|
 | id | VARCHAR(36) | NO | — | Primary key (UUID) |
 | user_id | VARCHAR(36) | NO | — | Owning user (FK -> users.id CASCADE) |
+| org_id | VARCHAR(36) | NO | — | Organization scope |
 | balance | INT | NO | 0 | Remaining credit count |
 | expires_at | TIMESTAMP | YES | NULL | Credit expiration time |
 | last_updated_at | TIMESTAMP | NO | CURRENT_TIMESTAMP ON UPDATE | Last balance change |
@@ -441,6 +479,7 @@ Historical record of credit pack purchases.
 |---|---|---|---|---|
 | id | VARCHAR(36) | NO | — | Primary key (UUID) |
 | user_id | VARCHAR(36) | NO | — | Purchasing user (FK -> users.id CASCADE) |
+| org_id | VARCHAR(36) | NO | — | Organization scope |
 | checkout_id | VARCHAR(100) | NO | UNIQUE | Payment provider checkout ID |
 | pack_type | VARCHAR(20) | NO | — | Pack tier identifier |
 | amount | INT | NO | — | Credits purchased |
@@ -462,6 +501,7 @@ Broadcast campaign definitions.
 |---|---|---|---|---|
 | id | VARCHAR(36) | NO | — | Primary key (UUID) |
 | user_id | VARCHAR(36) | NO | — | Owning user (FK -> users.id CASCADE) |
+| org_id | VARCHAR(36) | YES | NULL | Organization scope |
 | name | VARCHAR(100) | NO | — | Campaign name |
 | start_date | DATE | NO | — | Scheduled start date |
 | end_date | DATE | NO | — | Scheduled end date |
@@ -484,6 +524,7 @@ Individual recipients within a broadcast campaign.
 | id | VARCHAR(36) | NO | — | Primary key (UUID) |
 | campaign_id | VARCHAR(36) | NO | — | Parent campaign (FK -> campaign_schedules.id CASCADE) |
 | user_id | VARCHAR(36) | NO | — | Owning user (FK -> users.id CASCADE) |
+| org_id | VARCHAR(36) | NO | — | Organization scope |
 | phone | VARCHAR(20) | NO | — | Recipient phone number |
 | name | VARCHAR(100) | YES | NULL | Recipient name |
 | status | VARCHAR(20) | NO | 'pending' | Delivery status |
@@ -507,6 +548,7 @@ WhatsApp HSM (Highly Structured Message) templates.
 |---|---|---|---|---|
 | id | VARCHAR(36) | NO | — | Primary key (UUID) |
 | user_id | VARCHAR(36) | NO | — | Owning user (FK -> users.id CASCADE) |
+| org_id | VARCHAR(36) | NO | — | Organization scope |
 | name | VARCHAR(100) | NO | — | Template name |
 | language | VARCHAR(10) | NO | 'en' | Template language code |
 | category | VARCHAR(20) | NO | 'utility' | HSM category |
@@ -598,6 +640,21 @@ Web Push notification subscriptions for PWA clients.
 
 ```
 users (1) ──────── (*) conversations
+organizations (1) ──────── (*) users
+organizations (1) ──────── (*) conversations
+organizations (1) ──────── (*) categories
+organizations (1) ──────── (*) qa_pairs
+organizations (1) ──────── (*) integrations
+organizations (1) ──────── (*) inventory_items
+organizations (1) ──────── (*) handoffs
+organizations (1) ──────── (*) audit_logs
+organizations (1) ──────── (*) campaign_schedules
+organizations (1) ──────── (*) widget_configs
+organizations (1) ──────── (*) team_members
+organizations (1) ──────── (*) api_keys
+organizations (1) ──────── (*) archive_folders
+organizations (1) ──────── (*) whatsapp_templates
+organizations (1) ──────── (*) campaign_recipients
 users (1) ──────── (*) categories
 users (1) ──────── (*) qa_pairs
 users (1) ──────── (*) unknown_questions
@@ -654,3 +711,7 @@ campaign_schedules (1) ──── (*) campaign_recipients
 | 015 | `015_csat_analytics.sql` | Create csat_ratings table; add composite index on unknown_questions |
 | 016 | `016_push_subscriptions.sql` | Create push_subscriptions table for PWA Web Push |
 | 017 | `017_schema_repair.sql` | Consolidate inline DDL: ensure inventory_items, handoffs, audit_logs, owner_whatsapp exist |
+| 018 | `018_multi_tenancy.sql` | Create organizations table; add org_id to users and core data tables; backfill from existing user data |
+| 019 | `019_multi_tenancy_scoping.sql` | Add org_id to remaining tables (credits, subscriptions, templates, archives, API keys, campaign recipients) |
+| 020 | `020_delivery_tracking.sql` | Add delivery_status and external_id columns to messages for delivery tracking |
+| 021 | `021_backfill_org_ids.sql` | Backfill org_id for categories, qa_pairs, unknown_questions where org_id is empty |

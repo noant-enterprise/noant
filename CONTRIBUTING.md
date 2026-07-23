@@ -18,7 +18,7 @@ git clone https://github.com/your-org/noant.git
 cd noant
 
 # Copy environment template
-cp .env.example .env
+cp backend/.env.example backend/.env
 # Edit .env with your credentials (Groq API key, Polar.sh, etc.)
 
 # Start MySQL + Redis via Docker
@@ -48,9 +48,9 @@ noant/
 ├── backend/              # Go backend (Gin framework)
 │   ├── main.go           # Entrypoint, DI wiring, routes
 │   ├── internal/
-│   │   ├── handler/      # HTTP handlers (one per domain)
-│   │   ├── service/      # Business logic layer
-│   │   ├── repository/   # Data access layer (MySQL + Redis)
+│   │   ├── handler/      # HTTP handlers (25 files, split by domain)
+│   │   ├── service/      # Business logic layer (49 files)
+│   │   ├── repository/   # Data access layer (27 files, MySQL + Redis)
 │   │   ├── infrastructure/ # DB, Redis, logging, metrics, migrations
 │   │   ├── middleware/    # Auth, CSRF, rate limiting, sanitization
 │   │   ├── domain/       # Domain models
@@ -187,6 +187,7 @@ Key variables:
 - `TIDB_HOST`, `TIDB_PORT`, `TIDB_USER`, `TIDB_PASSWORD`, `TIDB_DATABASE` — Database
 - `REDIS_URL` — Cache (optional)
 - `JWT_SECRET` — Authentication signing key
+- `SENTRY_DSN` — Sentry error monitoring DSN (optional, set to empty to disable)
 - `OPENWA_*` — WhatsApp integration settings
 
 ## Architecture Decisions

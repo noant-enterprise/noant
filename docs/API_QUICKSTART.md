@@ -13,6 +13,16 @@ All requests and responses use `application/json` unless otherwise noted. Authen
 - [Conversations & Messages](#conversations--messages)
 - [AI Chat (Streaming)](#ai-chat-streaming)
 - [Training (QA Pairs)](#training-qa-pairs)
+- [Channels (WhatsApp)](#channels-whatsapp)
+- [Templates](#templates)
+- [Inventory](#inventory)
+- [Handoffs](#handoffs)
+- [Analytics](#analytics)
+- [Credits](#credits)
+- [Notifications](#notifications)
+- [Campaigns](#campaigns)
+- [Team](#team)
+- [Widget](#widget)
 - [Error Codes](#error-codes)
 - [Rate Limits](#rate-limits)
 
@@ -419,6 +429,205 @@ curl -X POST http://localhost:8080/api/v1/training/bulk-qa \
       {"question": "Do you ship internationally?", "answer": "Yes, to 50+ countries."}
     ]
   }'
+```
+
+---
+
+## Channels (WhatsApp)
+
+### Get Integration Status
+
+```bash
+curl http://localhost:8080/api/v1/channels/whatsapp/status \
+  -H "Authorization: Bearer <token>"
+```
+
+### Get Session Health
+
+```bash
+curl http://localhost:8080/api/v1/channels/whatsapp/sessions/health \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Templates
+
+### List Templates
+
+```bash
+curl http://localhost:8080/api/v1/templates \
+  -H "Authorization: Bearer <token>"
+```
+
+### Create Template
+
+```bash
+curl -X POST http://localhost:8080/api/v1/templates \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "order_confirmation",
+    "language": "en",
+    "category": "utility",
+    "body_text": "Your order {{1}} has been confirmed."
+  }'
+```
+
+---
+
+## Inventory
+
+### List Products
+
+```bash
+curl http://localhost:8080/api/v1/inventory \
+  -H "Authorization: Bearer <token>"
+```
+
+### Create Product
+
+```bash
+curl -X POST http://localhost:8080/api/v1/inventory \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Premium Widget",
+    "type": "product",
+    "price": 25000,
+    "description": "High-quality widget",
+    "stock_quantity": 100
+  }'
+```
+
+---
+
+## Handoffs
+
+### List Handoffs
+
+```bash
+curl http://localhost:8080/api/v1/handoffs \
+  -H "Authorization: Bearer <token>"
+```
+
+### Update Handoff Status
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/handoffs/<id> \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "sold", "final_price": 22000}'
+```
+
+---
+
+## Analytics
+
+### Dashboard Overview
+
+```bash
+curl http://localhost:8080/api/v1/analytics/overview \
+  -H "Authorization: Bearer <token>"
+```
+
+### Unknown Questions Stats
+
+```bash
+curl http://localhost:8080/api/v1/analytics/unknown-questions \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Credits
+
+### Get Balance
+
+```bash
+curl http://localhost:8080/api/v1/credits/balance \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Notifications
+
+### List Notifications
+
+```bash
+curl "http://localhost:8080/api/v1/notifications?limit=20" \
+  -H "Authorization: Bearer <token>"
+```
+
+### Mark All Read
+
+```bash
+curl -X POST http://localhost:8080/api/v1/notifications/read-all \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Campaigns
+
+### List Campaigns
+
+```bash
+curl http://localhost:8080/api/v1/campaigns \
+  -H "Authorization: Bearer <token>"
+```
+
+### Create Campaign
+
+```bash
+curl -X POST http://localhost:8080/api/v1/campaigns \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Summer Sale",
+    "start_date": "2026-08-01",
+    "end_date": "2026-08-31"
+  }'
+```
+
+---
+
+## Team
+
+### List Team Members
+
+```bash
+curl http://localhost:8080/api/v1/settings/team \
+  -H "Authorization: Bearer <token>"
+```
+
+### Invite Member
+
+```bash
+curl -X POST http://localhost:8080/api/v1/settings/team/invite \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "colleague@company.com", "role": "member"}'
+```
+
+---
+
+## Widget
+
+### Get Widget Config
+
+```bash
+curl http://localhost:8080/api/v1/widget \
+  -H "Authorization: Bearer <token>"
+```
+
+### Public Chat (Embed)
+
+```bash
+curl -X POST http://localhost:8080/api/v1/widget/chat \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "widget_xxx", "message": "Hello!"}'
 ```
 
 ---

@@ -59,7 +59,7 @@ noant/
 │   ├── main.go                         # Entry point, router, middleware wiring
 │   ├── config/
 │   │   └── config.go                   # Environment-based configuration
-│   ├── migrations/                     # SQL migration files (001–017)
+│   ├── migrations/                     # SQL migration files (001–021)
 │   ├── internal/
 │   │   ├── domain/
 │   │   │   └── models.go              # Core domain types (User, Conversation, etc.)
@@ -80,6 +80,8 @@ noant/
 │   │   │   ├── bodylimit.go          # 1 MB request body limit
 │   │   │   ├── sanitize_middleware.go  # XSS sanitization middleware
 │   │   │   ├── audit.go              # Request audit logging
+│   │   │   ├── sentry.go             # Sentry error capture with request context
+│   │   │   ├── errors.go             # ClassifyError middleware for domain error mapping
 │   │   │   └── websocket_auth.go     # WebSocket origin validation
 │   │   ├── handler/                   # HTTP handlers (25 files, split by domain)
 │   │   │   ├── handler.go            # Aggregator registering all routes
@@ -96,7 +98,7 @@ noant/
 │   │   │   ├── campaign_handler.go   # Broadcast campaigns
 │   │   │   ├── openwa_handler.go     # WhatsApp webhook & admin
 │   │   │   └── websocket.go          # WebSocket hub & connection management
-│   │   ├── service/                   # Business logic (37 files, split by domain)
+│   │   ├── service/                   # Business logic (49 files, split by domain)
 │   │   │   ├── service.go            # Aggregator constructing all services
 │   │   │   ├── aibrain_core.go       # AI orchestration, intent classification, response gen
 │   │   │   ├── auth.go               # Registration, login, JWT, 2FA, password reset
@@ -669,6 +671,7 @@ All configuration is via environment variables. Copy `backend/.env.example` to `
 | `JWT_SECRET` | — | HMAC signing key (min 32 chars) |
 | `JWT_ACCESS_TTL` | `24h` | Access token TTL |
 | `JWT_REFRESH_TTL` | `168h` | Refresh token TTL (7 days) |
+| `SENTRY_DSN` | — | Sentry error monitoring DSN (optional, empty to disable) |
 
 ### AI / Groq
 

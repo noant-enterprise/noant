@@ -149,6 +149,21 @@
 - **Abuse / bot traffic**: Add IP to blocklist, tighten rate limits for anonymous endpoints
 - **Client bug causing retries**: Notify the client team; implement exponential backoff on the client side
 
+### 9. Multi-Tenancy Data Leakage
+
+**Symptoms**: User sees data belonging to another organization. Grafana anomaly alerts on cross-org queries.
+
+**Diagnosis**:
+- Check Sentry for any 401/403 errors on org-scoped endpoints
+- Verify `org_id` is being set in JWT claims: check `users.org_id` is not NULL
+- Check backend logs for queries missing `org_id` filter
+
+**Resolution**:
+1. Verify all handler methods use `getScopeID(c)` instead of `getUserID(c)` for org-scoped repos
+2. Check service layer: all domain struct creations must set `OrgID`
+3. Run migration 021 to backfill any missing `org_id` values
+4. If confirmed breach, rotate all JWT tokens and audit access logs
+
 ---
 
 ## Rollback Procedures
@@ -208,6 +223,7 @@ cp -r /opt/noant/frontend.prev /opt/noant/frontend
 | Prometheus | https://prometheus.noant.example.com |
 | AlertManager | https://alertmanager.noant.example.com |
 | Uptime Monitor | https://uptime.noant.example.com |
+| Sentry | https://sentry.io/organizations/noant/projects/ |
 
 ---
 
@@ -216,8 +232,7 @@ cp -r /opt/noant/frontend.prev /opt/noant/frontend
 | Endpoint | Purpose | Auth Required |
 |----------|---------|---------------|
 | `GET /health` | Full health check (DB + Redis + Groq) | No |
-| `GET /healthz` | Simple liveness probe (returns 200) | No |
-| `GET /readyz` | Readiness probe (checks dependencies) | No |
+| `GET /ping` | Simple liveness probe (returns 200) | No |
 | `GET /metrics` | Prometheus metrics | Yes (admin) |
 
 **Quick health check**:

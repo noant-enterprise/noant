@@ -16,6 +16,7 @@ NOANT is an AI-powered customer support platform with multi-channel integration.
 | Payments | Polar.sh |
 | WhatsApp | OpenWA (self-hosted) |
 | Monitoring | Prometheus + Grafana |
+| Error Monitoring | Sentry (Go + React) |
 
 ## Backend Architecture
 
@@ -96,6 +97,8 @@ Cross-cutting technical concerns:
 - `bodylimit.go` — Request body size limits
 - `sanitize_middleware.go` — Input sanitization
 - `audit.go` — Request audit logging
+- `sentry.go` — Sentry error capture middleware with request context (user, org, breadcrumbs)
+- `errors.go` — ClassifyError middleware mapping domain errors to HTTP status codes
 - `websocket_auth.go` — WebSocket upgrade authentication
 
 ## Key Files
@@ -113,9 +116,9 @@ Cross-cutting technical concerns:
 | `backend/internal/service/aibrain_search.go` | QA knowledge base search |
 | `backend/internal/service/openwa.go` | WhatsApp session management |
 | `backend/internal/service/openwa_webhook.go` | WhatsApp webhook processing |
-| `backend/internal/handler/` | 14+ domain handler files |
-| `backend/internal/service/` | 13+ domain service files |
-| `backend/internal/repository/` | 19+ domain repo files + interfaces + mocks |
+| `backend/internal/handler/` | 25 domain handler files |
+| `backend/internal/service/` | 49 domain service files |
+| `backend/internal/repository/` | 27 domain repo files + interfaces + mocks |
 
 ### Frontend
 
@@ -194,6 +197,45 @@ A typical message lifecycle:
 - Tracks: actor, action, resource, timestamp, before/after values
 - Queryable via the audit handler
 
+## Multi-Tenancy
+
+All data tables are scoped to an organization via `org_id`. The `organizations` table stores workspace metadata.
+
+### Scoping Pattern
+
+- **`getOrgID(c)`** — reads `org_id` from JWT claims (set during auth)
+- **`getScopeID(c)`** — returns `orgID` if available, falls back to `userID` (for backward compatibility)
+- **Repository queries** — filter by `org_id` for data isolation
+- **Service layer** — sets `OrgID` on all domain struct creation
+
+### Key Tables
+
+- `organizations` — workspace container (name, slug, owner, plan)
+- `users.org_id` — links user to their organization
+- All data tables have `org_id` column with index
+
+### Migration History
+
+- Migration 018: Creates `organizations` table, adds `org_id` to core tables
+- Migration 019: Adds `org_id` to remaining tables
+- Migration 021: Backfills `org_id` for training tables
+
+## Error Monitoring (Sentry)
+
+Backend and frontend are instrumented with Sentry for real-time error tracking.
+
+### Backend (Go)
+- `sentry.Init()` in `main.go` with DSN from `SENTRY_DSN` env var
+- `sentrygin` middleware for automatic panic capture
+- `SentryContextMiddleware` — attaches user ID, org ID, email to Sentry scope
+- Breadcrumbs in auth, chat, WhatsApp, and training handlers
+- `CaptureMessage()` and `CaptureException()` helpers in middleware
+
+### Frontend (React)
+- `@sentry/react` SDK initialized in `main.tsx`
+- Browser tracing and session replay (10% sample, 100% on error)
+- `Sentry.ErrorBoundary` wrapping the app root
+
 ## Background Jobs
 
 The job queue runs on a Redis-backed worker system (falls back to in-memory processing when Redis is unavailable).
@@ -209,9 +251,10 @@ The job queue runs on a Redis-backed worker system (falls back to in-memory proc
 
 ## Database
 
-TiDB is the primary datastore (MySQL-compatible). Schema is managed via SQL migration files in `backend/migrations/`. Migrations run automatically on application startup via `infrastructure/migrations.go`.
+TiDB is the primary datastore (MySQL-compatible). Schema is managed via SQL migration files in `backend/migrations/`. Migrations run automatically on application startup via `infrastructure/migrations.go`. Currently 20 migrations (001–021).
 
 Key domain tables:
+- `organizations` — multi-tenant workspace containers
 - `users` — user accounts and authentication
 - `conversations` — chat sessions (channel-agnostic)
 - `messages` — individual messages within conversations
