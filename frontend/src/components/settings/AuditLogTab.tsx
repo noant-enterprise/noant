@@ -6,6 +6,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 interface AuditLog {
   id: string
   user_id: string
+  user_name: string
+  user_email: string
   action: string
   resource_type: string
   resource_id: string | null
@@ -193,6 +195,18 @@ export function AuditLogTab() {
                     )}
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-xs text-tertiary">
+                    {log.user_name && (
+                      <span className="flex items-center gap-1">
+                        <User className="w-3 h-3" />
+                        {log.user_name}
+                      </span>
+                    )}
+                    {!log.user_name && log.user_email && (
+                      <span className="flex items-center gap-1">
+                        <User className="w-3 h-3" />
+                        {log.user_email}
+                      </span>
+                    )}
                     {log.ip_address && (
                       <span className="flex items-center gap-1">
                         <Globe className="w-3 h-3" />

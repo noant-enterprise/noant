@@ -37,8 +37,8 @@ func (r *AuditRepository) Create(ctx context.Context, log *domain.AuditLog) erro
 }
 
 func (r *AuditRepository) ListByOrg(ctx context.Context, orgID string, limit int) ([]domain.AuditLog, error) {
-	query := `SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at 
-			  FROM audit_logs WHERE org_id = ? ORDER BY created_at DESC LIMIT ?`
+	query := `SELECT a.id, a.user_id, COALESCE(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), u.email, a.user_id) as user_name, COALESCE(u.email, '') as user_email, a.action, a.resource_type, a.resource_id, a.details, a.ip_address, a.user_agent, a.created_at 
+			  FROM audit_logs a LEFT JOIN users u ON a.user_id = u.id WHERE a.org_id = ? ORDER BY a.created_at DESC LIMIT ?`
 
 	rows, err := r.db.QueryContext(ctx, query, orgID, limit)
 	if err != nil {
@@ -51,7 +51,7 @@ func (r *AuditRepository) ListByOrg(ctx context.Context, orgID string, limit int
 		var log domain.AuditLog
 		var detailsStr string
 		var resourceID, ip, ua sql.NullString
-		err := rows.Scan(&log.ID, &log.UserID, &log.Action, &log.ResourceType, &resourceID, &detailsStr, &ip, &ua, &log.CreatedAt)
+		err := rows.Scan(&log.ID, &log.UserID, &log.UserName, &log.UserEmail, &log.Action, &log.ResourceType, &resourceID, &detailsStr, &ip, &ua, &log.CreatedAt)
 		if err != nil {
 			continue
 		}
@@ -99,32 +99,32 @@ type AuditListResult struct {
 }
 
 func (r *AuditRepository) ListWithFilters(ctx context.Context, filter *AuditFilter) (*AuditListResult, error) {
-	where := "org_id = ?"
+	where := "a.org_id = ?"
 	args := []interface{}{filter.OrgID}
 
 	if filter.UserID != "" {
-		where += " AND user_id = ?"
+		where += " AND a.user_id = ?"
 		args = append(args, filter.UserID)
 	}
 	if filter.Action != "" {
-		where += " AND action LIKE ?"
+		where += " AND a.action LIKE ?"
 		args = append(args, "%"+filter.Action+"%")
 	}
 	if filter.ResourceType != "" {
-		where += " AND resource_type LIKE ?"
+		where += " AND a.resource_type LIKE ?"
 		args = append(args, "%"+filter.ResourceType+"%")
 	}
 	if filter.StartDate != "" {
-		where += " AND created_at >= ?"
+		where += " AND a.created_at >= ?"
 		args = append(args, filter.StartDate)
 	}
 	if filter.EndDate != "" {
-		where += " AND created_at <= ?"
+		where += " AND a.created_at <= ?"
 		args = append(args, filter.EndDate)
 	}
 
 	// Count total
-	countQuery := "SELECT COUNT(*) FROM audit_logs WHERE " + where
+	countQuery := "SELECT COUNT(*) FROM audit_logs a WHERE " + where
 	var total int
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count audit logs: %w", err)
@@ -140,8 +140,8 @@ func (r *AuditRepository) ListWithFilters(ctx context.Context, filter *AuditFilt
 		offset = 0
 	}
 
-	query := `SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at 
-			  FROM audit_logs WHERE ` + where + ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	query := `SELECT a.id, a.user_id, COALESCE(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), u.email, a.user_id) as user_name, COALESCE(u.email, '') as user_email, a.action, a.resource_type, a.resource_id, a.details, a.ip_address, a.user_agent, a.created_at 
+			  FROM audit_logs a LEFT JOIN users u ON a.user_id = u.id WHERE ` + where + ` ORDER BY a.created_at DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -155,7 +155,7 @@ func (r *AuditRepository) ListWithFilters(ctx context.Context, filter *AuditFilt
 		var log domain.AuditLog
 		var detailsStr string
 		var resourceID, ip, ua sql.NullString
-		err := rows.Scan(&log.ID, &log.UserID, &log.Action, &log.ResourceType, &resourceID, &detailsStr, &ip, &ua, &log.CreatedAt)
+		err := rows.Scan(&log.ID, &log.UserID, &log.UserName, &log.UserEmail, &log.Action, &log.ResourceType, &resourceID, &detailsStr, &ip, &ua, &log.CreatedAt)
 		if err != nil {
 			continue
 		}

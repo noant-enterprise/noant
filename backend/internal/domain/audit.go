@@ -5,6 +5,8 @@ import "time"
 type AuditLog struct {
 	ID           string                 `json:"id" db:"id"`
 	UserID       string                 `json:"user_id" db:"user_id"`
+	UserName     string                 `json:"user_name" db:"user_name"`
+	UserEmail    string                 `json:"user_email" db:"user_email"`
 	OrgID        string                 `json:"org_id" db:"org_id"`
 	Action       string                 `json:"action" db:"action"`
 	ResourceType string                 `json:"resource_type" db:"resource_type"`
