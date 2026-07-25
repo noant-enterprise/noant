@@ -25,20 +25,88 @@ interface AuditLogsResponse {
 }
 
 const ACTION_LABELS: Record<string, { label: string; color: string; icon: typeof Clock }> = {
-  'user.login.success': { label: 'Login', color: 'text-emerald-400', icon: CheckCircle },
-  'user.login.failed': { label: 'Failed Login', color: 'text-red-400', icon: AlertTriangle },
-  'user.login.failed.email_not_verified': { label: 'Login (Unverified)', color: 'text-amber-400', icon: AlertTriangle },
-  'user.login.failed.account_locked': { label: 'Login (Locked)', color: 'text-red-500', icon: AlertTriangle },
-  'user.registered': { label: 'Registration', color: 'text-sky-400', icon: User },
-  'user.logout': { label: 'Logout', color: 'text-zinc-400', icon: User },
-  'user.password_changed': { label: 'Password Changed', color: 'text-amber-400', icon: AlertTriangle },
-  'user.password_reset': { label: 'Password Reset', color: 'text-amber-400', icon: AlertTriangle },
-  'user.email_verified': { label: 'Email Verified', color: 'text-emerald-400', icon: CheckCircle },
+  'user.login.success': { label: 'Logged in', color: 'text-emerald-400', icon: CheckCircle },
+  'user.login.failed': { label: 'Failed login attempt', color: 'text-red-400', icon: AlertTriangle },
+  'user.login.failed.email_not_verified': { label: 'Login attempt (unverified email)', color: 'text-amber-400', icon: AlertTriangle },
+  'user.login.failed.account_locked': { label: 'Login attempt (account locked)', color: 'text-red-500', icon: AlertTriangle },
+  'user.registered': { label: 'Created an account', color: 'text-sky-400', icon: User },
+  'user.logout': { label: 'Logged out', color: 'text-zinc-400', icon: User },
+  'user.password_changed': { label: 'Changed password', color: 'text-amber-400', icon: AlertTriangle },
+  'user.password_reset': { label: 'Reset password', color: 'text-amber-400', icon: AlertTriangle },
+  'user.email_verified': { label: 'Verified email', color: 'text-emerald-400', icon: CheckCircle },
+}
+
+const ROUTE_LABELS: Record<string, string> = {
+  '/api/v1/chats/direct-chat': 'Started a new conversation',
+  '/api/v1/chats/clear': 'Cleared chat history',
+  '/api/v1/chats/conversations/:id/stream': 'Sent a message',
+  '/api/v1/integrations/connect': 'Connected an integration',
+  '/api/v1/integrations/disconnect/:channel': 'Disconnected an integration',
+  '/api/v1/training/unknown-questions/:id/train': 'Trained an unknown question',
+  '/api/v1/training/unknown-questions/:id/ignore': 'Ignored an unknown question',
+  '/api/v1/training/unknown-questions/:id/dismiss': 'Dismissed an unknown question',
+  '/api/v1/training/unknown-questions/batch-ignore': 'Ignored unknown questions in bulk',
+  '/api/v1/training/unknown-questions/batch-train': 'Trained unknown questions in bulk',
+  '/api/v1/training/categories': 'Created a new category',
+  '/api/v1/training/categories/:id': 'Updated a category',
+  '/api/v1/qa-pairs': 'Created a new Q&A pair',
+  '/api/v1/qa-pairs/:id': 'Updated a Q&A pair',
+  '/api/v1/integrations/whatsapp/send-template': 'Sent a WhatsApp template',
+  '/api/v1/campaigns': 'Created a campaign',
+  '/api/v1/campaigns/:id/send': 'Sent a campaign',
+  '/api/v1/campaigns/:id/pause': 'Paused a campaign',
+  '/api/v1/campaigns/:id/resume': 'Resumed a campaign',
+  '/api/v1/campaigns/:id/cancel': 'Canceled a campaign',
+  '/api/v1/handoffs': 'Created a handoff',
+  '/api/v1/handoffs/:id/accept': 'Accepted a handoff',
+  '/api/v1/handoffs/:id/decline': 'Declined a handoff',
+  '/api/v1/handoffs/:id/resolve': 'Resolved a handoff',
+  '/api/v1/archive/folders': 'Created an archive folder',
+  '/api/v1/settings/api-keys': 'Generated a new API key',
+  '/api/v1/settings/api-keys/:id/revoke': 'Revoked an API key',
+  '/api/v1/team/invite': 'Invited a team member',
+  '/api/v1/team/:id/role': 'Updated a team member\'s role',
+  '/api/v1/team/:id/remove': 'Removed a team member',
+  '/api/v1/integrations/openwa/connect': 'Connected WhatsApp',
+  '/api/v1/integrations/openwa/disconnect': 'Disconnected WhatsApp',
+  '/api/v1/integrations/openwa/send': 'Sent a WhatsApp message',
+  '/api/v1/integrations/openwa/send-media': 'Sent a WhatsApp media message',
+  '/api/v1/integrations/openwa/send-bulk': 'Sent bulk WhatsApp messages',
+  '/api/v1/integrations/openwa/sessions/:id/restart': 'Restarted a WhatsApp session',
+  '/api/v1/settings/profile': 'Updated profile settings',
+  '/api/v1/settings/password': 'Changed password',
+  '/api/v1/settings/notifications': 'Updated notification preferences',
+  '/api/v1/settings/2fa/enable': 'Enabled two-factor authentication',
+  '/api/v1/settings/2fa/disable': 'Disabled two-factor authentication',
+  '/api/v1/settings/delete-account': 'Deleted account',
+  '/api/v1/settings/export-data': 'Exported account data',
+  '/api/v1/settings/privacy': 'Updated privacy settings',
+  '/api/v1/notifications/:id/read': 'Marked a notification as read',
+  '/api/v1/notifications/read-all': 'Marked all notifications as read',
+  '/api/v1/integrations/openwa/verify': 'Verified WhatsApp connection',
+  '/api/v1/integrations/openwa/status': 'Checked WhatsApp status',
+  '/api/v1/widget/config': 'Updated widget configuration',
+  '/api/v1/notifications/widget': 'Viewed widget configuration',
+  '/api/v1/archive/folders/:id': 'Updated an archive folder',
+  '/api/v1/archive/conversations/:id/move': 'Moved a conversation to archive',
+  '/api/v1/archive/conversations/:id/restore': 'Restored a conversation from archive',
 }
 
 function getActionInfo(action: string) {
+  // Check known auth action labels
   for (const [key, info] of Object.entries(ACTION_LABELS)) {
     if (action.includes(key) || action === key) return info
+  }
+  // Check if the action matches a known human-readable description directly
+  for (const label of Object.values(ROUTE_LABELS)) {
+    if (action === label) return { label, color: 'text-sky-400', icon: CheckCircle }
+  }
+  // Handle old-format actions like "POST /api/v1/chats/clear"
+  const spaceIdx = action.indexOf(' ')
+  if (spaceIdx > 0) {
+    const route = action.slice(spaceIdx + 1)
+    const label = ROUTE_LABELS[route]
+    if (label) return { label, color: 'text-sky-400', icon: CheckCircle }
   }
   return { label: action, color: 'text-secondary', icon: Clock }
 }
