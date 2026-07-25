@@ -138,6 +138,8 @@ func (h *WebSocketHub) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
+	conn.SetReadLimit(65536) // 64KB max message size
+
 	client := &wsClient{conn: conn, send: make(chan []byte, 64)}
 	h.register <- client
 

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -53,7 +54,8 @@ func RespondConflict(c *gin.Context, message string) {
 	RespondError(c, http.StatusConflict, "CONFLICT", message, false)
 }
 
-func RespondInternalError(c *gin.Context, _ string) {
+func RespondInternalError(c *gin.Context, details string) {
+	slog.Error("internal error", "path", c.Request.URL.Path, "method", c.Request.Method, "error", details)
 	RespondError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred. Please try again later.", true)
 }
 

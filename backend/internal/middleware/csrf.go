@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -9,6 +10,12 @@ import (
 func CSRFMiddleware(allowedOrigins []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Method == "GET" || c.Request.Method == "HEAD" || c.Request.Method == "OPTIONS" {
+			c.Next()
+			return
+		}
+
+		// Skip CSRF for Bearer token auth — not vulnerable to CSRF
+		if auth := c.Request.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 			c.Next()
 			return
 		}

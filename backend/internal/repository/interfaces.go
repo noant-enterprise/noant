@@ -149,6 +149,7 @@ type IArchiveRepo interface {
 	CreateFolder(ctx context.Context, folder *domain.ArchiveFolder) error
 	ListFolders(ctx context.Context, orgID, folderType string) ([]domain.ArchiveFolder, error)
 	MoveChat(ctx context.Context, conversationID, orgID, folderID string) error
+	DeleteFolder(ctx context.Context, id, orgID string) error
 }
 
 type IUnknownQuestionRepo interface {
@@ -189,6 +190,7 @@ type ICreditRepo interface {
 	GetExpiring(ctx context.Context, days int) ([]domain.UserCredit, error)
 	CreatePurchase(ctx context.Context, p *domain.CreditPurchase) error
 	GetPurchaseHistory(ctx context.Context, userID string) ([]domain.CreditPurchase, error)
+	GetPurchaseByCheckoutID(ctx context.Context, checkoutID string) (*domain.CreditPurchase, error)
 	CleanupExpired(ctx context.Context) (int64, error)
 	CleanupStalePurchases(ctx context.Context, days int) (int64, error)
 }
@@ -196,7 +198,7 @@ type ICreditRepo interface {
 type ITeamRepo interface {
 	ListByOrg(ctx context.Context, orgID string) ([]domain.TeamMember, error)
 	Create(ctx context.Context, orgID string, member *domain.TeamMember) error
-	Delete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id, orgID string) error
 	GetByID(ctx context.Context, id string) (*domain.TeamMember, error)
 	GetByEmailAndOrg(ctx context.Context, email, orgID string) (*domain.TeamMember, error)
 }

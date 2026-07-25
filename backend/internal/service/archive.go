@@ -40,8 +40,8 @@ func (s *ArchiveService) CreateFolder(ctx context.Context, userID, name, folderT
 	return folder, nil
 }
 
-func (s *ArchiveService) DeleteFolder(ctx context.Context, id string) error {
-	return nil
+func (s *ArchiveService) DeleteFolder(ctx context.Context, id, orgID string) error {
+	return s.repos.Archive.DeleteFolder(ctx, id, orgID)
 }
 
 func (s *ArchiveService) MoveChat(ctx context.Context, userID, conversationID, folderID string) error {

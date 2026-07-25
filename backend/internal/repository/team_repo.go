@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"noant/internal/domain"
 	"noant/internal/infrastructure"
@@ -47,9 +48,16 @@ func (r *TeamRepository) Create(ctx context.Context, orgID string, member *domai
 	return err
 }
 
-func (r *TeamRepository) Delete(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM team_members WHERE id = ?`, id)
-	return err
+func (r *TeamRepository) Delete(ctx context.Context, id, orgID string) error {
+	result, err := r.db.ExecContext(ctx, `DELETE FROM team_members WHERE id = ? AND org_id = ?`, id, orgID)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("team member not found or access denied")
+	}
+	return nil
 }
 
 func (r *TeamRepository) GetByID(ctx context.Context, id string) (*domain.TeamMember, error) {

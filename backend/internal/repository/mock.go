@@ -1315,7 +1315,7 @@ func (m *MockTeamRepo) Create(ctx context.Context, orgID string, member *domain.
 	return nil
 }
 
-func (m *MockTeamRepo) Delete(ctx context.Context, id string) error {
+func (m *MockTeamRepo) Delete(ctx context.Context, id, orgID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.members, id)
@@ -1440,6 +1440,10 @@ func (m *MockArchiveRepo) ListFolders(ctx context.Context, userID, folderType st
 }
 
 func (m *MockArchiveRepo) MoveChat(ctx context.Context, conversationID, userID, folderID string) error {
+	return nil
+}
+
+func (m *MockArchiveRepo) DeleteFolder(ctx context.Context, id, orgID string) error {
 	return nil
 }
 
@@ -2178,6 +2182,18 @@ func (m *MockCreditRepo) GetPurchaseHistory(ctx context.Context, userID string) 
 		}
 	}
 	return result, nil
+}
+
+func (m *MockCreditRepo) GetPurchaseByCheckoutID(ctx context.Context, checkoutID string) (*domain.CreditPurchase, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.purchases {
+		if p.CheckoutID == checkoutID {
+			cp := *p
+			return &cp, nil
+		}
+	}
+	return nil, nil
 }
 
 func (m *MockCreditRepo) CleanupExpired(ctx context.Context) (int64, error) {

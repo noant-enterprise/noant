@@ -162,6 +162,6 @@ func (s *SettingsService) InviteTeamMember(ctx context.Context, orgID, email, ro
 	return member, nil
 }
 
-func (s *SettingsService) RemoveTeamMember(ctx context.Context, id string) error {
-	return s.repos.Team.Delete(ctx, id)
+func (s *SettingsService) RemoveTeamMember(ctx context.Context, id, orgID string) error {
+	return s.repos.Team.Delete(ctx, id, orgID)
 }

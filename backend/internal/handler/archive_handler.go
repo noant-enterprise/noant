@@ -69,7 +69,12 @@ func (h *ArchiveHandler) CreateFolder(c *gin.Context) {
 
 func (h *ArchiveHandler) DeleteFolder(c *gin.Context) {
 	id := c.Param("id")
-	if err := h.service.DeleteFolder(c.Request.Context(), id); err != nil {
+	orgID := getScopeID(c)
+	if orgID == "" {
+		utils.RespondUnauthorized(c, "Unauthorized")
+		return
+	}
+	if err := h.service.DeleteFolder(c.Request.Context(), id, orgID); err != nil {
 		utils.RespondInternalError(c, err.Error())
 		return
 	}

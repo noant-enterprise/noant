@@ -156,6 +156,21 @@ func (r *CreditRepository) GetPurchaseHistory(ctx context.Context, userID string
 	return purchases, nil
 }
 
+func (r *CreditRepository) GetPurchaseByCheckoutID(ctx context.Context, checkoutID string) (*domain.CreditPurchase, error) {
+	var p domain.CreditPurchase
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, user_id, checkout_id, pack_type, amount, status, purchased_at, expires_at
+		 FROM credit_purchases WHERE checkout_id = ? LIMIT 1`, checkoutID).
+		Scan(&p.ID, &p.UserID, &p.CheckoutID, &p.PackType, &p.Amount, &p.Status, &p.PurchasedAt, &p.ExpiresAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 func (r *CreditRepository) CleanupExpired(ctx context.Context) (int64, error) {
 	result, err := r.db.ExecContext(ctx,
 		`DELETE FROM user_credits WHERE expires_at IS NOT NULL AND expires_at < NOW()`)

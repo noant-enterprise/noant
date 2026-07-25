@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"noant/internal/domain"
 	"noant/internal/infrastructure"
@@ -56,4 +57,16 @@ func (r *ArchiveRepository) MoveChat(ctx context.Context, conversationID, orgID,
 	query := `UPDATE conversations SET folder_id = ? WHERE id = ? AND org_id = ?`
 	_, err := r.db.ExecContext(ctx, query, folderID, conversationID, orgID)
 	return err
+}
+
+func (r *ArchiveRepository) DeleteFolder(ctx context.Context, id, orgID string) error {
+	result, err := r.db.ExecContext(ctx, `DELETE FROM archive_folders WHERE id = ? AND org_id = ?`, id, orgID)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("folder not found or access denied")
+	}
+	return nil
 }

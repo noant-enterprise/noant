@@ -199,8 +199,9 @@ func (h *OpenWAHandler) handleIncomingMessage(c *gin.Context, event *service.Ope
 	}
 
 	// Retry wrapper: if processing fails, schedule up to 3 retries with 5s delay
+	// Use context.Background() for retries since the request context expires after handler returns
 	processMsg := func() error {
-		return h.processIncomingMessage(c.Request.Context(), msg, event, chatID, customerPhone, userID)
+		return h.processIncomingMessage(context.Background(), msg, event, chatID, customerPhone, userID)
 	}
 
 	if err := processMsg(); err != nil {
@@ -426,7 +427,7 @@ func (h *OpenWAHandler) RestartSession(c *gin.Context) {
 func (h *OpenWAHandler) HealthCheck(c *gin.Context) {
 	err := h.openwa.Ping()
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
+		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status": "unhealthy",
 			"error":  err.Error(),
 			"openwa": h.cfg.OpenWABaseURL,

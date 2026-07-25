@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"noant/internal/domain"
 	"noant/internal/infrastructure"
 	"noant/internal/repository"
+
+	"github.com/google/uuid"
 )
 
 type CreditService struct {
@@ -57,7 +60,8 @@ func (s *CreditService) PurchasePack(ctx context.Context, userID, packType strin
 	return urlStr, nil
 }
 
-// ActivatePurchase activates a completed credit purchase from webhook
+// ActivatePurchase activates a completed credit purchase from webhook.
+// Uses a transaction to prevent double-crediting on concurrent webhooks.
 func (s *CreditService) ActivatePurchase(ctx context.Context, checkoutID, userID, packType string) error {
 	// Determine credit amount based on pack type
 	var amount int
@@ -72,47 +76,54 @@ func (s *CreditService) ActivatePurchase(ctx context.Context, checkoutID, userID
 		return fmt.Errorf("invalid pack type: %s", packType)
 	}
 
-	// Get current credit balance
-	currentCredit, err := s.repos.Credit.GetByOrgID(ctx, userID)
-	if err != nil {
-		return err
+	// Check for duplicate webhook (idempotency)
+	existing, _ := s.repos.Credit.GetPurchaseByCheckoutID(ctx, checkoutID)
+	if existing != nil && existing.Status == "completed" {
+		s.logger.Info("Duplicate webhook ignored", "checkoutID", checkoutID)
+		return nil
 	}
 
-	// Calculate new balance and expiry (30 days from now)
-	newBalance := currentCredit.Balance + amount
-	expiry := time.Now().AddDate(0, 1, 0) // 30 days
+	return s.repos.RunInTx(ctx, func(tx *sql.Tx) error {
+		// Lock the credit row to prevent concurrent reads
+		var currentBalance int
+		var expiresAt *time.Time
+		var creditID int64
+		err := tx.QueryRowContext(ctx,
+			`SELECT id, balance, expires_at FROM user_credits WHERE user_id = ? FOR UPDATE`, userID).
+			Scan(&creditID, &currentBalance, &expiresAt)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("lock credit row: %w", err)
+		}
 
-	// Update credit record
-	credit := &domain.UserCredit{
-		ID:           currentCredit.ID,
-		UserID:       userID,
-		Balance:      newBalance,
-		ExpiresAt:    &expiry,
-		LastUpdatedAt: time.Now(),
-	}
+		newBalance := currentBalance + amount
+		expiry := time.Now().AddDate(0, 1, 0)
 
-	if err := s.repos.Credit.Upsert(ctx, credit); err != nil {
-		return err
-	}
+		if err == sql.ErrNoRows {
+			_, err = tx.ExecContext(ctx,
+				`INSERT INTO user_credits (user_id, balance, expires_at, last_updated_at) VALUES (?, ?, ?, NOW())`,
+				userID, newBalance, expiry)
+		} else {
+			_, err = tx.ExecContext(ctx,
+				`UPDATE user_credits SET balance = ?, expires_at = ?, last_updated_at = NOW() WHERE id = ?`,
+				newBalance, expiry, creditID)
+		}
+		if err != nil {
+			return fmt.Errorf("update credit: %w", err)
+		}
 
-	// Create purchase record
-	purchase := &domain.CreditPurchase{
-		UserID:      userID,
-		CheckoutID:  checkoutID,
-		PackType:    packType,
-		Amount:      amount,
-		Status:      "completed",
-		PurchasedAt: time.Now(),
-		ExpiresAt:   expiry,
-	}
-	if err := s.repos.Credit.CreatePurchase(ctx, purchase); err != nil {
-		// Non-fatal: credit balance is already updated, just log the failure
-		s.logger.Warn("Failed to save credit purchase history record", "error", err, "userID", userID, "packType", packType)
-	}
+		// Create purchase record
+		purchaseID := uuid.New().String()
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO credit_purchases (id, user_id, checkout_id, pack_type, amount, status, purchased_at, expires_at)
+			 VALUES (?, ?, ?, ?, ?, 'completed', NOW(), ?)`,
+			purchaseID, userID, checkoutID, packType, amount, expiry)
+		if err != nil {
+			return fmt.Errorf("create purchase record: %w", err)
+		}
 
-	s.logger.Info("Credit purchase activated", "userID", userID, "packType", packType, "amount", amount, "newBalance", newBalance)
-
-	return nil
+		s.logger.Info("Credit purchase activated", "userID", userID, "packType", packType, "amount", amount, "newBalance", newBalance)
+		return tx.Commit()
+	})
 }
 
 // Deduct deducts one response credit from user's balance atomically.
