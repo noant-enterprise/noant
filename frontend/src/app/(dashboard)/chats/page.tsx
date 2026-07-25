@@ -113,18 +113,19 @@ export default function ChatsPage() {
     }
   }, [activeMessages, activeId, pendingAI])
 
-  // Clear optimistic messages ONLY when real message with matching content arrives
+  // Clear optimistic messages when real messages arrive
   useEffect(() => {
     if (optimisticMessages.length === 0 || !activeId) return
 
-    const lastOptimistic = optimisticMessages[optimisticMessages.length - 1]
-    if (!lastOptimistic) return
-    const foundReal = activeMessages.some((m: Message) =>
-      m.sender_type === 'customer' && m.content === lastOptimistic.content
-    )
-
-    if (foundReal) {
-      setOptimisticMessages([])
+    // If there are real messages, check if all optimistic messages have a real counterpart
+    if (activeMessages.length > 0) {
+      const hasRealCustomerMsg = optimisticMessages.some(om =>
+        om.sender_type === 'customer' && activeMessages.some(m => m.content === om.content)
+      )
+      // Clear all optimistic messages once we have real messages from the server
+      if (hasRealCustomerMsg) {
+        setOptimisticMessages([])
+      }
     }
   }, [activeMessages, optimisticMessages, activeId])
 
@@ -320,6 +321,7 @@ export default function ChatsPage() {
             setActiveMessages(syncRes.messages || [])
             setMsgHasMore(syncRes.has_more || false)
             setMsgPage(1)
+            setOptimisticMessages([])
           }).catch(() => {})
         },
         (err) => {

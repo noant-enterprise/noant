@@ -361,24 +361,6 @@ func (h *ChatHandler) StreamMessage(c *gin.Context) {
 		_, _ = fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
 	}
 	flusher.Flush()
-
-	// Broadcast full message to WebSocket for other clients
-	if h.wsHub != nil && aiMsg != nil {
-		h.wsHub.BroadcastMessage(WebSocketMessage{
-			ConversationID: id,
-			Type:           "new_message",
-			Data: map[string]interface{}{
-				"id":              aiMsg.ID,
-				"conversation_id": aiMsg.ConversationID,
-				"content":         aiMsg.Content,
-				"role":            aiMsg.Role,
-				"created_at":      aiMsg.CreatedAt,
-				"metadata":        aiMsg.Metadata,
-				"confidence":      aiMsg.Confidence,
-				"source":          aiMsg.Source,
-			},
-		})
-	}
 }
 
 // HumanTakeover switches a conversation from AI to human agent mode.
