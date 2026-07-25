@@ -5,7 +5,9 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 
 	"noant/internal/infrastructure"
 )
@@ -64,4 +66,18 @@ func NewRepositories(db *sql.DB, redis *infrastructure.RedisClient) *Repositorie
 		MediaMessage:        NewMediaMessageRepository(db, redis),
 		PushSubscription:    NewPushSubscriptionRepository(db, redis),
 	}
+}
+
+// RunInTx executes fn within a database transaction. If fn returns nil, the
+// transaction is committed. If fn returns an error (or panics), it is rolled back.
+func (r *Repositories) RunInTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
+	tx, err := r.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

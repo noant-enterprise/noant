@@ -414,7 +414,7 @@ func main() {
 		configGroup.GET("", handlers.Widget.Get)
 		configGroup.POST("", handlers.Widget.Upsert)
 		widget.GET("/public/config", handlers.Widget.GetPublic)
-		widget.POST("/public/chat", handlers.Widget.PublicChat)
+		widget.POST("/public/chat", middleware.RateLimitMiddleware(redisClient, 30, time.Minute), handlers.Widget.PublicChat)
 
 		archive := api.Group("/archive")
 		archive.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))

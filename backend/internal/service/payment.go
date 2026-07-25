@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -121,21 +122,24 @@ func (s *PaymentService) Subscribe(ctx context.Context, userID, planID string) (
 	now := time.Now()
 	periodEnd := now.AddDate(0, 1, 0)
 
-	sub := &domain.Subscription{
-		UserID:             userID,
-		PlanID:             planName,
-		Status:             "active",
-		CurrentPeriodStart: now,
-		CurrentPeriodEnd:   periodEnd,
-	}
-
-	if err := s.repos.Subscription.CreateOrUpdate(ctx, sub); err != nil {
-		s.logger.Error("Failed to create local subscription fallback", "error", err)
-		return "", fmt.Errorf("failed to create subscription: %w", err)
-	}
-
-	if err := s.repos.User.UpdatePlan(ctx, userID, planName); err != nil {
-		s.logger.Error("Failed to update user plan", "error", err)
+	if err := s.repos.RunInTx(ctx, func(tx *sql.Tx) error {
+		// Upsert subscription within the transaction
+		existing, _ := s.repos.Subscription.GetActive(ctx, userID)
+		if existing != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE subscriptions SET plan_id = ?, status = 'active', current_period_start = ?, current_period_end = ?, updated_at = NOW() WHERE id = ?`, planName, now, periodEnd, existing.ID); err != nil {
+				return fmt.Errorf("failed to update subscription: %w", err)
+			}
+		} else {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO subscriptions (id, user_id, plan_id, status, current_period_start, current_period_end, created_at, updated_at) VALUES (UUID(), ?, ?, 'active', ?, ?, NOW(), NOW())`, userID, planName, now, periodEnd); err != nil {
+				return fmt.Errorf("failed to create subscription: %w", err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET plan_id = ? WHERE id = ?`, planName, userID); err != nil {
+			return fmt.Errorf("failed to update user plan: %w", err)
+		}
+		return nil
+	}); err != nil {
+		s.logger.Error("Failed to complete subscription in transaction", "error", err)
 		return "", err
 	}
 
@@ -205,21 +209,23 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte, headers ma
 			now := time.Now()
 			periodEnd := now.AddDate(0, 1, 0) // Default 1 month
 
-			sub := &domain.Subscription{
-				UserID:             userID,
-				PlanID:             planID,
-				Status:             "active",
-				CurrentPeriodStart: now,
-				CurrentPeriodEnd:   periodEnd,
-			}
-
-			if err := s.repos.Subscription.CreateOrUpdate(ctx, sub); err != nil {
+			if err := s.repos.RunInTx(ctx, func(tx *sql.Tx) error {
+				existing, _ := s.repos.Subscription.GetActive(ctx, userID)
+				if existing != nil {
+					if _, err := tx.ExecContext(ctx, `UPDATE subscriptions SET plan_id = ?, status = 'active', current_period_start = ?, current_period_end = ?, updated_at = NOW() WHERE id = ?`, planID, now, periodEnd, existing.ID); err != nil {
+						return err
+					}
+				} else {
+					if _, err := tx.ExecContext(ctx, `INSERT INTO subscriptions (id, user_id, plan_id, status, current_period_start, current_period_end, created_at, updated_at) VALUES (UUID(), ?, ?, 'active', ?, ?, NOW(), NOW())`, userID, planID, now, periodEnd); err != nil {
+						return err
+					}
+				}
+				if _, err := tx.ExecContext(ctx, `UPDATE users SET plan_id = ? WHERE id = ?`, planID, userID); err != nil {
+					return err
+				}
+				return nil
+			}); err != nil {
 				s.logger.Error("Failed to update subscription from order webhook", "error", err)
-				return err
-			}
-
-			if err := s.repos.User.UpdatePlan(ctx, userID, planID); err != nil {
-				s.logger.Error("Failed to update user plan from order webhook", "error", err)
 				return err
 			}
 
@@ -273,26 +279,28 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte, headers ma
 		status = "cancelled" //nolint:misspell // DB status value
 		}
 
-		sub := &domain.Subscription{
-			UserID:             userID,
-			PlanID:             planID,
-			Status:             status,
-			CurrentPeriodStart: now,
-			CurrentPeriodEnd:   periodEnd,
-		}
-
-		if err := s.repos.Subscription.CreateOrUpdate(ctx, sub); err != nil {
-			s.logger.Error("Failed to update subscription from webhook", "error", err)
-			return err
-		}
-
 		userPlan := planID
 		if status == "cancelled" { //nolint:misspell // DB status value
 			userPlan = "free"
 		}
 
-		if err := s.repos.User.UpdatePlan(ctx, userID, userPlan); err != nil {
-			s.logger.Error("Failed to update user plan from subscription webhook", "error", err)
+		if err := s.repos.RunInTx(ctx, func(tx *sql.Tx) error {
+			existing, _ := s.repos.Subscription.GetActive(ctx, userID)
+			if existing != nil {
+				if _, err := tx.ExecContext(ctx, `UPDATE subscriptions SET plan_id = ?, status = ?, current_period_start = ?, current_period_end = ?, updated_at = NOW() WHERE id = ?`, planID, status, now, periodEnd, existing.ID); err != nil {
+					return err
+				}
+			} else {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO subscriptions (id, user_id, plan_id, status, current_period_start, current_period_end, created_at, updated_at) VALUES (UUID(), ?, ?, ?, ?, ?, NOW(), NOW())`, userID, planID, status, now, periodEnd); err != nil {
+					return err
+				}
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE users SET plan_id = ? WHERE id = ?`, userPlan, userID); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			s.logger.Error("Failed to update subscription from webhook", "error", err)
 			return err
 		}
 
@@ -316,11 +324,16 @@ func (s *PaymentService) Webhook(ctx context.Context, payload []byte, headers ma
 		}
 
 		if userID != "" {
-			if err := s.repos.Subscription.Cancel(ctx, userID); err != nil {
-				s.logger.Error("Failed to cancel subscription", "error", err)
-			}
-			if err := s.repos.User.UpdatePlan(ctx, userID, "free"); err != nil {
-				s.logger.Error("Failed to downgrade user plan", "error", err)
+			if err := s.repos.RunInTx(ctx, func(tx *sql.Tx) error {
+				if _, err := tx.ExecContext(ctx, `UPDATE subscriptions SET status = 'cancelled', updated_at = NOW() WHERE user_id = ? AND status = 'active'`, userID); err != nil {
+					s.logger.Error("Failed to cancel subscription", "error", err)
+				}
+				if _, err := tx.ExecContext(ctx, `UPDATE users SET plan_id = 'free' WHERE id = ?`, userID); err != nil {
+					return err
+				}
+				return nil
+			}); err != nil {
+				s.logger.Error("Failed to revoke subscription in transaction", "error", err)
 			}
 			s.logger.Info("Subscription revoked/canceled via webhook", "user", userID, "subID", subData.ID)
 		}

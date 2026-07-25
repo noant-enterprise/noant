@@ -108,7 +108,8 @@ func (jq *JobQueue) Enqueue(jobType string, payload map[string]interface{}, opts
 
 	if jq.redis != nil {
 		go func() {
-			data, _ := json.Marshal(job)
+			snapshot := *job
+			data, _ := json.Marshal(snapshot)
 			_ = jq.redis.Set(context.Background(), "job:"+job.ID, string(data), 24*time.Hour)
 		}()
 	}
@@ -194,7 +195,8 @@ func (jq *JobQueue) processJob(job *Job) {
 			jq.logger.Info("Job completed", "job_id", job.ID, "type", job.Type)
 			if jq.redis != nil {
 				go func() {
-					data, _ := json.Marshal(job)
+					snapshot := *job
+					data, _ := json.Marshal(snapshot)
 					_ = jq.redis.Set(context.Background(), "job:"+job.ID, string(data), 24*time.Hour)
 				}()
 			}
@@ -227,7 +229,8 @@ func (jq *JobQueue) failJob(job *Job, errMsg string) {
 	})
 
 	if jq.redis != nil {
-		data, _ := json.Marshal(job)
+		snapshot := *job
+		data, _ := json.Marshal(snapshot)
 		_ = jq.redis.Set(context.Background(), "job:failed:"+job.ID, string(data), 7*24*time.Hour)
 	}
 }
