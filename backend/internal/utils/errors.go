@@ -17,16 +17,17 @@ type ErrorResponse struct {
 }
 
 func RespondError(c *gin.Context, status int, code, message string, retryable bool) {
-	requestID, _ := c.Get("requestID")
-	if requestID == nil {
-		requestID = "unknown"
+	requestIDVal, _ := c.Get("requestID")
+	requestID := "unknown"
+	if rid, ok := requestIDVal.(string); ok && rid != "" {
+		requestID = rid
 	}
 
 	c.JSON(status, ErrorResponse{
 		Success:   false,
 		Error:     message,
 		Code:      code,
-		RequestID: requestID.(string),
+		RequestID: requestID,
 		Timestamp: time.Now().UTC(),
 		Retryable: retryable,
 	})

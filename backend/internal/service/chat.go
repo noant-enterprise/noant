@@ -533,7 +533,10 @@ func (s *ChatService) RateConversation(ctx context.Context, userID, conversation
 		return fmt.Errorf("score must be between 1 and 5")
 	}
 	conv, err := s.repos.Conversation.GetByIDAndUser(ctx, conversationID, userID)
-	if err != nil || conv == nil {
+	if err != nil {
+		return fmt.Errorf("failed to get conversation: %w", err)
+	}
+	if conv == nil {
 		return fmt.Errorf("conversation not found")
 	}
 	if s.redis == nil {

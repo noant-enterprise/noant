@@ -82,9 +82,11 @@ func RespondError(c *gin.Context, err error) {
 				scope.SetTag("error_code", code)
 				scope.SetTag("method", c.Request.Method)
 				scope.SetTag("path", c.Request.URL.Path)
-				if reqID != nil {
-					scope.SetTag("request_id", reqID.(string))
+			if reqID != nil {
+				if rid, ok := reqID.(string); ok {
+					scope.SetTag("request_id", rid)
 				}
+			}
 				hub.CaptureException(err)
 			})
 		} else {

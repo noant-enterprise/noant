@@ -18,15 +18,19 @@ func SentryContextMiddleware() gin.HandlerFunc {
 
 		hub.ConfigureScope(func(scope *sentry.Scope) {
 			if userID, ok := c.Get("userID"); ok {
-				scope.SetUser(sentry.User{
-					ID: userID.(string),
-				})
+				if uid, ok := userID.(string); ok {
+					scope.SetUser(sentry.User{ID: uid})
+				}
 			}
 			if orgID, ok := c.Get("orgID"); ok {
-				scope.SetTag("org_id", orgID.(string))
+				if oid, ok := orgID.(string); ok {
+					scope.SetTag("org_id", oid)
+				}
 			}
-			if role, ok := c.Get("role"); ok {
-				scope.SetTag("role", role.(string))
+			if role, ok := c.Get("userRole"); ok {
+				if r, ok := role.(string); ok {
+					scope.SetTag("role", r)
+				}
 			}
 
 			scope.SetTag("method", c.Request.Method)
@@ -36,7 +40,9 @@ func SentryContextMiddleware() gin.HandlerFunc {
 			scope.SetTag("remote_addr", c.ClientIP())
 
 			if reqID, ok := c.Get("requestID"); ok {
-				scope.SetTag("request_id", reqID.(string))
+				if rid, ok := reqID.(string); ok {
+					scope.SetTag("request_id", rid)
+				}
 			}
 		})
 
