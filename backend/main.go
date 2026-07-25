@@ -573,6 +573,15 @@ func main() {
 	pushSub.POST("/subscribe", handlers.Push.Subscribe)
 	pushSub.POST("/unsubscribe", handlers.Push.Unsubscribe)
 
+	// Admin panel endpoints
+	adminRoutes := api.Group("/admin")
+	adminRoutes.Use(middleware.AuthMiddleware(cfg.JWTSecret, redisClient))
+	adminRoutes.Use(middleware.RequireAdmin())
+	adminRoutes.GET("/overview", handlers.Admin.Overview)
+	adminRoutes.GET("/users", handlers.Admin.Users)
+	adminRoutes.GET("/users/:id", handlers.Admin.User)
+	adminRoutes.GET("/system/health", handlers.Admin.SystemHealth)
+
 	// Serve frontend static files if the static directory exists
 	if _, err := os.Stat("./static"); err == nil {
 		logger.Info("Serving static frontend files from ./static")

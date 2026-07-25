@@ -40,6 +40,7 @@ type Handlers struct {
 	Assistant    *AssistantHandler
 	Onboarding   *OnboardingHandler
 	Push         *PushHandler
+	Admin        *AdminHandler
 }
 
 func NewHandlers(cfg *config.Config, services *service.Services, repos *repository.Repositories, auditRepo *repository.AuditRepository, logger *infrastructure.Logger, wsHub *WebSocketHub) *Handlers {
@@ -67,6 +68,7 @@ func NewHandlers(cfg *config.Config, services *service.Services, repos *reposito
 		Assistant:    NewAssistantHandler(services.Assistant, logger),
 		Onboarding:   NewOnboardingHandler(services.Onboarding, logger),
 		Push:         NewPushHandler(services.Push, logger),
+		Admin:        NewAdminHandler(repos, logger),
 	}
 }
 

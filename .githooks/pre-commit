@@ -14,9 +14,9 @@ STAGED_GO=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$')
 if [ -n "$STAGED_GO" ]; then
     echo "📝 Linting Go files..."
     if command -v golangci-lint >/dev/null 2>&1; then
-        golangci-lint run --new-from-rev=HEAD --timeout 60s 2>&1
+        (cd backend && golangci-lint run --new-from-rev=HEAD --timeout 60s 2>&1)
     elif [ -f "$HOME/go/bin/golangci-lint" ]; then
-        $HOME/go/bin/golangci-lint run --new-from-rev=HEAD --timeout 60s 2>&1
+        (cd backend && $HOME/go/bin/golangci-lint run --new-from-rev=HEAD --timeout 60s 2>&1)
     else
         echo "⚠️  golangci-lint not found, skipping Go lint"
     fi
