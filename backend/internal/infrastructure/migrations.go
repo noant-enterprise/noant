@@ -51,6 +51,12 @@ func RunMigrations(db *sql.DB, migrationsDir string) error {
 			return fmt.Errorf("failed to read migration %s: %w", file, err)
 		}
 
+		// Execute migration in a transaction for atomicity
+		tx, txErr := db.Begin()
+		if txErr != nil {
+			return fmt.Errorf("failed to begin transaction for migration %s: %w", file, txErr)
+		}
+
 		// Split into individual statements and execute one by one
 		statements := splitSQLStatements(string(content))
 		for _, stmt := range statements {
@@ -58,16 +64,22 @@ func RunMigrations(db *sql.DB, migrationsDir string) error {
 			if stmt == "" {
 				continue
 			}
-			_, err = db.Exec(stmt)
+			_, err = tx.Exec(stmt)
 			if err != nil {
+				_ = tx.Rollback()
 				return fmt.Errorf("failed to execute statement in migration %s: %w", file, err)
 			}
 		}
 
-		// Record migration
-		_, err = db.Exec("INSERT INTO schema_migrations (version) VALUES (?)", version)
+		// Record migration within the same transaction
+		_, err = tx.Exec("INSERT INTO schema_migrations (version) VALUES (?)", version)
 		if err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("failed to record migration %s: %w", file, err)
+		}
+
+		if err = tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit migration %s: %w", file, err)
 		}
 	}
 

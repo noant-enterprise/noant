@@ -83,18 +83,52 @@ func (s *HandoffService) GetByID(ctx context.Context, id, userID string) (*domai
 	return s.repos.Handoff.GetByID(ctx, id, userID)
 }
 
+// validHandoffTransitions defines allowed status transitions.
+var validHandoffTransitions = map[string][]string{
+	"pending":   {"sold", "lost", "cancelled", "expired"}, //nolint:misspell // DB status value
+	"sold":      {},
+	"lost":      {},
+	"cancelled": {}, //nolint:misspell // DB status value
+	"expired":   {},
+}
+
 func (s *HandoffService) UpdateStatus(ctx context.Context, id, userID, status, notes string, finalPrice *float64) error {
+	allowed := validHandoffTransitions[status]
+	if allowed == nil && status != "" {
+		return fmt.Errorf("invalid status: %s", status)
+	}
+
+	// Validate transition if we have a current status
+	current, err := s.repos.Handoff.GetByID(ctx, id, userID)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return fmt.Errorf("handoff not found")
+	}
+
+	if current.Status == status {
+		return nil // already in this state
+	}
+
+	valid := false
+	for _, s := range allowed {
+		if s == status {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("cannot transition from %q to %q", current.Status, status)
+	}
+
 	if err := s.repos.Handoff.UpdateStatus(ctx, id, userID, status, notes); err != nil {
 		return err
 	}
 	if status == "sold" && finalPrice != nil {
-		// Decrease inventory stock if product
-		h, err := s.repos.Handoff.GetByID(ctx, id, userID)
-		if err == nil && h != nil {
-			items, _ := s.repos.Inventory.Search(ctx, userID, h.ProductName)
-			if len(items) > 0 && items[0].StockQuantity != nil {
-				_ = s.repos.Inventory.DecreaseStock(ctx, items[0].ID, h.Quantity)
-			}
+		items, _ := s.repos.Inventory.Search(ctx, userID, current.ProductName)
+		if len(items) > 0 && items[0].StockQuantity != nil {
+			_ = s.repos.Inventory.DecreaseStock(ctx, items[0].ID, current.Quantity)
 		}
 	}
 	return nil
