@@ -211,6 +211,9 @@ func (s *ChatService) DirectChat(ctx context.Context, userID, customerName, cust
 			Intent:         "inquiry",
 			Priority:       "medium",
 		}
+		if user, err := s.repos.User.GetByID(ctx, userID); err == nil && user != nil && user.OrgID != nil {
+			conv.OrgID = user.OrgID
+		}
 		if err := s.repos.Conversation.Create(ctx, conv); err != nil {
 			return nil, nil, err
 		}
@@ -758,6 +761,9 @@ func (s *ChatService) EnsureConversation(ctx context.Context, userID, customerNa
 		CustomerPhone: customerKey,
 		Channel:       channel,
 		Status:        "active",
+	}
+	if user, err := s.repos.User.GetByID(ctx, userID); err == nil && user != nil && user.OrgID != nil {
+		conv.OrgID = user.OrgID
 	}
 	if err := s.repos.Conversation.Create(ctx, conv); err != nil {
 		return nil, err

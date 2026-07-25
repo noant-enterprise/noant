@@ -35,9 +35,9 @@ func (r *ConversationRepository) Create(ctx context.Context, conv *domain.Conver
 	if conv.ID == "" {
 		conv.ID = generateUUID()
 	}
-	query := `INSERT INTO conversations (id, user_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, customer_avatar, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
-	_, err := r.db.ExecContext(ctx, query, conv.ID, conv.UserID, conv.CustomerName, conv.CustomerPhone, conv.CustomerEmail, conv.Channel, conv.Status, conv.Intent, conv.Priority, conv.IsAITransferred, conv.CustomerAvatar)
+	query := `INSERT INTO conversations (id, user_id, org_id, customer_name, customer_phone, customer_email, channel, status, intent, priority, is_ai_transferred, customer_avatar, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	_, err := r.db.ExecContext(ctx, query, conv.ID, conv.UserID, conv.OrgID, conv.CustomerName, conv.CustomerPhone, conv.CustomerEmail, conv.Channel, conv.Status, conv.Intent, conv.Priority, conv.IsAITransferred, conv.CustomerAvatar)
 	if err != nil {
 		return fmt.Errorf("failed to create conversation: %w", err)
 	}
@@ -152,9 +152,9 @@ func (r *ConversationRepository) ClearChats(ctx context.Context, userID string) 
 
 // ========== ANALYTICS REPOSITORY METHODS ==========
 
-func (r *ConversationRepository) GetOverview(ctx context.Context, userID string) (map[string]interface{}, error) {
-	query := "SELECT COUNT(*) as total, COALESCE(SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END), 0) as conversations_today, COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) as active, COALESCE(SUM(CASE WHEN status = 'resolved' AND DATE(resolved_at) = CURDATE() THEN 1 ELSE 0 END), 0) as resolved_today, COALESCE(SUM(CASE WHEN is_ai_transferred = false THEN 1 ELSE 0 END), 0) as ai_handled, COALESCE(COUNT(DISTINCT CASE WHEN status = 'escalated' THEN id END), 0) as escalated FROM conversations WHERE user_id = ?"
-	row := r.db.QueryRowContext(ctx, query, userID)
+func (r *ConversationRepository) GetOverview(ctx context.Context, scopeID string) (map[string]interface{}, error) {
+	query := "SELECT COUNT(*) as total, COALESCE(SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END), 0) as conversations_today, COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) as active, COALESCE(SUM(CASE WHEN status = 'resolved' AND DATE(resolved_at) = CURDATE() THEN 1 ELSE 0 END), 0) as resolved_today, COALESCE(SUM(CASE WHEN is_ai_transferred = false THEN 1 ELSE 0 END), 0) as ai_handled, COALESCE(COUNT(DISTINCT CASE WHEN status = 'escalated' THEN id END), 0) as escalated FROM conversations WHERE (org_id = ? AND org_id IS NOT NULL) OR (org_id IS NULL AND user_id = ?)"
+	row := r.db.QueryRowContext(ctx, query, scopeID, scopeID)
 	var total, conversationsToday, active, resolvedToday, aiHandled, escalated int
 	err := row.Scan(&total, &conversationsToday, &active, &resolvedToday, &aiHandled, &escalated)
 	if err != nil {
@@ -174,9 +174,9 @@ func (r *ConversationRepository) GetOverview(ctx context.Context, userID string)
 	}, nil
 }
 
-func (r *ConversationRepository) CountByChannel(ctx context.Context, userID string) (map[string]int, error) {
-	query := "SELECT channel, COUNT(*) as count FROM conversations WHERE user_id = ? GROUP BY channel"
-	rows, err := r.db.QueryContext(ctx, query, userID)
+func (r *ConversationRepository) CountByChannel(ctx context.Context, scopeID string) (map[string]int, error) {
+	query := "SELECT channel, COUNT(*) as count FROM conversations WHERE (org_id = ? AND org_id IS NOT NULL) OR (org_id IS NULL AND user_id = ?) GROUP BY channel"
+	rows, err := r.db.QueryContext(ctx, query, scopeID, scopeID)
 	if err != nil {
 		return nil, err
 	}
@@ -192,9 +192,9 @@ func (r *ConversationRepository) CountByChannel(ctx context.Context, userID stri
 	return result, nil
 }
 
-func (r *ConversationRepository) CountByIntent(ctx context.Context, userID string) ([]map[string]interface{}, error) {
-	query := "SELECT intent, COUNT(*) as count FROM conversations WHERE user_id = ? GROUP BY intent ORDER BY count DESC LIMIT 5"
-	rows, err := r.db.QueryContext(ctx, query, userID)
+func (r *ConversationRepository) CountByIntent(ctx context.Context, scopeID string) ([]map[string]interface{}, error) {
+	query := "SELECT intent, COUNT(*) as count FROM conversations WHERE (org_id = ? AND org_id IS NOT NULL) OR (org_id IS NULL AND user_id = ?) GROUP BY intent ORDER BY count DESC LIMIT 5"
+	rows, err := r.db.QueryContext(ctx, query, scopeID, scopeID)
 	if err != nil {
 		return nil, err
 	}
@@ -210,9 +210,9 @@ func (r *ConversationRepository) CountByIntent(ctx context.Context, userID strin
 	return result, nil
 }
 
-func (r *ConversationRepository) CountByHour(ctx context.Context, userID string) ([]map[string]interface{}, error) {
-	query := "SELECT HOUR(created_at) as hour, COUNT(*) as count FROM conversations WHERE user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY HOUR(created_at) ORDER BY hour"
-	rows, err := r.db.QueryContext(ctx, query, userID)
+func (r *ConversationRepository) CountByHour(ctx context.Context, scopeID string) ([]map[string]interface{}, error) {
+	query := "SELECT HOUR(created_at) as hour, COUNT(*) as count FROM conversations WHERE ((org_id = ? AND org_id IS NOT NULL) OR (org_id IS NULL AND user_id = ?)) AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY HOUR(created_at) ORDER BY hour"
+	rows, err := r.db.QueryContext(ctx, query, scopeID, scopeID)
 	if err != nil {
 		return nil, err
 	}
@@ -228,9 +228,9 @@ func (r *ConversationRepository) CountByHour(ctx context.Context, userID string)
 	return result, nil
 }
 
-func (r *ConversationRepository) CountByDate(ctx context.Context, userID string, days int) ([]map[string]interface{}, error) {
-	query := "SELECT DATE(created_at) as date, COUNT(*) as count FROM conversations WHERE user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) GROUP BY DATE(created_at) ORDER BY date"
-	rows, err := r.db.QueryContext(ctx, query, userID, days)
+func (r *ConversationRepository) CountByDate(ctx context.Context, scopeID string, days int) ([]map[string]interface{}, error) {
+	query := "SELECT DATE(created_at) as date, COUNT(*) as count FROM conversations WHERE ((org_id = ? AND org_id IS NOT NULL) OR (org_id IS NULL AND user_id = ?)) AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) GROUP BY DATE(created_at) ORDER BY date"
+	rows, err := r.db.QueryContext(ctx, query, scopeID, scopeID, days)
 	if err != nil {
 		return nil, err
 	}
@@ -307,12 +307,12 @@ func (r *ConversationRepository) GetCSATTrend(ctx context.Context, userID string
 	return result, nil
 }
 
-func (r *ConversationRepository) CountMessagesByDate(ctx context.Context, userID string, days int) ([]map[string]interface{}, error) {
+func (r *ConversationRepository) CountMessagesByDate(ctx context.Context, scopeID string, days int) ([]map[string]interface{}, error) {
 	query := `SELECT DATE(m.created_at) as date, COUNT(*) as count
 		FROM messages m JOIN conversations c ON m.conversation_id = c.id
-		WHERE c.user_id = ? AND m.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+		WHERE ((c.org_id = ? AND c.org_id IS NOT NULL) OR (c.org_id IS NULL AND c.user_id = ?)) AND m.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
 		GROUP BY DATE(m.created_at) ORDER BY date`
-	rows, err := r.db.QueryContext(ctx, query, userID, days)
+	rows, err := r.db.QueryContext(ctx, query, scopeID, scopeID, days)
 	if err != nil {
 		return nil, err
 	}
@@ -331,10 +331,9 @@ func (r *ConversationRepository) CountMessagesByDate(ctx context.Context, userID
 	return result, nil
 }
 
-func (r *ConversationRepository) GetUptimeStats(ctx context.Context, userID string) (int, error) {
-	// Count active days in last 30 days where the user had conversations
+func (r *ConversationRepository) GetUptimeStats(ctx context.Context, scopeID string) (int, error) {
 	var activeDays int
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT DATE(created_at)) FROM conversations WHERE user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)`, userID).Scan(&activeDays)
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT DATE(created_at)) FROM conversations WHERE ((org_id = ? AND org_id IS NOT NULL) OR (org_id IS NULL AND user_id = ?)) AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)`, scopeID, scopeID).Scan(&activeDays)
 	if err != nil {
 		return 0, err
 	}

@@ -148,6 +148,9 @@ func (s *WidgetService) PublicChat(ctx context.Context, apiKey, message, convers
 			Intent:       "inquiry",
 			Priority:     "medium",
 		}
+		if user, err := s.repos.User.GetByID(ctx, userID); err == nil && user != nil && user.OrgID != nil {
+			conv.OrgID = user.OrgID
+		}
 		if err := s.repos.Conversation.Create(ctx, conv); err != nil {
 			return "", "", err
 		}

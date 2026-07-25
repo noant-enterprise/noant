@@ -18,6 +18,7 @@ func newTestChatService() *ChatService {
 		Integration:  repository.NewMockIntegrationRepo(),
 		Handoff:      repository.NewMockHandoffRepo(),
 		MediaMessage: repository.NewMockMediaMessageRepo(),
+		User:         repository.NewMockUserRepo(),
 	}
 	return &ChatService{
 		cfg:      &config.Config{},
