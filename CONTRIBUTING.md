@@ -1,195 +1,130 @@
 # Contributing to NOANT
 
-Thank you for considering contributing to NOANT. This guide covers everything you need to get started.
+## Branching Strategy
 
-## Prerequisites
+```
+main          ← production-ready, always deployable
+  └── feat/*  ← new features
+  └── fix/*   ← bug fixes
+  └── hotfix/*← emergency production fixes
+```
 
-- **Go** 1.25+
-- **Node.js** 22+
-- **TiDB** or **MySQL** 8.0+
-- **Redis** 7+ (optional, falls back to in-memory cache)
-- **Docker** & Docker Compose (recommended for local infra)
+### Rules
 
-## Getting Started
+1. **Never commit directly to `main`** — always use a branch + merge
+2. **`main` must always pass CI** — lint, build, tests
+3. **Merge via fast-forward or squash** — keep history clean
+
+### Workflow
 
 ```bash
-# Clone the repo
-git clone https://github.com/your-org/noant.git
-cd noant
+# Start work
+git checkout main && git pull origin main
+git checkout -b feat/whatsapp-webhook-v2
 
-# Copy environment template
-cp backend/.env.example backend/.env
-# Edit .env with your credentials (Groq API key, Polar.sh, etc.)
+# Work, commit with conventional commits
+git add .
+git commit -m "feat: add webhook retry logic"
 
-# Start MySQL + Redis via Docker
-docker compose up -d mysql redis
+# Push and create PR
+git push -u origin feat/whatsapp-webhook-v2
+gh pr create --title "feat: WhatsApp webhook v2" --body "Closes #42"
 
-# Run the backend
-cd backend
-go run main.go
+# After review/CI passes, merge
+gh pr merge --squash
 
-# In another terminal, run the frontend
-cd frontend
-npm install
-npm run dev
+# Clean up
+git checkout main && git pull origin main
+git branch -d feat/whatsapp-webhook-v2
 ```
 
-Or use the single command to spin up everything:
+### Branch Naming
 
-```bash
-docker compose up -d
-make dev
-```
-
-## Project Structure
-
-```
-noant/
-├── backend/              # Go backend (Gin framework)
-│   ├── main.go           # Entrypoint, DI wiring, routes
-│   ├── internal/
-│   │   ├── handler/      # HTTP handlers (25 files, split by domain)
-│   │   ├── service/      # Business logic layer (49 files)
-│   │   ├── repository/   # Data access layer (27 files, MySQL + Redis)
-│   │   ├── infrastructure/ # DB, Redis, logging, metrics, migrations
-│   │   ├── middleware/    # Auth, CSRF, rate limiting, sanitization
-│   │   ├── domain/       # Domain models
-│   │   ├── errors/       # Custom error types
-│   │   └── utils/        # Shared utilities
-│   ├── migrations/       # SQL migrations
-│   └── config/           # Configuration loaders
-├── frontend/             # React + TypeScript (Vite)
-│   ├── src/
-│   │   ├── components/   # UI components
-│   │   ├── app/          # Page-level views
-│   │   ├── hooks/        # Custom React hooks
-│   │   ├── contexts/     # React contexts
-│   │   ├── lib/          # API clients, utilities
-│   │   ├── types/        # TypeScript type definitions
-│   │   └── test/         # Test utilities
-│   └── e2e/              # Playwright end-to-end tests
-├── monitoring/           # Prometheus/Grafana config
-├── OpenWA/               # OpenWA WhatsApp integration
-├── docker-compose.yml
-├── Dockerfile
-└── Makefile
-```
-
-## Development Workflow
-
-1. **Branch from `main`**: `git checkout -b feat/your-feature`
-2. **Make your changes** in the appropriate layer (handler → service → repository)
-3. **Write or update tests** for your changes
-4. **Run the linter and tests** before committing
-5. **Create a PR** against `main`
-
-## Code Style
-
-### Backend (Go)
-
-- **Linter**: `golangci-lint` with the project config (`.golangci.yaml`)
-- **Formatter**: `gofmt` (or `goimports`) — no manual formatting needed
-- **Lint before pushing**:
-  ```bash
-  make lint-backend
-  # or
-  cd backend && golangci-lint run ./...
-  ```
-- Do not add comments to code unless explicitly asked
-- Follow idiomatic Go conventions: short variable names, early returns, table-driven tests
-- Use the existing error handling patterns in `internal/errors/`
-
-### Frontend (TypeScript/React)
-
-- **Linter**: ESLint — run with `npm run lint` from `frontend/`
-- **Formatter**: Prettier — run with `npm run format` from `frontend/`
-- **TypeScript**: strict mode is enabled; do not use `any` unless absolutely necessary
-- **Lint before pushing**:
-  ```bash
-  make lint-frontend
-  # or
-  cd frontend && npm run lint
-  ```
-- Prefer functional components with hooks
-- Use existing component patterns from `src/components/`
-
-## Testing
-
-### Backend
-
-```bash
-cd backend
-go test -v -race ./...
-
-# or via Makefile from project root
-make test-backend
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm test           # single run
-npm run test:watch # watch mode
-
-# or via Makefile from project root
-make test-frontend
-```
-
-### End-to-End
-
-```bash
-cd frontend
-npx playwright install   # first time only
-npx playwright test
-
-# or via Makefile from project root
-make e2e
-```
+| Prefix     | Use for                        | Example                    |
+|------------|--------------------------------|----------------------------|
+| `feat/`    | New features                   | `feat/campaign-analytics`  |
+| `fix/`     | Bug fixes                      | `fix/websocket-mem-leak`   |
+| `hotfix/`  | Emergency production fixes     | `hotfix/auth-crash`        |
+| `chore/`   | Tooling, deps, CI              | `chore/upgrade-golang`     |
+| `docs/`    | Documentation only             | `docs/api-reference`       |
 
 ## Commit Messages
 
-Use [Conventional Commits](https://www.conventionalcommits.org/):
+We use [Conventional Commits](https://www.conventionalcommits.org/):
 
-| Prefix | Use for |
-|--------|---------|
-| `feat:` | New feature |
-| `fix:` | Bug fix |
-| `chore:` | Maintenance, deps, tooling |
-| `docs:` | Documentation only |
-| `refactor:` | Code restructuring without behavior change |
-| `test:` | Adding or updating tests |
-
-Examples:
 ```
-feat: add Telegram webhook handler
-fix: resolve race condition in credit deduction
-chore: bump Go to 1.25
-docs: update architecture diagram
+<type>(<scope>): <description>
+
+[optional body]
+[optional footer]
 ```
 
-## Pull Request Guidelines
+### Types
 
-- **Keep PRs small and focused** — one feature or fix per PR
-- **Describe your changes** clearly in the PR description
-- **Link related issues** (e.g., `Closes #42`)
-- **Ensure CI passes** — lint, tests, and build must all be green
-- **Request review** from at least one maintainer before merging
-- **Squash merge** into `main` to keep history clean
+| Type     | When                                    | Bumps     |
+|----------|-----------------------------------------|-----------|
+| `feat`   | New feature                             | minor     |
+| `fix`    | Bug fix                                 | patch     |
+| `docs`   | Documentation only                      | —         |
+| `chore`  | Build, CI, deps, tooling                | —         |
+| `refactor` | Code restructure (no behavior change) | —         |
+| `perf`   | Performance improvement                 | patch     |
+| `test`   | Adding/fixing tests                     | —         |
 
-## Environment Variables
+### Examples
 
-All configuration is driven by environment variables. See `.env.example` for the full list with defaults.
+```
+feat(chat): add message search endpoint
+fix(auth): prevent token refresh race condition
+docs: update API reference for /leads
+chore: upgrade golangci-lint to v2.12
+```
 
-Key variables:
-- `GROQ_API_KEY` — AI inference API key
-- `POLAR_ACCESS_TOKEN` — Payment processing
-- `TIDB_HOST`, `TIDB_PORT`, `TIDB_USER`, `TIDB_PASSWORD`, `TIDB_DATABASE` — Database
-- `REDIS_URL` — Cache (optional)
-- `JWT_SECRET` — Authentication signing key
-- `SENTRY_DSN` — Sentry error monitoring DSN (optional, set to empty to disable)
-- `OPENWA_*` — WhatsApp integration settings
+## Releases & Tags
 
-## Architecture Decisions
+Tags follow [Semantic Versioning](https://semver.org/): `v<major>.<minor>.<patch>`
 
-For detailed architectural rationale — data flow, security model, observability, and background jobs — see [ARCHITECTURE.md](./ARCHITECTURE.md).
+```bash
+# Tag a release (after merging to main)
+git tag -a v1.0.0 -m "Release v1.0.0: WhatsApp integration + billing"
+git push origin v1.0.0
+git push enterprise v1.0.0
+```
+
+| Version bump | When                                         |
+|-------------|----------------------------------------------|
+| `major`     | Breaking API changes, DB migrations that break backward compat |
+| `minor`     | New features, non-breaking improvements      |
+| `patch`     | Bug fixes, security patches                  |
+
+### Rollback
+
+```bash
+# See all tags
+git tag -l
+
+# Roll back to a known-good version
+git checkout v0.9.0
+# or reset main (destructive — use with caution)
+git reset --hard v0.9.0 && git push --force origin main
+```
+
+## Git Hooks
+
+Pre-commit hooks run automatically:
+
+- **pre-commit**: Runs `golangci-lint` on staged Go files
+- **commit-msg**: Validates conventional commit format
+
+To install hooks after cloning:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+## Protected Branches (Recommended)
+
+When ready, enable on GitHub:
+
+- **`main`**: Require PR reviews, require CI to pass, no force-push
+- **Tags**: Protect `v*` tags from deletion

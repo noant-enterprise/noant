@@ -1,0 +1,29 @@
+#!/bin/sh
+# pre-commit hook: lint staged Go files and check for secrets
+
+echo "🔍 Running pre-commit checks..."
+
+# Check for accidentally staged secrets
+if git diff --cached --name-only | xargs grep -l -E '(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|AKIA[A-Z0-9]{16})' 2>/dev/null; then
+    echo "❌ Possible secret/key found in staged files. Remove it before committing."
+    exit 1
+fi
+
+# Lint staged Go files
+STAGED_GO=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$')
+if [ -n "$STAGED_GO" ]; then
+    echo "📝 Linting Go files..."
+    if command -v golangci-lint >/dev/null 2>&1; then
+        golangci-lint run --new-from-rev=HEAD --timeout 60s 2>&1
+    elif [ -f "$HOME/go/bin/golangci-lint" ]; then
+        $HOME/go/bin/golangci-lint run --new-from-rev=HEAD --timeout 60s 2>&1
+    else
+        echo "⚠️  golangci-lint not found, skipping Go lint"
+    fi
+    if [ $? -ne 0 ]; then
+        echo "❌ Go lint failed. Fix issues before committing."
+        exit 1
+    fi
+fi
+
+echo "✅ Pre-commit checks passed"

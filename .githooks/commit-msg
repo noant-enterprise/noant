@@ -1,0 +1,48 @@
+#!/bin/sh
+# commit-msg hook: enforce conventional commit format
+# Format: type(scope): description
+# Allowed types: feat, fix, docs, chore, refactor, perf, test, ci, build, revert
+
+commit_msg=$(cat "$1")
+
+# Skip merge commits
+if echo "$commit_msg" | head -1 | grep -qE '^Merge '; then
+    exit 0
+fi
+
+# Skip revert commits
+if echo "$commit_msg" | head -1 | grep -qE '^Revert '; then
+    exit 0
+fi
+
+# Validate conventional commit format
+pattern='^(feat|fix|docs|chore|refactor|perf|test|ci|build|revert)(\([a-z0-9_-]+\))?!?: .+'
+
+if ! echo "$commit_msg" | head -1 | grep -qE "$pattern"; then
+    echo ""
+    echo "❌ Invalid commit message format."
+    echo ""
+    echo "Expected: type(scope): description"
+    echo ""
+    echo "Examples:"
+    echo "  feat(chat): add message search"
+    echo "  fix(auth): prevent token race condition"
+    echo "  docs: update API reference"
+    echo "  chore: upgrade dependencies"
+    echo ""
+    echo "Types: feat, fix, docs, chore, refactor, perf, test, ci, build, revert"
+    echo ""
+    exit 1
+fi
+
+# Check description length (max 72 chars for subject)
+subject=$(echo "$commit_msg" | head -1)
+if [ ${#subject} -gt 72 ]; then
+    echo ""
+    echo "❌ Commit subject too long (${#subject} chars, max 72)."
+    echo "Move extra details to the commit body."
+    echo ""
+    exit 1
+fi
+
+echo "✅ Commit message format valid"
