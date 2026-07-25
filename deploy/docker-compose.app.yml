@@ -1,0 +1,78 @@
+# App tier — parameterized by COLOR (blue or green)
+# Usage: COLOR=blue docker compose -f docker-compose.app.yml -p noant-blue up -d
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "${APP_PORT:-8081}:8080"
+    env_file:
+      - ../.env
+    environment:
+      - TIDB_HOST=tidb
+      - TIDB_PORT=4000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      tidb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - noant
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      - "noant.color=${COLOR:-blue}"
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3001}:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - noant
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+    labels:
+      - "noant.color=${COLOR:-blue}"
+
+networks:
+  noant:
+    name: noant_noant
+    external: true
