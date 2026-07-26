@@ -82,8 +82,10 @@ func (h *AdminHandler) Overview(c *gin.Context) {
 	switch {
 	case dbCheck == 1 && redisOk:
 		o.SystemStatus = "healthy"
-	case dbCheck == 1:
+	case dbCheck == 1 && h.repos.Redis != nil:
 		o.SystemStatus = "degraded"
+	case dbCheck == 1:
+		o.SystemStatus = "not_configured"
 	default:
 		o.SystemStatus = "down"
 	}
@@ -222,7 +224,7 @@ func (h *AdminHandler) SystemHealth(c *gin.Context) {
 	_ = h.repos.DB.QueryRowContext(ctx, `SELECT 1`).Scan(&apiCheck)
 	apiLatency := float64(time.Since(apiStart).Microseconds()) / 1000.0
 	apiStatus := "healthy"
-	if apiLatency > 100 {
+	if apiLatency > 500 {
 		apiStatus = "degraded"
 	}
 
@@ -236,7 +238,7 @@ func (h *AdminHandler) SystemHealth(c *gin.Context) {
 		}
 		redisLatency = float64(time.Since(rStart).Microseconds()) / 1000.0
 	} else {
-		redisStatus = "down"
+		redisStatus = "not_configured"
 		redisLatency = 0
 	}
 

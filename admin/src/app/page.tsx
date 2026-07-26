@@ -57,9 +57,19 @@ export default function DashboardPage() {
           <p className="text-sm text-text-tertiary">Everything happening in NOANT right now</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`flex items-center gap-1.5 text-xs ${system.system_status === 'healthy' ? 'text-success' : system.system_status === 'degraded' ? 'text-warning' : 'text-danger'}`}>
-            <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{backgroundColor: system.system_status === 'healthy' ? '#22c55e' : system.system_status === 'degraded' ? '#f59e0b' : '#ef4444'}} />
-            {system.system_status === 'healthy' ? 'All systems operational' : system.system_status === 'degraded' ? 'System degraded' : 'System down'}
+          <span className={`flex items-center gap-1.5 text-xs ${
+            system.system_status === 'healthy' ? 'text-success' :
+            system.system_status === 'degraded' ? 'text-warning' :
+            system.system_status === 'not_configured' ? 'text-text-tertiary' : 'text-danger'
+          }`}>
+            <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{backgroundColor:
+              system.system_status === 'healthy' ? '#22c55e' :
+              system.system_status === 'degraded' ? '#f59e0b' :
+              system.system_status === 'not_configured' ? '#6b7280' : '#ef4444'
+            }} />
+            {system.system_status === 'healthy' ? 'All systems operational' :
+             system.system_status === 'degraded' ? 'System degraded' :
+             system.system_status === 'not_configured' ? 'Redis not configured' : 'System down'}
           </span>
         </div>
       </div>

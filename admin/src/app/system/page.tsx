@@ -8,6 +8,7 @@ const STATUS_STYLE = {
   healthy: { dot: 'bg-success', text: 'text-success', label: 'Healthy' },
   degraded: { dot: 'bg-warning', text: 'text-warning', label: 'Degraded' },
   down: { dot: 'bg-danger', text: 'text-danger', label: 'Down' },
+  not_configured: { dot: 'bg-text-tertiary', text: 'text-text-tertiary', label: 'Not configured' },
 }
 
 const SERVICE_ICONS: Record<string, typeof Server> = {
@@ -26,6 +27,7 @@ export default function SystemPage() {
   const subtitle = (() => {
     if (services.some(s => s.status === 'down')) return 'One or more services are down'
     if (services.some(s => s.status === 'degraded')) return 'Some services are degraded'
+    if (services.some(s => s.status === 'not_configured')) return 'Some services not configured'
     return 'All services operational'
   })()
 

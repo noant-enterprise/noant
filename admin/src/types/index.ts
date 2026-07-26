@@ -146,12 +146,12 @@ export interface SystemHealth {
   active_websockets: number;
   job_queue_depth: number;
   ai_accuracy: number;
-  system_status: 'healthy' | 'degraded' | 'down';
+  system_status: 'healthy' | 'degraded' | 'down' | 'not_configured';
 }
 
 export interface ServiceStatus {
   name: string;
-  status: 'healthy' | 'degraded' | 'down';
+  status: 'healthy' | 'degraded' | 'down' | 'not_configured';
   latency_ms: number;
   last_check: string;
 }
