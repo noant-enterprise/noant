@@ -33,7 +33,7 @@ class AdminAPI {
   }
 
   me() {
-    return this.request<{ user: { id: string; email: string; role: string; first_name: string; last_name: string } }>('GET', '/api/v1/auth/session/me')
+    return this.request<{ user: { id: string; email: string; role: string; first_name: string; last_name: string } }>('GET', '/api/v1/auth/me')
   }
 
   logout() {
