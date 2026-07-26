@@ -26,7 +26,7 @@ export default function AIHealthPage() {
           <div className="rounded-xl border border-border bg-bg-surface p-5 h-[300px] animate-pulse" />
         </div>
         <div className="rounded-xl border border-border bg-bg-surface p-5">
-          <SkeletonTableRows rows={5} cols={3} />
+          <table className="w-full"><tbody><SkeletonTableRows rows={5} cols={3} /></tbody></table>
         </div>
       </div>
     )

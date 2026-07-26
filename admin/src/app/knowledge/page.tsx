@@ -104,7 +104,7 @@ export default function KnowledgeBasePage() {
       <div className="rounded-xl border border-border bg-bg-surface">
         {loading ? (
           <div className="overflow-x-auto">
-            <SkeletonTableRows rows={5} cols={4} />
+            <table className="w-full"><tbody><SkeletonTableRows rows={5} cols={4} /></tbody></table>
           </div>
         ) : questions.length === 0 ? (
           <EmptyState

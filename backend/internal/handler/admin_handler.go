@@ -55,7 +55,7 @@ func (h *AdminHandler) Overview(c *gin.Context) {
 			WHEN plan_id = 'starter' THEN 15000
 			WHEN plan_id = 'pro' THEN 35000
 			ELSE 0
-		END), 0) FROM users WHERE plan_id != 'free' AND status = 'active'
+		END), 0) FROM users WHERE plan_id != 'free' AND is_active = true
 	`).Scan(&o.MRR); err != nil {
 		h.logger.Error("admin overview: calc mrr", "error", err)
 	}
@@ -73,7 +73,7 @@ func (h *AdminHandler) Users(c *gin.Context) {
 	search := c.Query("search")
 	plan := c.Query("plan")
 
-	query := `SELECT id, email, first_name, last_name, plan_id, status, created_at, last_login_at FROM users WHERE 1=1`
+	query := `SELECT id, email, first_name, last_name, plan_id, CASE WHEN is_active THEN 'active' ELSE 'suspended' END as status, created_at, last_login_at FROM users WHERE 1=1`
 	args := []interface{}{}
 
 	if search != "" {
@@ -140,7 +140,7 @@ func (h *AdminHandler) User(c *gin.Context) {
 	var u userDetail
 	var lastLogin sql.NullTime
 	err := h.repos.DB.QueryRowContext(ctx,
-		`SELECT id, email, first_name, last_name, plan_id, status, created_at, last_login_at FROM users WHERE id = ?`, id).
+		`SELECT id, email, first_name, last_name, plan_id, CASE WHEN is_active THEN 'active' ELSE 'suspended' END as status, created_at, last_login_at FROM users WHERE id = ?`, id).
 		Scan(&u.ID, &u.Email, &u.FirstName, &u.LastName, &u.PlanID, &u.Status, &u.CreatedAt, &lastLogin)
 	if err == sql.ErrNoRows {
 		utils.RespondNotFound(c, "User")
@@ -299,7 +299,7 @@ func (h *AdminHandler) Revenue(c *gin.Context) {
 			WHEN plan_id = 'starter' THEN 15000
 			WHEN plan_id = 'pro' THEN 35000
 			ELSE 0
-		END), 0) FROM users WHERE plan_id != 'free' AND status = 'active'
+		END), 0) FROM users WHERE plan_id != 'free' AND is_active = true
 	`).Scan(&mrr); err != nil {
 		h.logger.Error("admin revenue: calc mrr", "error", err)
 	}

@@ -34,7 +34,7 @@ export default function AnalyticsPage() {
           </div>
         </div>
         <div className="rounded-xl border border-border bg-bg-surface p-5">
-          <SkeletonTableRows rows={5} cols={5} />
+          <table className="w-full"><tbody><SkeletonTableRows rows={5} cols={5} /></tbody></table>
         </div>
       </div>
     )
