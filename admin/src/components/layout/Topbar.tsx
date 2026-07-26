@@ -1,13 +1,15 @@
-import { Search, Bell, LogOut } from 'lucide-react'
+import { Search, Bell, LogOut, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
 import { useLiveFeed } from '@/lib/hooks/useLiveFeed'
+import { useState } from 'react'
 
 export function Topbar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { alerts } = useLiveFeed()
   const unacknowledged = alerts.filter(a => !a.acknowledged).length
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
   const handleLogout = () => {
     logout()
@@ -48,7 +50,7 @@ export function Topbar() {
         </div>
 
         <button
-          onClick={handleLogout}
+          onClick={() => setShowLogoutConfirm(true)}
           className="rounded-lg p-2 text-text-tertiary transition-colors hover:bg-bg-inset hover:text-danger"
           title="Logout"
         >
@@ -56,5 +58,29 @@ export function Topbar() {
         </button>
       </div>
     </header>
+
+    {/* Logout Confirmation Modal */}
+    {showLogoutConfirm && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowLogoutConfirm(false)}>
+        <div className="w-full max-w-sm rounded-xl border border-border bg-bg-base p-6 space-y-4 text-center" onClick={e => e.stopPropagation()}>
+          <h2 className="text-lg font-bold text-text-primary">Logout</h2>
+          <p className="text-sm text-text-secondary">Are you sure you want to log out?</p>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => setShowLogoutConfirm(false)}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-bg-inset"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleLogout}
+              className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white hover:bg-danger/80"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   )
 }
