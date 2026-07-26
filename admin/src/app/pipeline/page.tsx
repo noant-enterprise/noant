@@ -291,18 +291,26 @@ export default function PipelinePage() {
             Share QR
           </button>
           <button
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => { setShowForm(true); setForm({ contact_name: '', contact_phone: '', contact_email: '', business_name: '', business_type: '', meeting_location: '', notes: '', status: 'contacted' }) }}
             className="flex items-center gap-1.5 rounded-lg bg-brand-sky px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-brand-sky-deep"
           >
-            {showForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-            {showForm ? 'Cancel' : 'Add Lead'}
+            <Plus className="h-3.5 w-3.5" />
+            Add Lead
           </button>
         </div>
       </div>
 
-      {/* Inline add form */}
-      {showForm && (
-        <form onSubmit={handleSubmit} className="rounded-xl border border-brand-sky/20 bg-bg-surface p-5 space-y-4">
+      {/* Add Lead Modal */}
+  {showForm && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowForm(false)}>
+      <div className="w-full max-w-lg rounded-xl border border-border bg-bg-base p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-text-primary">Add New Lead</h2>
+          <button onClick={() => setShowForm(false)} className="rounded-lg p-1 text-text-tertiary hover:text-text-primary hover:bg-bg-inset">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-text-tertiary mb-1">Contact Name *</label>
@@ -381,11 +389,11 @@ export default function PipelinePage() {
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                 rows={3}
                 className="w-full rounded-lg border border-border bg-bg-inset px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-brand-sky resize-none"
-                placeholder="Interested in WhatsApp automation, currently using manual replies..."
+                placeholder="Interested in WhatsApp automation..."
               />
             </div>
           </div>
-          <div className="flex items-center gap-3 pt-1">
+          <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
               disabled={submitting || !form.contact_name.trim()}
@@ -402,9 +410,11 @@ export default function PipelinePage() {
             </button>
           </div>
         </form>
-      )}
+      </div>
+    </div>
+  )}
 
-      {/* Lead cards */}
+  {/* Lead cards */}
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
