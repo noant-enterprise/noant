@@ -73,11 +73,14 @@ export default function AuditLogsPage() {
             className="appearance-none rounded-lg border border-border bg-bg-surface py-2 pl-10 pr-8 text-sm text-text-primary focus:border-brand-sky focus:outline-none"
           >
             <option value="">All actions</option>
-            <option value="user.login">User login</option>
-            <option value="user.registered">User registered</option>
-            <option value="payment">Payment</option>
-            <option value="conversation">Conversation</option>
+            <option value="user.login">Login</option>
+            <option value="user.logout">Logout</option>
+            <option value="conversation">Conversations</option>
             <option value="training">Training</option>
+            <option value="WhatsApp">WhatsApp</option>
+            <option value="campaign">Campaigns</option>
+            <option value="team">Team</option>
+            <option value="settings">Settings</option>
           </select>
           <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
         </div>

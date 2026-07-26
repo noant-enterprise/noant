@@ -655,7 +655,7 @@ WHERE 1=1`
 
 	if actionFilter != "" {
 		query += ` AND al.action LIKE ?`
-		args = append(args, actionFilter+"%")
+		args = append(args, "%"+actionFilter+"%")
 	}
 	if search != "" {
 		query += ` AND (al.action LIKE ? OR al.details LIKE ?)`
