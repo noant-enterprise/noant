@@ -608,6 +608,7 @@ func main() {
 	adminRoutes.PUT("/users/:id/plan", handlers.Admin.UpgradeUserPlan)
 	adminRoutes.POST("/users/:id/resend-verify", handlers.Admin.ResendVerification)
 	adminRoutes.POST("/users/:id/notify", handlers.Admin.SendUserNotification)
+	adminRoutes.POST("/users/:id/impersonate", handlers.Admin.ImpersonateUser)
 
 	// CSV Export endpoints
 	adminRoutes.GET("/export/users", handlers.Admin.ExportUsers)

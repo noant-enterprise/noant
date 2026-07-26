@@ -1425,6 +1425,47 @@ func (h *AdminHandler) SendUserNotification(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Notification sent", "id": notifID})
 }
 
+// ImpersonateUser creates an impersonation token for admin to log in as user
+func (h *AdminHandler) ImpersonateUser(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
+	// Verify user exists
+	var email string
+	err := h.repos.DB.QueryRowContext(ctx, `SELECT email FROM users WHERE id = ?`, id).Scan(&email)
+	if err != nil {
+		h.logger.Error("admin impersonate: user not found", "error", err)
+		utils.RespondNotFound(c, "User not found")
+		return
+	}
+
+	// Get admin user ID for audit
+	adminID, _ := c.Get("userID")
+
+	// Create short-lived impersonation token (15 min)
+	token := uuid.New().String()
+	expiresAt := time.Now().Add(15 * time.Minute)
+
+	_, err = h.repos.DB.ExecContext(ctx,
+		`INSERT INTO impersonation_tokens (id, admin_user_id, target_user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		uuid.New().String(), adminID, id, token, expiresAt, time.Now())
+	if err != nil {
+		h.logger.Error("admin impersonate: create token", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	h.logAudit(c, "user.impersonated", "user", id, gin.H{"admin_id": adminID})
+
+	if h.wsHub != nil {
+		h.wsHub.BroadcastAdminEvent("user_impersonated", gin.H{"user_id": id, "admin_id": adminID})
+	}
+
+	h.broadcastSlack(ctx, fmt.Sprintf("Admin %v impersonated user %s (%s)", adminID, id, email))
+
+	c.JSON(http.StatusOK, gin.H{"impersonation_token": token})
+}
+
 // ExportUsers returns CSV data for users
 func (h *AdminHandler) ExportUsers(c *gin.Context) {
 	ctx := c.Request.Context()

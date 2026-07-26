@@ -168,6 +168,10 @@ class AdminAPI {
   getPipelineStats() {
     return this.request<{ pipeline: { status: string; count: number }[]; total_leads: number }>('GET', '/api/v1/admin/pipeline-stats')
   }
+
+  impersonateUser(userId: string) {
+    return this.request<{ impersonation_token: string }>('POST', `/api/v1/admin/users/${userId}/impersonate`)
+  }
 }
 
 export const adminApi = new AdminAPI()

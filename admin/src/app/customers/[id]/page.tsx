@@ -1,9 +1,11 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useUser } from '@/lib/hooks/useUsers'
 import { formatNumber } from '@/lib/utils'
-import { ArrowLeft, Mail, MessageSquare, CreditCard, Heart, UserX } from 'lucide-react'
+import { ArrowLeft, Mail, MessageSquare, CreditCard, Heart, UserX, ShieldUser, X } from 'lucide-react'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import { EmptyState, ErrorBanner } from '@/components/ui/Feedback'
+import { useState } from 'react'
+import { adminApi } from '@/lib/api'
 
 const PLAN_COLORS: Record<string, string> = {
   free: 'bg-text-tertiary/10 text-text-tertiary',
@@ -45,6 +47,25 @@ export default function CustomerDetailPage() {
         action={{ label: 'Back to Customers', onClick: () => navigate('/customers') }}
       />
     )
+  }
+
+  const [showImpersonateModal, setShowImpersonateModal] = useState(false)
+
+  const handleImpersonate = async () => {
+    try {
+      const res = await adminApi.impersonateUser(user.id)
+      if (res.impersonation_token) {
+        // Store current admin session for later restoration
+        localStorage.setItem('admin_session_restore', JSON.stringify({
+          accessToken: document.cookie.includes('noant_access=') ? 'admin_cookie' : null,
+          returnTo: '/customers'
+        }))
+        // Set impersonation cookie/token
+        window.location.href = `/impersonate?token=${res.impersonation_token}&returnTo=/customers`
+      }
+    } catch (e: any) {
+      alert(e.message || 'Failed to impersonate user')
+    }
   }
 
   const healthScore = user.health_score ?? 100
@@ -106,9 +127,51 @@ export default function CustomerDetailPage() {
         <div className="rounded-xl border border-border bg-bg-surface p-5">
           <h3 className="mb-3 text-sm font-medium text-text-secondary">Actions</h3>
           <div className="space-y-2">
-            <button className="w-full rounded-lg border border-border bg-bg-inset px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary">Impersonate User</button>
-            <button className="w-full rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10">Suspend Account</button>
+            <button
+              onClick={() => setShowImpersonateModal(true)}
+              className="w-full rounded-lg border border-border bg-bg-inset px-3 py-2 text-sm text-text-secondary transition-colors hover:text-text-primary"
+            >
+              Impersonate User
+            </button>
+            <button
+              onClick={() => setShowImpersonateModal(true)}
+              className="w-full rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10"
+            >
+              Suspend Account
+            </button>
           </div>
+
+          {/* Impersonate Modal */}
+          {showImpersonateModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowImpersonateModal(false)}>
+              <div className="w-full max-w-md rounded-xl border border-border bg-bg-base p-6 space-y-4" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-text-primary">Impersonate User</h2>
+                  <button onClick={() => setShowImpersonateModal(false)} className="rounded-lg p-1 text-text-tertiary hover:text-text-primary hover:bg-bg-inset">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="text-sm text-text-secondary">
+                  You will be logged in as <strong>{user.first_name} {user.last_name}</strong> ({user.email}).
+                  Your admin session will be paused.
+                </p>
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => setShowImpersonateModal(false)}
+                    className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-bg-inset"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleImpersonate}
+                    className="rounded-lg bg-brand-sky px-4 py-2 text-sm font-medium text-white hover:bg-brand-sky/80"
+                  >
+                    Impersonate
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
