@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { adminApi } from '@/lib/api'
 import type { AdminUser } from '@/types'
 
 export function useAuth() {
@@ -6,29 +7,29 @@ export function useAuth() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const stored = localStorage.getItem('admin_user')
-    if (stored) {
-      setUser(JSON.parse(stored))
-    }
-    setLoading(false)
+    adminApi.me()
+      .then(res => {
+        setUser(res.user as AdminUser)
+      })
+      .catch(() => {
+        setUser(null)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
-  const login = useCallback(async (email: string, _password: string) => {
-    // Mock auth — accept any email/password for now
+  const login = useCallback(async (email: string, password: string) => {
+    const res = await adminApi.login(email, password)
     const adminUser: AdminUser = {
-      id: '1',
-      email,
-      role: 'owner',
+      id: res.user.id,
+      email: res.user.email,
+      role: res.user.role as AdminUser['role'],
     }
     setUser(adminUser)
-    localStorage.setItem('admin_user', JSON.stringify(adminUser))
-    localStorage.setItem('admin_token', 'mock-admin-token')
     return adminUser
   }, [])
 
-  const logout = useCallback(() => {
-    localStorage.removeItem('admin_user')
-    localStorage.removeItem('admin_token')
+  const logout = useCallback(async () => {
+    await adminApi.logout().catch(() => {})
     setUser(null)
   }, [])
 

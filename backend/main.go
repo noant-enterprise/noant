@@ -102,6 +102,10 @@ func main() {
 		corsOrigins = append(corsOrigins,
 			"http://localhost:3000",
 			"http://127.0.0.1:3000",
+			"http://localhost:3001",
+			"http://127.0.0.1:3001",
+			"http://localhost:3002",
+			"http://127.0.0.1:3002",
 			"http://localhost:5173",
 			"http://127.0.0.1:5173",
 		)
@@ -581,6 +585,11 @@ func main() {
 	adminRoutes.GET("/users", handlers.Admin.Users)
 	adminRoutes.GET("/users/:id", handlers.Admin.User)
 	adminRoutes.GET("/system/health", handlers.Admin.SystemHealth)
+	adminRoutes.GET("/analytics", handlers.Admin.Analytics)
+	adminRoutes.GET("/revenue", handlers.Admin.Revenue)
+	adminRoutes.GET("/ai/health", handlers.Admin.AIHealth)
+	adminRoutes.GET("/alerts", handlers.Admin.Alerts)
+	adminRoutes.GET("/activity", handlers.Admin.RecentActivity)
 
 	// Serve frontend static files if the static directory exists
 	if _, err := os.Stat("./static"); err == nil {

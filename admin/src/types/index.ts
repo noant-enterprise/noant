@@ -185,6 +185,85 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  token: string;
-  user: AdminUser;
+  user: AdminUser & { first_name: string; last_name: string };
+  trial_info?: {
+    trial_expires_at?: string;
+    trial_ended?: boolean;
+    trial_days_left?: number;
+  };
+}
+
+export interface OverviewResponse {
+  total_users: number;
+  paying_users: number;
+  active_users: number;
+  total_revenue: number;
+  mrr: number;
+  churn_rate: number;
+  total_conversations: number;
+  system_status: string;
+}
+
+export interface UsersResponse {
+  users: User[];
+  total: number;
+}
+
+export interface UserDetail extends User {
+  total_conversations: number;
+  total_messages: number;
+  credits_remaining: number;
+  health_score: number;
+}
+
+export interface AnalyticsResponse {
+  visitors_today: number;
+  visitors_yesterday: number;
+  signups_today: number;
+  conversion_rate: number;
+  total_signups: number;
+  bounce_rate: number;
+  avg_session_duration: number;
+  page_views: PageView[];
+  traffic_sources: TrafficSource[];
+  visitor_history: DailyVisitors[];
+  funnel: FunnelStep[];
+}
+
+export interface RevenueResponse {
+  mrr: number;
+  arr: number;
+  total_revenue: number;
+  paying_users: number;
+  churn_rate: number;
+  ltv: number;
+  mrr_history: { month: string; amount: number }[];
+  plan_breakdown: PlanRevenue[];
+  failed_payments: FailedPayment[];
+}
+
+export interface AIHealthResponse {
+  total_queries: number;
+  answered_correctly: number;
+  accuracy: number;
+  accuracy_trend: number;
+  unanswered_questions: UnansweredQuestion[];
+  accuracy_history: DailyAccuracy[];
+  sentiment_breakdown: SentimentBreakdown;
+}
+
+export interface SystemHealthResponse {
+  services: { name: string; status: string; latency_ms: number }[];
+  error_rate: number;
+  p50_latency: number;
+  p95_latency: number;
+  p99_latency: number;
+}
+
+export interface AlertsResponse {
+  alerts: { id: string; type: string; title: string; description: string; severity: string; created_at: string }[];
+}
+
+export interface ActivityResponse {
+  events: LiveFeedEvent[];
 }

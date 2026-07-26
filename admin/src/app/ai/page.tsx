@@ -66,7 +66,7 @@ export default function AIHealthPage() {
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
                   <span className="text-text-secondary">{s.name}</span>
                 </div>
-                <span className="font-medium text-text-primary">{s.value}%</span>
+                <span className="font-medium text-text-primary">{s.value}</span>
               </div>
             ))}
           </div>

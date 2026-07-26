@@ -1,42 +1,21 @@
+import type { OverviewResponse, UsersResponse, UserDetail, AnalyticsResponse, RevenueResponse, AIHealthResponse, SystemHealthResponse, AlertsResponse, ActivityResponse, LoginResponse } from '@/types'
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
 class AdminAPI {
-  private token: string | null = null
-
-  setToken(token: string) {
-    this.token = token
-    localStorage.setItem('admin_token', token)
-  }
-
-  getToken(): string | null {
-    if (!this.token) {
-      this.token = localStorage.getItem('admin_token')
-    }
-    return this.token
-  }
-
-  clearToken() {
-    this.token = null
-    localStorage.removeItem('admin_token')
-  }
-
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-    }
-    const token = this.getToken()
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`
     }
 
     const res = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
+      credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
     })
 
     if (res.status === 401) {
-      this.clearToken()
       window.location.href = '/login'
       throw new Error('Unauthorized')
     }
@@ -49,57 +28,56 @@ class AdminAPI {
     return res.json()
   }
 
-  // Auth
   login(email: string, password: string) {
-    return this.request<{ token: string; user: { id: string; email: string; role: string } }>('POST', '/api/v1/admin/login', { email, password })
+    return this.request<LoginResponse>('POST', '/api/v1/auth/login', { email, password })
   }
 
-  // Dashboard
+  me() {
+    return this.request<{ user: { id: string; email: string; role: string; first_name: string; last_name: string } }>('GET', '/api/v1/auth/session/me')
+  }
+
+  logout() {
+    return this.request<void>('POST', '/api/v1/auth/logout')
+  }
+
   getOverview() {
-    return this.request<Record<string, unknown>>('GET', '/api/v1/admin/overview')
+    return this.request<OverviewResponse>('GET', '/api/v1/admin/overview')
   }
 
-  // Users
-  getUsers(params?: { page?: number; limit?: number; search?: string; plan?: string }) {
+  getUsers(params?: { search?: string; plan?: string }) {
     const query = new URLSearchParams()
-    if (params?.page) query.set('page', String(params.page))
-    if (params?.limit) query.set('limit', String(params.limit))
     if (params?.search) query.set('search', params.search)
     if (params?.plan) query.set('plan', params.plan)
-    return this.request<{ users: unknown[]; total: number }>('GET', `/api/v1/admin/users?${query}`)
+    const qs = query.toString()
+    return this.request<UsersResponse>('GET', `/api/v1/admin/users${qs ? '?' + qs : ''}`)
   }
 
   getUser(id: string) {
-    return this.request<unknown>('GET', `/api/v1/admin/users/${id}`)
+    return this.request<UserDetail>('GET', `/api/v1/admin/users/${id}`)
   }
 
-  impersonateUser(id: string) {
-    return this.request<{ token: string }>('POST', `/api/v1/admin/users/${id}/impersonate`)
-  }
-
-  // Analytics
   getAnalytics() {
-    return this.request<unknown>('GET', '/api/v1/admin/analytics')
+    return this.request<AnalyticsResponse>('GET', '/api/v1/admin/analytics')
   }
 
-  // Revenue
   getRevenue() {
-    return this.request<unknown>('GET', '/api/v1/admin/revenue')
+    return this.request<RevenueResponse>('GET', '/api/v1/admin/revenue')
   }
 
-  // AI Health
   getAIHealth() {
-    return this.request<unknown>('GET', '/api/v1/admin/ai/health')
+    return this.request<AIHealthResponse>('GET', '/api/v1/admin/ai/health')
   }
 
-  // System
   getSystemHealth() {
-    return this.request<unknown>('GET', '/api/v1/admin/system/health')
+    return this.request<SystemHealthResponse>('GET', '/api/v1/admin/system/health')
   }
 
-  // Alerts
   getAlerts() {
-    return this.request<unknown[]>('GET', '/api/v1/admin/alerts')
+    return this.request<AlertsResponse>('GET', '/api/v1/admin/alerts')
+  }
+
+  getActivity() {
+    return this.request<ActivityResponse>('GET', '/api/v1/admin/activity')
   }
 }
 

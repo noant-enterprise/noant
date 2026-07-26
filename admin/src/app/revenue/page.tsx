@@ -35,7 +35,7 @@ export default function RevenuePage() {
               <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#666' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 12, fill: '#666' }} axisLine={false} tickLine={false} tickFormatter={v => `₦${(v / 1000000).toFixed(0)}M`} />
               <Tooltip contentStyle={{ backgroundColor: '#1c1c1c', border: '1px solid #2a2a2a', borderRadius: '8px', fontSize: 12 }} formatter={(v) => [formatCurrency(Number(v)), 'Revenue']} />
-              <Area type="monotone" dataKey="revenue" stroke="#22c55e" fill="url(#green)" strokeWidth={2} />
+              <Area type="monotone" dataKey="amount" stroke="#22c55e" fill="url(#green)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -76,9 +76,9 @@ export default function RevenuePage() {
             <tbody>
               {data.failed_payments.map(fp => (
                 <tr key={fp.id} className="border-b border-border-subtle">
-                  <td className="px-3 py-2 text-sm text-text-primary">{fp.user_email}</td>
+                  <td className="px-3 py-2 text-sm text-text-primary">{fp.user_id}</td>
                   <td className="px-3 py-2 text-right text-sm text-danger">{formatCurrency(fp.amount)}</td>
-                  <td className="px-3 py-2 text-sm text-text-secondary">{fp.reason}</td>
+                  <td className="px-3 py-2 text-sm text-text-secondary">-</td>
                   <td className="px-3 py-2 text-right text-xs text-text-tertiary">{new Date(fp.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}
