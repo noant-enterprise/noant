@@ -31,9 +31,10 @@ test.describe('Login page', () => {
     await expect(page).toHaveURL(/\/forgot-password/)
   })
 
-  test('shows toast validation error when submitting empty fields', async ({ page }) => {
+  test('shows validation error when submitting empty fields', async ({ page }) => {
     await page.getByRole('button', { name: 'Sign in' }).click()
-    await expect(page.locator('[class*="fixed"]').filter({ hasText: 'Please fill in all fields' })).toBeVisible()
+    await expect(page.getByText('Email is required')).toBeVisible()
+    await expect(page.getByText('Password is required')).toBeVisible()
   })
 
   test('password visibility toggle works', async ({ page }) => {
