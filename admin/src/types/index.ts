@@ -6,14 +6,14 @@ export interface User {
   plan_id: string;
   status: string;
   created_at: string;
-  last_login_at: string;
+  last_login_at?: string;
   avatar_url?: string;
   org_id?: string;
   org_name?: string;
-  total_conversations: number;
-  total_messages: number;
-  credits_remaining: number;
-  health_score: number;
+  total_conversations?: number;
+  total_messages?: number;
+  credits_remaining?: number;
+  health_score?: number;
 }
 
 export interface Conversation {

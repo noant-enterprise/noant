@@ -95,12 +95,12 @@ export default function CustomersPage() {
                           {user.plan_id}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-text-secondary">{formatNumber(user.total_conversations)}</td>
-                      <td className="px-4 py-3 text-sm text-text-secondary">{formatNumber(user.credits_remaining)}</td>
+                      <td className="px-4 py-3 text-sm text-text-secondary">{formatNumber(user.total_conversations ?? 0)}</td>
+                      <td className="px-4 py-3 text-sm text-text-secondary">{formatNumber(user.credits_remaining ?? 0)}</td>
                       <td className="px-4 py-3">
-                        <span className={`text-sm font-medium ${HEALTH_COLORS(user.health_score)}`}>{user.health_score}%</span>
+                        <span className={`text-sm font-medium ${HEALTH_COLORS(user.health_score ?? 100)}`}>{user.health_score ?? 100}%</span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-text-tertiary">{new Date(user.last_login_at).toLocaleDateString()}</td>
+                      <td className="px-4 py-3 text-xs text-text-tertiary">{user.last_login_at ? new Date(user.last_login_at).toLocaleDateString() : '—'}</td>
                       <td className="px-4 py-3 text-right">
                         <Link
                           to={`/customers/${user.id}`}

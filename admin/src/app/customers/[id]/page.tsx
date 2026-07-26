@@ -47,8 +47,9 @@ export default function CustomerDetailPage() {
     )
   }
 
-  const healthColor = user.health_score >= 80 ? 'text-success' : user.health_score >= 50 ? 'text-warning' : 'text-danger'
-  const healthBg = user.health_score >= 80 ? 'bg-success' : user.health_score >= 50 ? 'bg-warning' : 'bg-danger'
+  const healthScore = user.health_score ?? 100
+  const healthColor = healthScore >= 80 ? 'text-success' : healthScore >= 50 ? 'text-warning' : 'text-danger'
+  const healthBg = healthScore >= 80 ? 'bg-success' : healthScore >= 50 ? 'bg-warning' : 'bg-danger'
 
   return (
     <div className="space-y-6">
@@ -73,23 +74,23 @@ export default function CustomerDetailPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="rounded-xl border border-border bg-bg-surface p-4">
           <div className="flex items-center gap-2 text-text-tertiary"><MessageSquare className="h-4 w-4" /><span className="text-xs">Conversations</span></div>
-          <p className="mt-1 text-xl font-bold text-text-primary">{formatNumber(user.total_conversations)}</p>
+          <p className="mt-1 text-xl font-bold text-text-primary">{formatNumber(user.total_conversations ?? 0)}</p>
         </div>
         <div className="rounded-xl border border-border bg-bg-surface p-4">
           <div className="flex items-center gap-2 text-text-tertiary"><MessageSquare className="h-4 w-4" /><span className="text-xs">Messages</span></div>
-          <p className="mt-1 text-xl font-bold text-text-primary">{formatNumber(user.total_messages)}</p>
+          <p className="mt-1 text-xl font-bold text-text-primary">{formatNumber(user.total_messages ?? 0)}</p>
         </div>
         <div className="rounded-xl border border-border bg-bg-surface p-4">
           <div className="flex items-center gap-2 text-text-tertiary"><CreditCard className="h-4 w-4" /><span className="text-xs">Credits</span></div>
-          <p className="mt-1 text-xl font-bold text-text-primary">{formatNumber(user.credits_remaining)}</p>
+          <p className="mt-1 text-xl font-bold text-text-primary">{formatNumber(user.credits_remaining ?? 0)}</p>
         </div>
         <div className="rounded-xl border border-border bg-bg-surface p-4">
           <div className="flex items-center gap-2 text-text-tertiary"><Heart className="h-4 w-4" /><span className="text-xs">Health Score</span></div>
           <div className="mt-2 flex items-center gap-2">
             <div className="h-2 w-24 overflow-hidden rounded-full bg-bg-inset">
-              <div className={`h-full rounded-full ${healthBg}`} style={{ width: `${user.health_score}%` }} />
+              <div className={`h-full rounded-full ${healthBg}`} style={{ width: `${healthScore}%` }} />
             </div>
-            <span className={`text-sm font-bold ${healthColor}`}>{user.health_score}%</span>
+            <span className={`text-sm font-bold ${healthColor}`}>{healthScore}%</span>
           </div>
         </div>
       </div>
@@ -99,7 +100,7 @@ export default function CustomerDetailPage() {
           <h3 className="mb-3 text-sm font-medium text-text-secondary">Details</h3>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-text-tertiary">Joined</span><span className="text-text-primary">{new Date(user.created_at).toLocaleDateString()}</span></div>
-            <div className="flex justify-between"><span className="text-text-tertiary">Last Active</span><span className="text-text-primary">{new Date(user.last_login_at).toLocaleDateString()}</span></div>
+            <div className="flex justify-between"><span className="text-text-tertiary">Last Active</span><span className="text-text-primary">{user.last_login_at ? new Date(user.last_login_at).toLocaleDateString() : '—'}</span></div>
           </div>
         </div>
         <div className="rounded-xl border border-border bg-bg-surface p-5">
