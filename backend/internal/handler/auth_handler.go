@@ -246,6 +246,32 @@ func (h *AuthHandler) ResendVerification(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Verification code sent successfully"})
 }
 
+// DevVerify auto-verifies a user by email (dev mode only, non-production).
+func (h *AuthHandler) DevVerify(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, err.Error())
+		return
+	}
+	utils.SanitizeStruct(&req)
+
+	user, token, refreshToken, err := h.service.DevVerify(c.Request.Context(), req.Email)
+	if err != nil {
+		utils.RespondUnauthorized(c, err.Error())
+		return
+	}
+
+	middleware.SetAuthCookies(c, token, refreshToken, 24*time.Hour, 7*24*time.Hour)
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Email verified (dev mode)",
+		"user":    user,
+	})
+}
+
 // RefreshToken exchanges a valid refresh token for a new access token.
 // The refresh token is rotated on each use to prevent replay attacks.
 func (h *AuthHandler) RefreshToken(c *gin.Context) {

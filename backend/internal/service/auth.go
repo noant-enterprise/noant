@@ -158,6 +158,11 @@ func (s *AuthService) Register(ctx context.Context, email, password, firstName, 
 		if _, err := s.email.SendVerificationEmail(ctx, email, code); err != nil {
 			s.logger.Error("Failed to send verification email on registration", "error", err)
 		}
+	} else {
+		s.logger.Info("DEV MODE: No email configured. Verification code printed below.",
+			"email", email,
+			"verification_code", code,
+		)
 	}
 
 	created, err := s.userRepo.GetByEmail(ctx, email)
@@ -305,9 +310,51 @@ func (s *AuthService) ResendVerification(ctx context.Context, email string) erro
 			s.logger.Error("Failed to resend verification email", "error", err)
 			return fmt.Errorf("failed to send verification email: %w", err)
 		}
+	} else {
+		s.logger.Info("DEV MODE: No email configured. Verification code printed below.",
+			"email", user.Email,
+			"verification_code", code,
+		)
 	}
 
 	return nil
+}
+
+// DevVerify auto-verifies a user by email without a code. Only works when NODE_ENV != production.
+func (s *AuthService) DevVerify(ctx context.Context, email string) (user *domain.User, token, refreshToken string, err error) {
+	user, err = s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("database error: %w", err)
+	}
+	if user == nil {
+		return nil, "", "", fmt.Errorf("user not found")
+	}
+	if user.IsVerified {
+		token, err = s.generateToken(user)
+		if err != nil {
+			return nil, "", "", err
+		}
+		refreshToken = s.generateRefreshToken()
+		if s.redis != nil {
+			_ = s.redis.Set(ctx, "refresh:"+refreshToken, user.ID, 7*24*time.Hour)
+		}
+		return user, token, refreshToken, nil
+	}
+
+	if err = s.userRepo.UpdateVerificationStatus(ctx, user.ID, true); err != nil {
+		return nil, "", "", fmt.Errorf("failed to update verification: %w", err)
+	}
+	user.IsVerified = true
+
+	token, err = s.generateToken(user)
+	if err != nil {
+		return nil, "", "", err
+	}
+	refreshToken = s.generateRefreshToken()
+	if s.redis != nil {
+		_ = s.redis.Set(ctx, "refresh:"+refreshToken, user.ID, 7*24*time.Hour)
+	}
+	return user, token, refreshToken, nil
 }
 
 func (s *AuthService) generateToken(user *domain.User) (string, error) {

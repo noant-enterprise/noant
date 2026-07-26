@@ -320,6 +320,9 @@ func main() {
 		auth.POST("/reset-password", handlers.Auth.ResetPassword)
 		auth.POST("/verify", handlers.Auth.VerifyEmail)
 		auth.POST("/resend-verification", handlers.Auth.ResendVerification)
+		if cfg.NodeEnv != "production" {
+			auth.POST("/dev/verify", handlers.Auth.DevVerify)
+		}
 
 		// Session check endpoints: relaxed rate limiting (120 req/min per IP)
 		// These are called automatically on every page load / token expiry.
