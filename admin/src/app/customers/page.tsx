@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useUsers } from '@/lib/hooks/useUsers'
 import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh'
 import { formatNumber } from '@/lib/utils'
-import { Search, ExternalLink, Users, Download, Ban, Check, AlertCircle, Send } from 'lucide-react'
+import { Search, ExternalLink, Users, Download, Ban, Check, AlertCircle, Send, Loader2, X } from 'lucide-react'
 import { SkeletonTableRows } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
 import { adminApi } from '@/lib/api'
@@ -20,6 +20,8 @@ const HEALTH_COLORS = (score: number) => {
   return 'text-danger'
 }
 
+type ModalType = 'suspend' | 'upgrade' | 'resend-verify' | 'notify' | null
+
 export default function CustomersPage() {
   const [search, setSearch] = useState('')
   const [plan, setPlan] = useState('all')
@@ -29,53 +31,61 @@ export default function CustomersPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  const handleSuspend = async (id: string, suspended: boolean) => {
+  const [modal, setModal] = useState<ModalType>(null)
+  const [modalUser, setModalUser] = useState<{ id: string; email: string; name: string; status: string; plan_id: string } | null>(null)
+  const [modalLoading, setModalLoading] = useState(false)
+  const [notifyTitle, setNotifyTitle] = useState('')
+  const [notifyMessage, setNotifyMessage] = useState('')
+  const [notifyType, setNotifyType] = useState('info')
+
+  const openModal = (type: ModalType, user: { id: string; email: string; first_name: string; last_name: string; status: string; plan_id: string }) => {
+    setModalUser({ id: user.id, email: user.email, name: `${user.first_name} ${user.last_name}`, status: user.status, plan_id: user.plan_id })
+    setModal(type)
     setActionError(null)
     setActionMsg(null)
+    setNotifyTitle('')
+    setNotifyMessage('')
+    setNotifyType('info')
+  }
+
+  const closeModal = () => {
+    setModal(null)
+    setModalUser(null)
+    setModalLoading(false)
+  }
+
+  const handleConfirm = async () => {
+    if (!modalUser) return
+    setModalLoading(true)
+    setActionError(null)
     try {
-      await adminApi.suspendUser(id, suspended)
-      setActionMsg(suspended ? 'User suspended' : 'User activated')
+      switch (modal) {
+        case 'suspend':
+          await adminApi.suspendUser(modalUser.id, modalUser.status === 'active')
+          setActionMsg(modalUser.status === 'active' ? 'User suspended' : 'User activated')
+          break
+        case 'upgrade': {
+          const newPlan = modalUser.plan_id === 'free' ? 'starter' : modalUser.plan_id === 'starter' ? 'pro' : 'free'
+          await adminApi.upgradeUserPlan(modalUser.id, newPlan)
+          setActionMsg(`Plan upgraded to ${newPlan}`)
+          break
+        }
+        case 'resend-verify':
+          await adminApi.resendVerification(modalUser.id)
+          setActionMsg('Verification resent')
+          break
+        case 'notify':
+          if (!notifyTitle.trim() || !notifyMessage.trim()) throw new Error('Title and message are required')
+          await adminApi.sendUserNotification(modalUser.id, notifyTitle, notifyMessage, notifyType)
+          setActionMsg('Notification sent')
+          break
+      }
+      closeModal()
       refetch()
     } catch (e: unknown) {
       setActionError((e as Error).message)
-    }
-  }
-
-  const handleUpgrade = async (id: string, planID: string) => {
-    setActionError(null)
-    setActionMsg(null)
-    try {
-      await adminApi.upgradeUserPlan(id, planID)
-      setActionMsg(`Plan upgraded to ${planID}`)
-      refetch()
-    } catch (e: unknown) {
-      setActionError((e as Error).message)
-    }
-  }
-
-  const handleResendVerify = async (id: string) => {
-    setActionError(null)
-    setActionMsg(null)
-    try {
-      await adminApi.resendVerification(id)
-      setActionMsg('Verification resent')
-    } catch (e: unknown) {
-      setActionError((e as Error).message)
-    }
-  }
-
-  const handleNotify = async (id: string) => {
-    setActionError(null)
-    setActionMsg(null)
-    const title = prompt('Notification title:')
-    if (!title) return
-    const message = prompt('Notification message:')
-    if (!message) return
-    try {
-      await adminApi.sendUserNotification(id, title, message, 'info')
-      setActionMsg('Notification sent')
-    } catch (e: unknown) {
-      setActionError((e as Error).message)
+    } finally {
+      setModalLoading(false)
     }
   }
 
@@ -179,32 +189,32 @@ export default function CustomersPage() {
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={() => handleSuspend(user.id, user.status === 'active')}
+                            onClick={() => openModal(user.status === 'active' ? 'suspend' : 'suspend', user)}
                             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${
                               user.status === 'active'
                                 ? 'bg-danger/10 text-danger hover:bg-danger/20'
                                 : 'bg-success/10 text-success hover:bg-success/20'
                             }`}
-                            title={user.status === 'active' ? 'Suspend' : 'Activate'}
+                            title={user.status === 'active' ? 'Suspend user' : 'Activate user'}
                           >
                             {user.status === 'active' ? <Ban className="h-3 w-3" /> : <Check className="h-3 w-3" />}
                           </button>
                           <button
-                            onClick={() => handleUpgrade(user.id, user.plan_id === 'free' ? 'starter' : user.plan_id === 'starter' ? 'pro' : 'free')}
+                            onClick={() => openModal('upgrade', user)}
                             className="inline-flex items-center gap-1 rounded-md bg-brand-sky/10 px-2 py-1 text-xs font-medium text-brand-sky hover:bg-brand-sky/20"
-                            title="Cycle plan"
+                            title="Change plan"
                           >
                             ⇅
                           </button>
                           <button
-                            onClick={() => handleResendVerify(user.id)}
+                            onClick={() => openModal('resend-verify', user)}
                             className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-2 py-1 text-xs font-medium text-warning hover:bg-warning/20"
                             title="Resend verification"
                           >
                             <AlertCircle className="h-3 w-3" />
                           </button>
                           <button
-                            onClick={() => handleNotify(user.id)}
+                            onClick={() => openModal('notify', user)}
                             className="inline-flex items-center gap-1 rounded-md bg-info/10 px-2 py-1 text-xs font-medium text-info hover:bg-info/20"
                             title="Send notification"
                           >
@@ -225,6 +235,94 @@ export default function CustomersPage() {
             </table>
           </div>
       </div>
+
+      {/* Modal */}
+      {modal && modalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeModal}>
+          <div className="w-full max-w-md rounded-xl border border-border bg-bg-base p-6 space-y-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-text-primary">
+                {modal === 'suspend' && (modalUser.status === 'active' ? 'Suspend User' : 'Activate User')}
+                {modal === 'upgrade' && 'Change Plan'}
+                {modal === 'resend-verify' && 'Resend Verification'}
+                {modal === 'notify' && 'Send Notification'}
+              </h2>
+              <button onClick={closeModal} className="rounded-lg p-1 text-text-tertiary hover:text-text-primary hover:bg-bg-inset">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-sm text-text-secondary">
+              {modal === 'suspend' && modalUser.status === 'active' && `Are you sure you want to suspend "${modalUser.name}" (${modalUser.email})?`}
+              {modal === 'suspend' && modalUser.status !== 'active' && `Are you sure you want to activate "${modalUser.name}" (${modalUser.email})?`}
+              {modal === 'upgrade' && `Change plan for "${modalUser.name}" from ${modalUser.plan_id} to ${modalUser.plan_id === 'free' ? 'starter' : modalUser.plan_id === 'starter' ? 'pro' : 'free'}?`}
+              {modal === 'resend-verify' && `Send a new verification code to "${modalUser.email}"?`}
+              {modal === 'notify' && `Send a notification to "${modalUser.name}"?`}
+            </p>
+
+            {modal === 'notify' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Title</label>
+                  <input
+                    value={notifyTitle}
+                    onChange={e => setNotifyTitle(e.target.value)}
+                    placeholder="Notification title"
+                    className="w-full rounded-lg border border-border bg-bg-inset px-3 py-2 text-sm text-text-primary outline-none focus:border-brand-sky"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Message</label>
+                  <textarea
+                    value={notifyMessage}
+                    onChange={e => setNotifyMessage(e.target.value)}
+                    placeholder="Notification message"
+                    rows={3}
+                    className="w-full rounded-lg border border-border bg-bg-inset px-3 py-2 text-sm text-text-primary outline-none focus:border-brand-sky resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-text-secondary mb-1">Type</label>
+                  <select
+                    value={notifyType}
+                    onChange={e => setNotifyType(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-bg-inset px-3 py-2 text-sm text-text-secondary outline-none"
+                  >
+                    <option value="info">Info</option>
+                    <option value="warning">Warning</option>
+                    <option value="success">Success</option>
+                    <option value="error">Error</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {actionError && <ErrorBanner message={actionError} onRetry={() => setActionError(null)} />}
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={closeModal}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-bg-inset"
+                disabled={modalLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={modalLoading}
+                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white ${
+                  modal === 'suspend' && modalUser.status === 'active'
+                    ? 'bg-danger hover:bg-danger/80'
+                    : 'bg-brand-sky hover:bg-brand-sky-deep'
+                }`}
+              >
+                {modalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {modal === 'suspend' && modalUser.status === 'active' ? 'Suspend' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
