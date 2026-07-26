@@ -1,4 +1,4 @@
-import type { OverviewResponse, UsersResponse, UserDetail, AnalyticsResponse, RevenueResponse, AIHealthResponse, SystemHealthResponse, AlertsResponse, ActivityResponse, LoginResponse } from '@/types'
+import type { OverviewResponse, UsersResponse, UserDetail, AnalyticsResponse, RevenueResponse, AIHealthResponse, SystemHealthResponse, AlertsResponse, ActivityResponse, LoginResponse, AuditLogsResponse, KnowledgeBaseResponse, TrainKnowledgeRequest } from '@/types'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
@@ -78,6 +78,29 @@ class AdminAPI {
 
   getActivity() {
     return this.request<ActivityResponse>('GET', '/api/v1/admin/activity')
+  }
+
+  getAuditLogs(params?: { search?: string; action?: string; user_id?: string; limit?: number }) {
+    const query = new URLSearchParams()
+    if (params?.search) query.set('search', params.search)
+    if (params?.action) query.set('action', params.action)
+    if (params?.user_id) query.set('user_id', params.user_id)
+    if (params?.limit) query.set('limit', String(params.limit))
+    const qs = query.toString()
+    return this.request<AuditLogsResponse>('GET', `/api/v1/admin/audit-logs${qs ? '?' + qs : ''}`)
+  }
+
+  getKnowledgeBase(params?: { status?: string; search?: string; limit?: number }) {
+    const query = new URLSearchParams()
+    if (params?.status) query.set('status', params.status)
+    if (params?.search) query.set('search', params.search)
+    if (params?.limit) query.set('limit', String(params.limit))
+    const qs = query.toString()
+    return this.request<KnowledgeBaseResponse>('GET', `/api/v1/admin/knowledge-base${qs ? '?' + qs : ''}`)
+  }
+
+  trainKnowledge(data: TrainKnowledgeRequest) {
+    return this.request<{ message: string }>('POST', '/api/v1/admin/knowledge-base/train', data)
   }
 }
 

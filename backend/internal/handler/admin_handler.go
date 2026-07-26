@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"noant/internal/infrastructure"
@@ -12,6 +13,7 @@ import (
 	"noant/internal/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type AdminHandler struct {
@@ -632,4 +634,239 @@ func (h *AdminHandler) RecentActivity(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"events": events})
+}
+
+func (h *AdminHandler) AuditLogs(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	search := c.Query("search")
+	actionFilter := c.Query("action")
+	userID := c.Query("user_id")
+	limit := 50
+	if l, err := strconv.Atoi(c.DefaultQuery("limit", "50")); err == nil && l > 0 && l <= 200 {
+		limit = l
+	}
+
+	query := `SELECT al.id, al.user_id, al.action, al.resource_type, al.resource_id, al.details, al.ip_address, al.user_agent, al.created_at, u.email, u.first_name, u.last_name
+FROM audit_logs al
+LEFT JOIN users u ON al.user_id = u.id
+WHERE 1=1`
+	args := []interface{}{}
+
+	if actionFilter != "" {
+		query += ` AND al.action LIKE ?`
+		args = append(args, actionFilter+"%")
+	}
+	if search != "" {
+		query += ` AND (al.action LIKE ? OR al.details LIKE ?)`
+		s := "%" + search + "%"
+		args = append(args, s, s)
+	}
+	if userID != "" {
+		query += ` AND al.user_id = ?`
+		args = append(args, userID)
+	}
+
+	query += ` ORDER BY al.created_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := h.repos.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		h.logger.Error("admin audit logs: query", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	type logEntry struct {
+		ID           string  `json:"id"`
+		UserID       string  `json:"user_id"`
+		Action       string  `json:"action"`
+		ResourceType string  `json:"resource_type"`
+		ResourceID   string  `json:"resource_id"`
+		Details      string  `json:"details"`
+		IPAddress    string  `json:"ip_address"`
+		UserAgent    string  `json:"user_agent"`
+		CreatedAt    string  `json:"created_at"`
+		Email        *string `json:"email"`
+		FirstName    *string `json:"first_name"`
+		LastName     *string `json:"last_name"`
+	}
+
+	var logs []logEntry
+	for rows.Next() {
+		var l logEntry
+		if err := rows.Scan(&l.ID, &l.UserID, &l.Action, &l.ResourceType, &l.ResourceID, &l.Details, &l.IPAddress, &l.UserAgent, &l.CreatedAt, &l.Email, &l.FirstName, &l.LastName); err != nil {
+			h.logger.Error("admin audit logs: scan", "error", err)
+			continue
+		}
+		logs = append(logs, l)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"logs": logs, "total": len(logs)})
+}
+
+func (h *AdminHandler) KnowledgeBase(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	status := c.DefaultQuery("status", "pending")
+	search := c.Query("search")
+	limit := 50
+	if l, err := strconv.Atoi(c.DefaultQuery("limit", "50")); err == nil && l > 0 && l <= 200 {
+		limit = l
+	}
+
+	query := `SELECT uq.id, uq.question, uq.status, uq.suggested_answer, uq.channel, uq.created_at, u.email as user_email
+FROM unknown_questions uq
+LEFT JOIN users u ON uq.user_id = u.id
+WHERE 1=1`
+	args := []interface{}{}
+
+	if status != "" {
+		query += ` AND uq.status = ?`
+		args = append(args, status)
+	}
+	if search != "" {
+		query += ` AND uq.question LIKE ?`
+		args = append(args, "%"+search+"%")
+	}
+
+	query += ` ORDER BY uq.created_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := h.repos.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		h.logger.Error("admin knowledge base: query", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	type questionEntry struct {
+		ID              string  `json:"id"`
+		Question        string  `json:"question"`
+		Status          string  `json:"status"`
+		SuggestedAnswer *string `json:"suggested_answer"`
+		Channel         *string `json:"channel"`
+		CreatedAt       string  `json:"created_at"`
+		UserEmail       *string `json:"user_email"`
+	}
+
+	var questions []questionEntry
+	for rows.Next() {
+		var q questionEntry
+		if err := rows.Scan(&q.ID, &q.Question, &q.Status, &q.SuggestedAnswer, &q.Channel, &q.CreatedAt, &q.UserEmail); err != nil {
+			h.logger.Error("admin knowledge base: scan", "error", err)
+			continue
+		}
+		questions = append(questions, q)
+	}
+
+	summary := gin.H{}
+	srows, err := h.repos.DB.QueryContext(ctx, `SELECT status, COUNT(*) as cnt FROM unknown_questions GROUP BY status`)
+	if err != nil {
+		h.logger.Error("admin knowledge base: summary", "error", err)
+	} else {
+		defer func() { _ = srows.Close() }()
+		for srows.Next() {
+			var s string
+			var cnt int
+			if err := srows.Scan(&s, &cnt); err != nil {
+				continue
+			}
+			summary[s] = cnt
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"questions": questions, "total": len(questions), "summary": summary})
+}
+
+func (h *AdminHandler) TrainKnowledge(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var body struct {
+		QuestionID string `json:"question_id"`
+		Answer     string `json:"answer"`
+		CategoryID string `json:"category_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		utils.RespondValidationError(c, "Invalid request body")
+		return
+	}
+
+	if body.QuestionID == "" || body.Answer == "" {
+		utils.RespondValidationError(c, "question_id and answer are required")
+		return
+	}
+
+	var questionUserID string
+	var questionOrgID sql.NullString
+	err := h.repos.DB.QueryRowContext(ctx,
+		`SELECT user_id, org_id FROM unknown_questions WHERE id = ?`, body.QuestionID).
+		Scan(&questionUserID, &questionOrgID)
+	if err == sql.ErrNoRows {
+		utils.RespondNotFound(c, "Unknown question")
+		return
+	}
+	if err != nil {
+		h.logger.Error("admin train knowledge: fetch question", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	_, err = h.repos.DB.ExecContext(ctx,
+		`UPDATE unknown_questions SET status = 'trained', suggested_answer = ? WHERE id = ?`,
+		body.Answer, body.QuestionID)
+	if err != nil {
+		h.logger.Error("admin train knowledge: update question", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	categoryID := body.CategoryID
+	if categoryID == "" {
+		var generalCatID string
+		err = h.repos.DB.QueryRowContext(ctx,
+			`SELECT id FROM categories WHERE name = 'General' AND user_id = ? LIMIT 1`, questionUserID).
+			Scan(&generalCatID)
+		if err == sql.ErrNoRows {
+			generalCatID = uuid.New().String()
+			orgID := ""
+			if questionOrgID.Valid {
+				orgID = questionOrgID.String
+			}
+			_, err = h.repos.DB.ExecContext(ctx,
+				`INSERT INTO categories (id, user_id, org_id, name, created_at) VALUES (?, ?, ?, 'General', NOW())`,
+				generalCatID, questionUserID, orgID)
+			if err != nil {
+				h.logger.Error("admin train knowledge: create general category", "error", err)
+				utils.RespondInternalError(c, err.Error())
+				return
+			}
+		} else if err != nil {
+			h.logger.Error("admin train knowledge: find general category", "error", err)
+			utils.RespondInternalError(c, err.Error())
+			return
+		}
+		categoryID = generalCatID
+	}
+
+	orgID := ""
+	if questionOrgID.Valid {
+		orgID = questionOrgID.String
+	}
+	qaID := uuid.New().String()
+	var questionText string
+	_ = h.repos.DB.QueryRowContext(ctx, `SELECT question FROM unknown_questions WHERE id = ?`, body.QuestionID).Scan(&questionText)
+
+	_, err = h.repos.DB.ExecContext(ctx,
+		`INSERT INTO qa_pairs (id, user_id, org_id, category_id, question, answer, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+		qaID, questionUserID, orgID, categoryID, questionText, body.Answer)
+	if err != nil {
+		h.logger.Error("admin train knowledge: insert qa pair", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "trained", "qa_pair_id": qaID})
 }

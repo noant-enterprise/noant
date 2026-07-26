@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Command } from 'cmdk'
-import { LayoutDashboard, Users, BarChart3, DollarSign, Brain, Server, X } from 'lucide-react'
+import { LayoutDashboard, Users, BarChart3, DollarSign, Brain, Server, BookOpen, ClipboardList, Settings, X } from 'lucide-react'
 
 const NAVIGATION = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -9,7 +9,10 @@ const NAVIGATION = [
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
   { path: '/revenue', label: 'Revenue', icon: DollarSign },
   { path: '/ai', label: 'AI Health', icon: Brain },
+  { path: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
   { path: '/system', label: 'System', icon: Server },
+  { path: '/audit-logs', label: 'Audit Logs', icon: ClipboardList },
+  { path: '/settings', label: 'Settings', icon: Settings },
 ]
 
 export function CommandPalette() {

@@ -593,6 +593,9 @@ func main() {
 	adminRoutes.GET("/ai/health", handlers.Admin.AIHealth)
 	adminRoutes.GET("/alerts", handlers.Admin.Alerts)
 	adminRoutes.GET("/activity", handlers.Admin.RecentActivity)
+	adminRoutes.GET("/audit-logs", handlers.Admin.AuditLogs)
+	adminRoutes.GET("/knowledge-base", handlers.Admin.KnowledgeBase)
+	adminRoutes.POST("/knowledge-base/train", handlers.Admin.TrainKnowledge)
 
 	// Serve frontend static files if the static directory exists
 	if _, err := os.Stat("./static"); err == nil {

@@ -9,6 +9,9 @@ import AnalyticsPage from '@/app/analytics/page'
 import RevenuePage from '@/app/revenue/page'
 import AIHealthPage from '@/app/ai/page'
 import SystemPage from '@/app/system/page'
+import SettingsPage from '@/app/settings/page'
+import AuditLogsPage from '@/app/audit-logs/page'
+import KnowledgeBasePage from '@/app/knowledge/page'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
@@ -42,6 +45,9 @@ export default function App() {
           <Route path="/revenue" element={<RevenuePage />} />
           <Route path="/ai" element={<AIHealthPage />} />
           <Route path="/system" element={<SystemPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/audit-logs" element={<AuditLogsPage />} />
+          <Route path="/knowledge" element={<KnowledgeBasePage />} />
         </Route>
       </Routes>
     </BrowserRouter>

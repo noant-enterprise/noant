@@ -267,3 +267,49 @@ export interface AlertsResponse {
 export interface ActivityResponse {
   events: LiveFeedEvent[];
 }
+
+export interface AuditLogEntry {
+  id: string;
+  user_id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  details: string;
+  ip_address: string;
+  user_agent: string;
+  created_at: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+}
+
+export interface AuditLogsResponse {
+  logs: AuditLogEntry[];
+  total: number;
+}
+
+export interface KnowledgeEntry {
+  id: string;
+  question: string;
+  status: string;
+  suggested_answer: string;
+  channel: string;
+  created_at: string;
+  user_email: string;
+}
+
+export interface KnowledgeBaseResponse {
+  questions: KnowledgeEntry[];
+  total: number;
+  summary: {
+    pending: number;
+    trained: number;
+    ignored: number;
+  };
+}
+
+export interface TrainKnowledgeRequest {
+  question_id: string;
+  answer: string;
+  category_id?: string;
+}
