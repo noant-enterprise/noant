@@ -1,5 +1,17 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, BarChart3, DollarSign, Brain, Server, BookOpen, ClipboardList, Settings, Zap, Target } from 'lucide-react'
+import { LayoutDashboard, Users, BarChart3, DollarSign, Brain, Server, BookOpen, ClipboardList, Settings, Target } from 'lucide-react'
+
+function NoantLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 100" className={className} xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="42" stroke="currentColor" strokeWidth="5" strokeDasharray="8 10" strokeLinecap="round" fill="none" />
+      <circle cx="50" cy="50" r="28" fill="currentColor" />
+      <circle cx="40" cy="50" r="3" fill="white" />
+      <circle cx="50" cy="50" r="4" fill="white" />
+      <circle cx="60" cy="50" r="5" fill="white" />
+    </svg>
+  )
+}
 
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -19,7 +31,7 @@ export function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-60 flex-col border-r border-border bg-bg-surface">
       <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-        <Zap className="h-6 w-6 text-brand-sky" />
+        <NoantLogo className="h-7 w-7 text-brand-sky shrink-0" />
         <span className="text-lg font-bold text-text-primary">NOANT</span>
         <span className="ml-auto rounded bg-brand-sky/20 px-1.5 py-0.5 text-xs font-medium text-brand-sky">Admin</span>
       </div>
