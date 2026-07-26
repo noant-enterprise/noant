@@ -3,18 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { Loader2 } from 'lucide-react'
 
-function NoantLogo({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 100 100" className={className} xmlns="http://www.w3.org/2000/svg">
-      <circle cx="50" cy="50" r="42" stroke="currentColor" strokeWidth="5" strokeDasharray="8 10" strokeLinecap="round" fill="none" />
-      <circle cx="50" cy="50" r="28" fill="currentColor" />
-      <circle cx="40" cy="50" r="3" fill="white" />
-      <circle cx="50" cy="50" r="4" fill="white" />
-      <circle cx="60" cy="50" r="5" fill="white" />
-    </svg>
-  )
-}
-
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -64,7 +52,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-sky/10">
-            <NoantLogo className="h-9 w-9 text-brand-sky" />
+            <img src="/Logo A.png" alt="NOANT" className="h-10 w-10" />
           </div>
           <h1 className="text-2xl font-bold text-text-primary">NOANT Admin</h1>
           <p className="mt-2 text-sm text-text-tertiary">Command Center</p>
