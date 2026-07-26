@@ -4,16 +4,36 @@ import { AlertBanner } from '@/components/data/AlertBanner'
 import { useAnalytics } from '@/lib/hooks/useAnalytics'
 import { useRevenue } from '@/lib/hooks/useRevenue'
 import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
+import { useAdminWS } from '@/lib/hooks/useAdminWS'
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils'
 import { Users, DollarSign, MessageSquare, Activity, Filter } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { SkeletonCard, SkeletonStatGrid } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
+import { useEffect, useCallback } from 'react'
 
 export default function DashboardPage() {
   const { data: analytics, loading: analyticsLoading, error: analyticsError, refetch: refetchAnalytics } = useAnalytics()
   const { data: revenue, loading: revenueLoading, error: revenueError, refetch: refetchRevenue } = useRevenue()
   const { data: system, loading: systemLoading, error: systemError, refetch: refetchSystem } = useSystemHealth()
+
+  const refreshAll = useCallback(() => {
+    refetchAnalytics()
+    refetchRevenue()
+    refetchSystem()
+  }, [refetchAnalytics, refetchRevenue, refetchSystem])
+
+  useAdminWS({
+    lead_created: refreshAll,
+    lead_updated: refreshAll,
+    user_signed_up: refreshAll,
+  })
+
+  // Auto-refresh every 30s
+  useEffect(() => {
+    const interval = setInterval(refreshAll, 30000)
+    return () => clearInterval(interval)
+  }, [refreshAll])
 
   const isLoading = analyticsLoading || revenueLoading || systemLoading
   const anyError = analyticsError || revenueError || systemError

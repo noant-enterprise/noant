@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
 import type { AuditLogEntry } from '@/types'
+import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh'
 import { Search, Filter, ChevronDown, ClipboardList } from 'lucide-react'
 import { timeAgo } from '@/lib/utils'
 import { SkeletonTableRows } from '@/components/ui/Skeleton'
@@ -46,6 +47,8 @@ export default function AuditLogsPage() {
     const timer = setTimeout(fetchLogs, 300)
     return () => clearTimeout(timer)
   }, [fetchLogs])
+
+  useAutoRefresh(fetchLogs, 30000)
 
   return (
     <div className="space-y-6">

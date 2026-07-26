@@ -19,10 +19,11 @@ import (
 type AdminHandler struct {
 	repos  *repository.Repositories
 	logger *infrastructure.Logger
+	wsHub  *WebSocketHub
 }
 
-func NewAdminHandler(repos *repository.Repositories, logger *infrastructure.Logger) *AdminHandler {
-	return &AdminHandler{repos: repos, logger: logger}
+func NewAdminHandler(repos *repository.Repositories, logger *infrastructure.Logger, wsHub *WebSocketHub) *AdminHandler {
+	return &AdminHandler{repos: repos, logger: logger, wsHub: wsHub}
 }
 
 func (h *AdminHandler) Overview(c *gin.Context) {
@@ -984,6 +985,10 @@ func (h *AdminHandler) CreateSalesLead(c *gin.Context) {
 		return
 	}
 
+	if h.wsHub != nil {
+		h.wsHub.BroadcastAdminEvent("lead_created", gin.H{"id": id, "contact_name": req.ContactName, "status": status})
+	}
+
 	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "Lead created"})
 }
 
@@ -1016,6 +1021,10 @@ func (h *AdminHandler) UpdateSalesLead(c *gin.Context) {
 			utils.RespondInternalError(c, err.Error())
 			return
 		}
+	}
+
+	if h.wsHub != nil {
+		h.wsHub.BroadcastAdminEvent("lead_updated", gin.H{"id": id, "status": req.Status, "notes": req.Notes})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Lead updated"})

@@ -1,4 +1,5 @@
 import { useAnalytics } from '@/lib/hooks/useAnalytics'
+import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh'
 import { StatCard } from '@/components/data/StatCard'
 import { SkeletonCard, SkeletonTableRows } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
@@ -10,6 +11,7 @@ const COLORS = ['#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']
 
 export default function AnalyticsPage() {
   const { data, loading, error, refetch } = useAnalytics()
+  useAutoRefresh(refetch, 30000)
 
   const visitorsChange = data.visitors_yesterday
     ? ((data.visitors_today - data.visitors_yesterday) / data.visitors_yesterday) * 100

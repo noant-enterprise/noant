@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
 import type { User } from '@/types'
 
@@ -7,6 +7,9 @@ export function useUsers(search?: string, plan?: string) {
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const refetch = useCallback(() => setRefreshKey(k => k + 1), [])
 
   useEffect(() => {
     let cancelled = false
@@ -37,9 +40,9 @@ export function useUsers(search?: string, plan?: string) {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [search, plan])
+  }, [search, plan, refreshKey])
 
-  return { users, loading, total, error }
+  return { users, loading, total, error, refetch }
 }
 
 export function useUser(id: string) {

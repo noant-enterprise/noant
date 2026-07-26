@@ -1,4 +1,5 @@
 import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
+import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh'
 import { Activity, Database, Wifi, Server, Clock, Zap } from 'lucide-react'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import { ErrorBanner } from '@/components/ui/Feedback'
@@ -18,6 +19,7 @@ const SERVICE_ICONS: Record<string, typeof Server> = {
 
 export default function SystemPage() {
   const { data, loading, error, refetch } = useSystemHealth()
+  useAutoRefresh(refetch, 15000)
 
   const services = [data.api, data.database, data.redis, data.whatsapp]
 

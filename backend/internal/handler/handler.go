@@ -68,7 +68,7 @@ func NewHandlers(cfg *config.Config, services *service.Services, repos *reposito
 		Assistant:    NewAssistantHandler(services.Assistant, logger),
 		Onboarding:   NewOnboardingHandler(services.Onboarding, logger),
 		Push:         NewPushHandler(services.Push, logger),
-		Admin:        NewAdminHandler(repos, logger),
+		Admin:        NewAdminHandler(repos, logger, wsHub),
 	}
 }
 

@@ -6,6 +6,7 @@ import { SkeletonCard } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
 import { Plus, X, ClipboardList, ChevronDown, QrCode, Link2, Copy, Check } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
+import { useAdminWS } from '@/lib/hooks/useAdminWS'
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   contacted: { label: 'Contacted', color: 'text-amber-600', bg: 'bg-amber-500/10' },
@@ -144,6 +145,26 @@ export default function PipelinePage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  const handleWSLeadCreated = useCallback(() => {
+    fetchData()
+  }, [fetchData])
+
+  const handleWSLeadUpdated = useCallback(() => {
+    fetchData()
+  }, [fetchData])
+
+  const { connected } = useAdminWS({
+    lead_created: handleWSLeadCreated,
+    lead_updated: handleWSLeadUpdated,
+  })
+
+  // Polling fallback every 15s
+  useEffect(() => {
+    if (connected) return
+    const interval = setInterval(fetchData, 15000)
+    return () => clearInterval(interval)
+  }, [connected, fetchData])
+
   const handleStatusUpdate = (id: string, newStatus: string) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, status: newStatus as SalesLead['status'] } : l))
   }
@@ -211,9 +232,15 @@ export default function PipelinePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Sales Pipeline</h1>
-        <p className="text-sm text-text-tertiary">{totalLeads} total leads</p>
+      <div className="flex items-center gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Sales Pipeline</h1>
+          <p className="text-sm text-text-tertiary">{totalLeads} total leads</p>
+        </div>
+        <div className={`ml-auto flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${connected ? 'bg-success/10 text-success' : 'bg-amber-500/10 text-amber-600'}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-success animate-pulse' : 'bg-amber-500'}`} />
+          {connected ? 'Live' : 'Syncing...'}
+        </div>
       </div>
 
       {error && <ErrorBanner message={error} onRetry={fetchData} />}

@@ -1,4 +1,5 @@
 import { useAIHealth } from '@/lib/hooks/useAIHealth'
+import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh'
 import { StatCard } from '@/components/data/StatCard'
 import { SkeletonCard, SkeletonTableRows } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
@@ -10,6 +11,7 @@ const SENTIMENT_COLORS = { positive: '#22c55e', neutral: '#666', negative: '#ef4
 
 export default function AIHealthPage() {
   const { data, loading, error, refetch } = useAIHealth()
+  useAutoRefresh(refetch, 30000)
 
   if (loading) {
     return (

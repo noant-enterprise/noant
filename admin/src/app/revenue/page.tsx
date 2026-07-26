@@ -1,4 +1,5 @@
 import { useRevenue } from '@/lib/hooks/useRevenue'
+import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh'
 import { StatCard } from '@/components/data/StatCard'
 import { formatCurrency } from '@/lib/utils'
 import { DollarSign, Users, TrendingDown, Wallet, BarChart3 } from 'lucide-react'
@@ -8,6 +9,7 @@ import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
 
 export default function RevenuePage() {
   const { data, loading, error, refetch } = useRevenue()
+  useAutoRefresh(refetch, 30000)
 
   if (error) {
     return (

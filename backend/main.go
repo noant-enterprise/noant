@@ -603,6 +603,11 @@ func main() {
 	adminRoutes.PUT("/sales-leads/:id", handlers.Admin.UpdateSalesLead)
 	adminRoutes.GET("/pipeline-stats", handlers.Admin.SalesPipelineStats)
 
+	// Admin WebSocket for real-time events
+	adminRoutes.GET("/ws", func(c *gin.Context) {
+		wsHub.HandleAdminWebSocket(c)
+	})
+
 	// Public referral tracking (no auth)
 	api.GET("/referral/:code", func(c *gin.Context) {
 		code := c.Param("code")

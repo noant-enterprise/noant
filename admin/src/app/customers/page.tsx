@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useUsers } from '@/lib/hooks/useUsers'
+import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh'
 import { formatNumber } from '@/lib/utils'
 import { Search, ExternalLink, Users } from 'lucide-react'
 import { SkeletonTableRows } from '@/components/ui/Skeleton'
@@ -21,7 +22,8 @@ const HEALTH_COLORS = (score: number) => {
 export default function CustomersPage() {
   const [search, setSearch] = useState('')
   const [plan, setPlan] = useState('all')
-  const { users, loading, total, error } = useUsers(search, plan)
+  const { users, loading, total, error, refetch } = useUsers(search, plan)
+  useAutoRefresh(refetch, 20000)
 
   return (
     <div className="space-y-6">
