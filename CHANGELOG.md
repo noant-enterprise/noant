@@ -5,6 +5,47 @@ All notable changes to NOANT Enterprise will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-26
+
+### Added
+- Sales Pipeline CRM (`/pipeline`) — field meeting lead tracking with status pipeline (Contacted → Demo Sent → Signed Up → Paying → Lost)
+- QR Code generator for referral link sharing (SVG download, copy-to-clipboard, click/signup stats)
+- Referral system — personal referral codes, invite page (`/invite/:code`), click tracking
+- Naira pricing — Free (₦0), Pro (₦15,000/mo), Enterprise (₦50,000/mo)
+- Public landing page with marketing copy, features, AI playground, FAQ
+- Public referral invite page with CTA to signup
+- Realtime WebSocket system for admin panel — instant lead/user events
+- `useAdminWS` hook — typed WebSocket event listener with auto-reconnect
+- `useAutoRefresh` hook — WebSocket + interval polling combo
+- Auto-refresh on all admin pages (15–30s polling intervals)
+- Pipeline page "Live" / "Syncing..." connection status indicator
+- WebSocket admin endpoint (`GET /api/v1/admin/ws`) with auth middleware
+- `BroadcastAdminEvent` method for push events to admin clients
+- Admin WebSocket separate channel from chat WebSocket
+- DEV email verification bypass (`POST /api/v1/auth/dev/verify`) for non-production
+- Verification code logging to stdout when no email service configured
+- Blue-green deployment setup (`deploy/deploy.sh`)
+- Production deployment config (`deploy/docker-compose.production.yml`)
+- Version control: CONTRIBUTING.md, git hooks (pre-commit lint, commit-msg conventional), tag `v0.1.0`
+
+### Fixed
+- Pipeline page blank — Go nil slices serialized as JSON `null`, now initialized with `make()` for empty `[]`
+- E2E test — login validation now uses inline field errors instead of toast
+- Admin user list 500 — replaced nonexistent `status` column with `CASE WHEN is_active` across 4 queries
+- Customers page blank — User type fields made optional with null-safe `??` access
+- Audit log filter — backend changed from prefix `LIKE 'X%'` to contains `LIKE '%X%'`
+- Empty AI message bubbles — 3 root causes fixed
+- Dashboard stats — analytics queries use `org_id` with dual-scope fallback
+- Nil-slice JSON null serialization — all slice-returning handlers now use `make()` initialization
+
+### Changed
+- Test suite: 828+ tests (462 frontend + 365 backend)
+- Admin panel: 12 pages, all wired to real backend APIs
+- README coverage: added backend, frontend, admin, deploy, monitoring READMEs
+- OpenAPI license aligned with MIT (was incorrectly "Proprietary")
+- 24 stale Dependabot PRs closed
+- `deploy/.env.production` added to .gitignore (security)
+
 ## [2.1.0] - 2026-07-23
 
 ### Added

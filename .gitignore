@@ -37,3 +37,4 @@ vendor/
 # Windows temp files
 *.exe~
 frontend/.env.production
+deploy/.env.production

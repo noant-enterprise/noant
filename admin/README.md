@@ -1,32 +1,75 @@
-# React + TypeScript + Vite
+# NOANT Admin Panel (CEO Command Center)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Internal admin dashboard for monitoring and managing the NOANT platform.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React 18 + TypeScript (strict mode)
+- Vite 6 (dev server on port 3002)
+- Tailwind CSS (dark theme)
+- Recharts (charts)
+- Lucide React (icons)
 
-## React Compiler
+## Pages
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Route | Purpose |
+|-------|---------|
+| `/` | Dashboard — live overview (MRR, users, visitors, system status) |
+| `/pipeline` | Sales CRM — field meeting leads, status pipeline, QR code sharing |
+| `/customers` | Customer list with search, plan filtering, detail view |
+| `/analytics` | Landing page analytics (visitors, funnel, sources, bounce rate) |
+| `/revenue` | Revenue tracking (MRR, churn, failed payments, billing table) |
+| `/ai` | AI health (accuracy, response time, unknown questions, sentiment) |
+| `/knowledge` | Knowledge base manager (upload docs, train AI answers) |
+| `/system` | System health (API, TiDB, Redis, WebSocket latency) |
+| `/audit-logs` | Audit trail with search, action filters, user details |
+| `/settings` | Profile, team, API keys |
+| `/login` | Admin login (email + password, role-gated) |
 
-## Expanding the Oxlint configuration
+## Realtime
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+- **WebSocket** — connects to `ws://backend/api/v1/admin/ws` for instant updates (lead_created, lead_updated, user_signed_up)
+- **Auto-refresh polling** — fallback when WS disconnects (15–30s intervals per page)
+- **useAdminWS hook** — typed WebSocket event listener with auto-reconnect
+- **useAutoRefresh hook** — WS + interval combo for any data refetch
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## Project Structure
+
+```
+admin/src/
+├── app/              # Page components (one per route)
+├── components/
+│   ├── data/         # StatCard, LiveFeed, AlertBanner
+│   ├── layout/       # Shell, Sidebar, Topbar, CommandPalette
+│   └── ui/           # Skeleton, Feedback (EmptyState, ErrorBanner)
+├── lib/
+│   ├── api.ts        # Admin API client (all endpoints)
+│   ├── utils.ts      # Formatters, timeAgo
+│   └── hooks/        # Data hooks (useAnalytics, useRevenue, etc.)
+├── types/            # TypeScript interfaces
+└── App.tsx           # Router with protected routes
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Setup
+
+```bash
+cd admin
+npm install
+npm run dev        # → http://localhost:3002
+```
+
+The dev server proxies `/api` to `http://localhost:8080` (backend).
+
+## Scripts
+
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Start dev server on port 3002 |
+| `npm run build` | TypeScript check + production build |
+| `npm run preview` | Preview production build |
+| `npx tsc -b` | Type-check only |
+| `npx vitest run` | Unit tests |
+
+## Keyboard Shortcuts
+
+- **Ctrl+K** — Open command palette (search all pages)

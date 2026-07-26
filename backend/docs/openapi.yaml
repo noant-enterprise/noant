@@ -23,7 +23,8 @@ info:
   contact:
     name: NOANT
   license:
-    name: Proprietary
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 
 servers:
   - url: http://localhost:8080
