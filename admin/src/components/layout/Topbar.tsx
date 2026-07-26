@@ -17,70 +17,72 @@ export function Topbar() {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-bg-surface/80 px-6 backdrop-blur-md">
-      <div className="flex items-center gap-3">
-        <button
-          className="flex items-center gap-2 rounded-lg border border-border bg-bg-inset px-3 py-1.5 text-sm text-text-tertiary transition-colors hover:text-text-secondary"
-          onClick={() => {
-            const input = document.getElementById('command-search') as HTMLInputElement | null
-            input?.focus()
-          }}
-        >
-          <Search className="h-4 w-4" />
-          <span>Search...</span>
-          <kbd className="ml-4 rounded border border-border bg-bg-surface px-1.5 py-0.5 text-xs text-text-tertiary">⌘K</kbd>
-        </button>
-      </div>
-
-      <div className="flex items-center gap-4">
-        <button className="relative rounded-lg p-2 text-text-secondary transition-colors hover:bg-bg-inset hover:text-text-primary">
-          <Bell className="h-4 w-4" />
-          {unacknowledged > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white">
-              {unacknowledged}
-            </span>
-          )}
-        </button>
-
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-sky/20 text-xs font-bold text-brand-sky">
-            {user?.email?.[0]?.toUpperCase() || 'A'}
-          </div>
-          <span className="text-sm text-text-secondary">{user?.email}</span>
+    <>
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-bg-surface/80 px-6 backdrop-blur-md">
+        <div className="flex items-center gap-3">
+          <button
+            className="flex items-center gap-2 rounded-lg border border-border bg-bg-inset px-3 py-1.5 text-sm text-text-tertiary transition-colors hover:text-text-secondary"
+            onClick={() => {
+              const input = document.getElementById('command-search') as HTMLInputElement | null
+              input?.focus()
+            }}
+          >
+            <Search className="h-4 w-4" />
+            <span>Search...</span>
+            <kbd className="ml-4 rounded border border-border bg-bg-surface px-1.5 py-0.5 text-xs text-text-tertiary">⌘K</kbd>
+          </button>
         </div>
 
-        <button
-          onClick={() => setShowLogoutConfirm(true)}
-          className="rounded-lg p-2 text-text-tertiary transition-colors hover:bg-bg-inset hover:text-danger"
-          title="Logout"
-        >
-          <LogOut className="h-4 w-4" />
-        </button>
-      </div>
-    </header>
+        <div className="flex items-center gap-4">
+          <button className="relative rounded-lg p-2 text-text-secondary transition-colors hover:bg-bg-inset hover:text-text-primary">
+            <Bell className="h-4 w-4" />
+            {unacknowledged > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white">
+                {unacknowledged}
+              </span>
+            )}
+          </button>
 
-    {/* Logout Confirmation Modal */}
-    {showLogoutConfirm && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowLogoutConfirm(false)}>
-        <div className="w-full max-w-sm rounded-xl border border-border bg-bg-base p-6 space-y-4 text-center" onClick={e => e.stopPropagation()}>
-          <h2 className="text-lg font-bold text-text-primary">Logout</h2>
-          <p className="text-sm text-text-secondary">Are you sure you want to log out?</p>
-          <div className="flex items-center justify-center gap-3 pt-2">
-            <button
-              onClick={() => setShowLogoutConfirm(false)}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-bg-inset"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleLogout}
-              className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white hover:bg-danger/80"
-            >
-              Logout
-            </button>
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-sky/20 text-xs font-bold text-brand-sky">
+              {user?.email?.[0]?.toUpperCase() || 'A'}
+            </div>
+            <span className="text-sm text-text-secondary">{user?.email}</span>
+          </div>
+
+          <button
+            onClick={() => setShowLogoutConfirm(true)}
+            className="rounded-lg p-2 text-text-tertiary transition-colors hover:bg-bg-inset hover:text-danger"
+            title="Logout"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowLogoutConfirm(false)}>
+          <div className="w-full max-w-sm rounded-xl border border-border bg-bg-base p-6 space-y-4 text-center" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-text-primary">Logout</h2>
+            <p className="text-sm text-text-secondary">Are you sure you want to log out?</p>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-bg-inset"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLogout}
+                className="rounded-lg bg-danger px-4 py-2 text-sm font-medium text-white hover:bg-danger/80"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
+    </>
   )
 }

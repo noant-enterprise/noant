@@ -1,7 +1,7 @@
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
 import { SkeletonCard } from '@/components/ui/Skeleton'
-import { Shield, Key, Users } from 'lucide-react'
+import { Shield, Key, Users, Edit2, X } from 'lucide-react'
 import { useState } from 'react'
 import { formatVersion } from '@/lib/utils'
 

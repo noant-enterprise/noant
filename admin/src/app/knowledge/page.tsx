@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { adminApi } from '@/lib/api'
 import type { KnowledgeEntry } from '@/types'
-import { Search, Brain, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { Search, Brain, CheckCircle, XCircle, Clock, X } from 'lucide-react'
 import { timeAgo } from '@/lib/utils'
 import { SkeletonTableRows } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
@@ -93,13 +93,50 @@ export default function KnowledgeBasePage() {
         />
       </div>
 
-      {trainingMessage && (
-        <div className={`rounded-lg px-4 py-2 text-sm ${trainingMessage.includes('success') ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
-          {trainingMessage}
+    {/* Train Knowledge Modal */}
+    {trainingId && questions.find(q => q.id === trainingId) && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => { setTrainingId(null); setTrainingAnswer(''); }}>
+        <div className="w-full max-w-lg rounded-xl border border-border bg-bg-base p-6 space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-text-primary">Train AI on Knowledge</h2>
+            <button onClick={() => { setTrainingId(null); setTrainingAnswer(''); }} className="rounded-lg p-1 text-text-tertiary hover:text-text-primary hover:bg-bg-inset">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-text-tertiary">Question</label>
+            <p className="rounded-lg border border-border bg-bg-inset px-3 py-2 text-sm text-text-primary">{questions.find(q => q.id === trainingId)?.question}</p>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-text-tertiary">Answer this question for the AI</label>
+            <textarea
+              value={trainingAnswer}
+              onChange={e => setTrainingAnswer(e.target.value)}
+              rows={4}
+              className="w-full rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-brand-sky focus:outline-none"
+              placeholder="Type the answer the AI should give..."
+            />
+          </div>
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              onClick={() => { setTrainingId(null); setTrainingAnswer(''); }}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:bg-bg-inset"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => handleTrain(trainingId)}
+              disabled={!trainingAnswer.trim()}
+              className="rounded-lg bg-brand-sky px-4 py-2 text-sm font-medium text-white hover:bg-brand-sky/80 disabled:opacity-50"
+            >
+              Train AI
+            </button>
+          </div>
         </div>
-      )}
+      </div>
+    )}
 
-      {error && <ErrorBanner message={error} onRetry={fetchQuestions} />}
+    {error && <ErrorBanner message={error} onRetry={fetchQuestions} />}
 
       <div className="rounded-xl border border-border bg-bg-surface">
         {loading ? (
