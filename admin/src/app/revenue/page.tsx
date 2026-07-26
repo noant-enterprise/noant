@@ -2,10 +2,11 @@ import { useRevenue } from '@/lib/hooks/useRevenue'
 import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh'
 import { StatCard } from '@/components/data/StatCard'
 import { formatCurrency } from '@/lib/utils'
-import { DollarSign, Users, TrendingDown, Wallet, BarChart3 } from 'lucide-react'
+import { DollarSign, Users, TrendingDown, Wallet, BarChart3, Download } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { SkeletonCard, SkeletonTableRows } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
+import { adminApi } from '@/lib/api'
 
 export default function RevenuePage() {
   const { data, loading, error, refetch } = useRevenue()
@@ -25,9 +26,18 @@ export default function RevenuePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Revenue</h1>
-        <p className="text-sm text-text-tertiary">Financial overview and subscription metrics</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Revenue</h1>
+          <p className="text-sm text-text-tertiary">Financial overview and subscription metrics</p>
+        </div>
+        <button
+          onClick={() => adminApi.exportCSV('users')}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-sky/10 px-3 py-1.5 text-xs font-medium text-brand-sky hover:bg-brand-sky/20"
+        >
+          <Download className="h-3 w-3" />
+          Export CSV
+        </button>
       </div>
 
       {loading ? (

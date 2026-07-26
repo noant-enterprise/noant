@@ -1,14 +1,19 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"noant/internal/domain"
 	"noant/internal/infrastructure"
 	"noant/internal/repository"
 	"noant/internal/utils"
@@ -18,13 +23,14 @@ import (
 )
 
 type AdminHandler struct {
-	repos  *repository.Repositories
-	logger *infrastructure.Logger
-	wsHub  *WebSocketHub
+	repos             *repository.Repositories
+	logger            *infrastructure.Logger
+	wsHub             *WebSocketHub
+	slackWebhookURL   string
 }
 
-func NewAdminHandler(repos *repository.Repositories, logger *infrastructure.Logger, wsHub *WebSocketHub) *AdminHandler {
-	return &AdminHandler{repos: repos, logger: logger, wsHub: wsHub}
+func NewAdminHandler(repos *repository.Repositories, logger *infrastructure.Logger, wsHub *WebSocketHub, slackWebhookURL string) *AdminHandler {
+	return &AdminHandler{repos: repos, logger: logger, wsHub: wsHub, slackWebhookURL: slackWebhookURL}
 }
 
 func (h *AdminHandler) Overview(c *gin.Context) {
@@ -1266,4 +1272,355 @@ func (h *AdminHandler) SalesPipelineStats(c *gin.Context) {
 	_ = h.repos.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sales_leads WHERE user_id = ?`, userID).Scan(&totalCount)
 
 	c.JSON(http.StatusOK, gin.H{"pipeline": stats, "total_leads": totalCount})
+}
+
+// SuspendUser suspends or reactivates a user
+func (h *AdminHandler) SuspendUser(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
+	var req struct {
+		Suspended bool `json:"suspended"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Invalid request")
+		return
+	}
+
+	_, err := h.repos.DB.ExecContext(ctx, `UPDATE users SET is_active = ? WHERE id = ?`, !req.Suspended, id)
+	if err != nil {
+		h.logger.Error("admin suspend user", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	h.logAudit(c, "user.suspend", "user", id, gin.H{"suspended": req.Suspended})
+
+	if h.wsHub != nil {
+		h.wsHub.BroadcastAdminEvent("user_suspended", gin.H{"user_id": id, "suspended": req.Suspended})
+	}
+
+	status := "suspended"
+	if !req.Suspended {
+		status = "activated"
+	}
+	h.broadcastSlack(ctx, fmt.Sprintf("User %s has been %s", id, status))
+
+	c.JSON(http.StatusOK, gin.H{"message": "User updated"})
+}
+
+// UpgradeUserPlan changes a user's plan
+func (h *AdminHandler) UpgradeUserPlan(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
+	var req struct {
+		PlanID string `json:"plan_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Plan ID required")
+		return
+	}
+
+	validPlans := map[string]bool{"free": true, "starter": true, "pro": true}
+	if !validPlans[req.PlanID] {
+		utils.RespondValidationError(c, "Invalid plan")
+		return
+	}
+
+	_, err := h.repos.DB.ExecContext(ctx, `UPDATE users SET plan_id = ? WHERE id = ?`, req.PlanID, id)
+	if err != nil {
+		h.logger.Error("admin upgrade user plan", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	h.logAudit(c, "user.plan_changed", "user", id, gin.H{"new_plan": req.PlanID})
+
+	if h.wsHub != nil {
+		h.wsHub.BroadcastAdminEvent("user_plan_changed", gin.H{"user_id": id, "plan": req.PlanID})
+	}
+
+	h.broadcastSlack(ctx, fmt.Sprintf("User %s plan changed to %s", id, req.PlanID))
+
+	c.JSON(http.StatusOK, gin.H{"message": "Plan updated"})
+}
+
+// ResendVerification resends the email verification
+func (h *AdminHandler) ResendVerification(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
+	var userEmail string
+	err := h.repos.DB.QueryRowContext(ctx, `SELECT email FROM users WHERE id = ?`, id).Scan(&userEmail)
+	if err != nil {
+		h.logger.Error("admin resend verification: user not found", "error", err)
+		utils.RespondNotFound(c, "User not found")
+		return
+	}
+
+	// Generate new verification code
+	code := fmt.Sprintf("%06d", rand.Intn(1000000))
+	expiresAt := time.Now().Add(24 * time.Hour)
+
+	_, err = h.repos.DB.ExecContext(ctx,
+		`UPDATE users SET verification_code = ?, verification_expires = ? WHERE id = ?`,
+		code, expiresAt, id)
+	if err != nil {
+		h.logger.Error("admin resend verification: update", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	// Log the code for dev purposes
+	h.logger.Info("admin resend verification", "email", userEmail, "code", code)
+
+	// TODO: Send actual email via email service
+
+	h.logAudit(c, "user.verification_resent", "user", id, nil)
+
+	if h.wsHub != nil {
+		h.wsHub.BroadcastAdminEvent("verification_resent", gin.H{"user_id": id, "email": userEmail})
+	}
+
+	h.broadcastSlack(ctx, fmt.Sprintf("Verification resent for user %s (%s)", id, userEmail))
+
+	c.JSON(http.StatusOK, gin.H{"message": "Verification code sent", "dev_code": code})
+}
+
+// SendUserNotification sends a custom notification to a user
+func (h *AdminHandler) SendUserNotification(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
+	var req struct {
+		Title   string `json:"title" binding:"required"`
+		Message string `json:"message" binding:"required"`
+		Type    string `json:"type"` // info, warning, success, error
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Title and message required")
+		return
+	}
+
+	// Create notification in DB
+	notifID := uuid.New().String()
+	_, err := h.repos.DB.ExecContext(ctx,
+		`INSERT INTO notifications (id, user_id, title, message, type, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		notifID, id, req.Title, req.Message, req.Type, time.Now())
+	if err != nil {
+		h.logger.Error("admin send notification: insert", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	h.logAudit(c, "user.notification_sent", "user", id, gin.H{"title": req.Title, "type": req.Type})
+
+	if h.wsHub != nil {
+		h.wsHub.BroadcastAdminEvent("notification_sent", gin.H{"user_id": id, "title": req.Title, "type": req.Type})
+	}
+
+	h.broadcastSlack(ctx, fmt.Sprintf("Notification sent to user %s: %s", id, req.Title))
+
+	c.JSON(http.StatusOK, gin.H{"message": "Notification sent", "id": notifID})
+}
+
+// ExportUsers returns CSV data for users
+func (h *AdminHandler) ExportUsers(c *gin.Context) {
+	ctx := c.Request.Context()
+	search := c.Query("search")
+	plan := c.Query("plan")
+
+	query := `SELECT id, email, first_name, last_name, plan_id, is_active, total_conversations, credits_remaining, health_score, last_login_at, created_at FROM users WHERE 1=1`
+	args := []interface{}{}
+
+	if search != "" {
+		query += ` AND (email LIKE ? OR first_name LIKE ? OR last_name LIKE ?)`
+		s := "%" + search + "%"
+		args = append(args, s, s, s)
+	}
+	if plan != "" && plan != "all" {
+		query += ` AND plan_id = ?`
+		args = append(args, plan)
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := h.repos.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		h.logger.Error("admin export users", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	c.Header("Content-Type", "text/csv")
+	c.Header("Content-Disposition", "attachment; filename=users_export.csv")
+
+	// Write CSV header
+	fmt.Fprint(c.Writer, "ID,Email,First Name,Last Name,Plan,Active,Conversations,Credits,Health Score,Last Login,Created At\n")
+
+	for rows.Next() {
+		var id, email, firstName, lastName, planID string
+		var isActive bool
+		var conversations, credits, healthScore int
+		var lastLoginAt, createdAt string
+		if err := rows.Scan(&id, &email, &firstName, &lastName, &planID, &isActive, &conversations, &credits, &healthScore, &lastLoginAt, &createdAt); err != nil {
+			continue
+		}
+		activeStr := "No"
+		if isActive {
+			activeStr = "Yes"
+		}
+		fmt.Fprintf(c.Writer, "%s,%s,%s,%s,%s,%s,%d,%d,%d,%s,%s\n",
+			id, email, firstName, lastName, planID, activeStr, conversations, credits, healthScore, lastLoginAt, createdAt)
+	}
+}
+
+// ExportResource returns CSV data for any supported resource
+func (h *AdminHandler) ExportResource(c *gin.Context) {
+	ctx := c.Request.Context()
+	resource := c.Param("resource")
+
+	switch resource {
+	case "users":
+		h.exportUsersCSV(c, ctx)
+	default:
+		utils.RespondValidationError(c, "unsupported resource")
+	}
+}
+
+func (h *AdminHandler) exportUsersCSV(c *gin.Context, ctx context.Context) {
+	search := c.Query("search")
+	plan := c.Query("plan")
+
+	query := `SELECT id, email, first_name, last_name, plan_id, is_active, total_conversations, credits_remaining, health_score, last_login_at, created_at FROM users WHERE 1=1`
+	args := []interface{}{}
+
+	if search != "" {
+		query += ` AND (email LIKE ? OR first_name LIKE ? OR last_name LIKE ?)`
+		s := "%" + search + "%"
+		args = append(args, s, s, s)
+	}
+	if plan != "" && plan != "all" {
+		query += ` AND plan_id = ?`
+		args = append(args, plan)
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := h.repos.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		h.logger.Error("admin export resource users", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	c.Header("Content-Type", "text/csv")
+	c.Header("Content-Disposition", "attachment; filename=users_export.csv")
+
+	fmt.Fprint(c.Writer, "ID,Email,First Name,Last Name,Plan,Active,Conversations,Credits,Health Score,Last Login,Created At\n")
+
+	for rows.Next() {
+		var id, email, firstName, lastName, planID string
+		var isActive bool
+		var conversations, credits, healthScore int
+		var lastLoginAt, createdAt string
+		if err := rows.Scan(&id, &email, &firstName, &lastName, &planID, &isActive, &conversations, &credits, &healthScore, &lastLoginAt, &createdAt); err != nil {
+			continue
+		}
+		activeStr := "No"
+		if isActive {
+			activeStr = "Yes"
+		}
+		fmt.Fprintf(c.Writer, "%s,%s,%s,%s,%s,%s,%d,%d,%d,%s,%s\n",
+			id, email, firstName, lastName, planID, activeStr, conversations, credits, healthScore, lastLoginAt, createdAt)
+	}
+}
+
+// GetSlackConfig returns the current Slack webhook URL (masked)
+func (h *AdminHandler) GetSlackConfig(c *gin.Context) {
+	url := h.slackWebhookURL
+	masked := ""
+	if url != "" {
+		parts := strings.Split(url, "/services/")
+		if len(parts) == 2 {
+			masked = parts[0] + "/services/****"
+		} else {
+			masked = "****"
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"slack_webhook_url": masked, "configured": url != ""})
+}
+
+// SaveSlackConfig saves the Slack webhook URL
+func (h *AdminHandler) SaveSlackConfig(c *gin.Context) {
+	var req struct {
+		SlackWebhookURL string `json:"slack_webhook_url" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Webhook URL required")
+		return
+	}
+
+	h.slackWebhookURL = req.SlackWebhookURL
+	h.logAudit(c, "slack.config_saved", "admin", "slack", gin.H{"url_masked": "****"})
+
+	c.JSON(http.StatusOK, gin.H{"message": "Slack webhook configured"})
+}
+
+// logAudit records an audit log entry for admin actions
+func (h *AdminHandler) logAudit(c *gin.Context, action, resourceType, resourceID string, details interface{}) {
+	ctx := c.Request.Context()
+	userID, _ := c.Get("userID")
+	uid := ""
+	if userID != nil {
+		uid = userID.(string)
+	}
+
+	ip := c.ClientIP()
+	ua := c.Request.UserAgent()
+
+	var detailsMap map[string]interface{}
+	if details != nil {
+		b, _ := json.Marshal(details)
+		_ = json.Unmarshal(b, &detailsMap)
+	}
+
+	log := &domain.AuditLog{
+		ID:           uuid.New().String(),
+		UserID:       uid,
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   &resourceID,
+		Details:      detailsMap,
+		IPAddress:    &ip,
+		UserAgent:    &ua,
+		CreatedAt:    time.Now(),
+	}
+
+	go func() {
+		c, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		_ = h.repos.Audit.Create(c, log)
+	}()
+}
+
+// broadcastSlack sends an alert to Slack if configured
+func (h *AdminHandler) broadcastSlack(ctx context.Context, text string) {
+	if h.slackWebhookURL == "" {
+		return
+	}
+	payload := gin.H{"text": text}
+	jsonData, _ := json.Marshal(payload)
+	req, _ := http.NewRequestWithContext(ctx, "POST", h.slackWebhookURL, bytes.NewReader(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		h.logger.Error("slack broadcast failed", "error", err)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		h.logger.Warn("slack broadcast returned non-200", "status", resp.StatusCode)
+	}
 }

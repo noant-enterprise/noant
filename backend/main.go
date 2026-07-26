@@ -603,6 +603,20 @@ func main() {
 	adminRoutes.PUT("/sales-leads/:id", handlers.Admin.UpdateSalesLead)
 	adminRoutes.GET("/pipeline-stats", handlers.Admin.SalesPipelineStats)
 
+	// User management actions
+	adminRoutes.PUT("/users/:id/suspend", handlers.Admin.SuspendUser)
+	adminRoutes.PUT("/users/:id/plan", handlers.Admin.UpgradeUserPlan)
+	adminRoutes.POST("/users/:id/resend-verify", handlers.Admin.ResendVerification)
+	adminRoutes.POST("/users/:id/notify", handlers.Admin.SendUserNotification)
+
+	// CSV Export endpoints
+	adminRoutes.GET("/export/users", handlers.Admin.ExportUsers)
+	adminRoutes.GET("/export/:resource", handlers.Admin.ExportResource)
+
+	// Slack webhook config
+	adminRoutes.GET("/slack/config", handlers.Admin.GetSlackConfig)
+	adminRoutes.PUT("/slack/config", handlers.Admin.SaveSlackConfig)
+
 	// Admin WebSocket for real-time events
 	adminRoutes.GET("/ws", func(c *gin.Context) {
 		wsHub.HandleAdminWebSocket(c)

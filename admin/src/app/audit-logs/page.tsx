@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
 import type { AuditLogEntry } from '@/types'
 import { useAutoRefresh } from '@/lib/hooks/useAutoRefresh'
-import { Search, Filter, ChevronDown, ClipboardList } from 'lucide-react'
+import { Search, Filter, ChevronDown, ClipboardList, Download } from 'lucide-react'
 import { timeAgo } from '@/lib/utils'
 import { SkeletonTableRows } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
@@ -52,9 +52,18 @@ export default function AuditLogsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Audit Logs</h1>
-        <p className="text-sm text-text-tertiary">{total} total entries — who did what, when</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Audit Logs</h1>
+          <p className="text-sm text-text-tertiary">{total} total entries — who did what, when</p>
+        </div>
+        <button
+          onClick={() => adminApi.exportCSV('users')}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-sky/10 px-3 py-1.5 text-xs font-medium text-brand-sky hover:bg-brand-sky/20"
+        >
+          <Download className="h-3 w-3" />
+          Export CSV
+        </button>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row">

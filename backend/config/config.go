@@ -112,6 +112,9 @@ type Config struct {
 
 	// Sentry
 	SentryDSN string
+
+	// Slack
+	SlackWebhookURL string
 }
 
 func Load() *Config {
@@ -262,6 +265,8 @@ func Load() *Config {
 
 		// Sentry
 		SentryDSN: getEnv("SENTRY_DSN", ""),
+
+		SlackWebhookURL: getEnv("SLACK_WEBHOOK_URL", ""),
 	}
 
 	cfg.CORSOrigins = parseCSVEnv("CORS_ORIGINS", cfg.APIURL)

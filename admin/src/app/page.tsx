@@ -6,11 +6,12 @@ import { useRevenue } from '@/lib/hooks/useRevenue'
 import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
 import { useAdminWS } from '@/lib/hooks/useAdminWS'
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils'
-import { Users, DollarSign, MessageSquare, Activity, Filter } from 'lucide-react'
+import { Users, DollarSign, MessageSquare, Activity, Filter, Loader2, Download } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { SkeletonCard, SkeletonStatGrid } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
 import { useEffect, useCallback } from 'react'
+import { adminApi } from '@/lib/api'
 
 export default function DashboardPage() {
   const { data: analytics, loading: analyticsLoading, error: analyticsError, refetch: refetchAnalytics } = useAnalytics()
@@ -35,7 +36,10 @@ export default function DashboardPage() {
     return () => clearInterval(interval)
   }, [refreshAll])
 
-  const isLoading = analyticsLoading || revenueLoading || systemLoading
+  const isInitialLoad = analyticsLoading || revenueLoading || systemLoading
+  const isRefreshing = (analyticsLoading && analytics.visitors_today !== undefined) ||
+                       (revenueLoading && revenue.mrr !== undefined) ||
+                       (systemLoading && system.api !== undefined)
   const anyError = analyticsError || revenueError || systemError
   const hasErrors = !!(analyticsError || revenueError || systemError)
 
@@ -56,7 +60,7 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-text-primary">Dashboard</h1>
           <p className="text-sm text-text-tertiary">Everything happening in NOANT right now</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span className={`flex items-center gap-1.5 text-xs ${
             system.system_status === 'healthy' ? 'text-success' :
             system.system_status === 'degraded' ? 'text-warning' :
@@ -71,10 +75,21 @@ export default function DashboardPage() {
              system.system_status === 'degraded' ? 'System degraded' :
              system.system_status === 'not_configured' ? 'Redis not configured' : 'System down'}
           </span>
+          {isRefreshing && <Loader2 className="h-4 w-4 animate-spin text-brand-sky" />}
         </div>
       </div>
 
       <AlertBanner />
+
+      <div className="flex items-center justify-end gap-2">
+        <button
+          onClick={() => adminApi.exportCSV('users')}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-sky/10 px-3 py-1.5 text-xs font-medium text-brand-sky hover:bg-brand-sky/20"
+        >
+          <Download className="h-3 w-3" />
+          Export Users CSV
+        </button>
+      </div>
 
       {anyError && (
         <ErrorBanner
@@ -83,7 +98,7 @@ export default function DashboardPage() {
         />
       )}
 
-      {isLoading ? (
+      {isInitialLoad ? (
         <SkeletonStatGrid count={4} />
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

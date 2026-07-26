@@ -4,7 +4,7 @@ import type { SalesLead } from '@/types'
 import { timeAgo } from '@/lib/utils'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
-import { Plus, X, ClipboardList, ChevronDown, QrCode, Link2, Copy, Check } from 'lucide-react'
+import { Plus, X, ClipboardList, ChevronDown, QrCode, Link2, Copy, Check, Download } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useAdminWS } from '@/lib/hooks/useAdminWS'
 
@@ -237,7 +237,14 @@ export default function PipelinePage() {
           <h1 className="text-2xl font-bold text-text-primary">Sales Pipeline</h1>
           <p className="text-sm text-text-tertiary">{totalLeads} total leads</p>
         </div>
-        <div className={`ml-auto flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${connected ? 'bg-success/10 text-success' : 'bg-amber-500/10 text-amber-600'}`}>
+        <button
+          onClick={() => adminApi.exportCSV('users')}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-brand-sky/10 px-3 py-1.5 text-xs font-medium text-brand-sky hover:bg-brand-sky/20"
+        >
+          <Download className="h-3 w-3" />
+          Export CSV
+        </button>
+        <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${connected ? 'bg-success/10 text-success' : 'bg-amber-500/10 text-amber-600'}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-success animate-pulse' : 'bg-amber-500'}`} />
           {connected ? 'Live' : 'Syncing...'}
         </div>

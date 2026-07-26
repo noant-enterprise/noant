@@ -56,6 +56,49 @@ class AdminAPI {
     return this.request<UserDetail>('GET', `/api/v1/admin/users/${id}`)
   }
 
+  suspendUser(id: string, suspended: boolean) {
+    return this.request<{ message: string }>('PUT', `/api/v1/admin/users/${id}/suspend`, { suspended })
+  }
+
+  activateUser(id: string) {
+    return this.suspendUser(id, false)
+  }
+
+  upgradeUserPlan(id: string, planID: string) {
+    return this.request<{ message: string }>('PUT', `/api/v1/admin/users/${id}/plan`, { plan_id: planID })
+  }
+
+  resendVerification(id: string) {
+    return this.request<{ message: string; dev_code?: string }>('POST', `/api/v1/admin/users/${id}/resend-verify`)
+  }
+
+  sendUserNotification(id: string, title: string, message: string, type?: string) {
+    return this.request<{ message: string }>('POST', `/api/v1/admin/users/${id}/notify`, { title, message, type })
+  }
+
+  exportCSV(resource: string, params?: Record<string, string>) {
+    const query = new URLSearchParams()
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        query.set(key, value)
+      }
+    }
+    const qs = query.toString()
+    const url = `${API_BASE}/api/v1/admin/export/${resource}${qs ? '?' + qs : ''}`
+    const a = document.createElement('a')
+    a.href = url
+    a.download = ''
+    a.click()
+  }
+
+  getSlackConfig() {
+    return this.request<{ slack_webhook_url: string }>('GET', '/api/v1/admin/slack/config')
+  }
+
+  saveSlackConfig(webhookUrl: string) {
+    return this.request<{ message: string }>('PUT', '/api/v1/admin/slack/config', { slack_webhook_url: webhookUrl })
+  }
+
   getAnalytics() {
     return this.request<AnalyticsResponse>('GET', '/api/v1/admin/analytics')
   }
