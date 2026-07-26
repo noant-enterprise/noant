@@ -20,7 +20,13 @@ export function useAnalytics() {
 
   useEffect(() => {
     adminApi.getAnalytics()
-      .then(res => setData(res))
+      .then(res => setData({
+        ...res,
+        page_views: res.page_views ?? [],
+        traffic_sources: res.traffic_sources ?? [],
+        visitor_history: res.visitor_history ?? [],
+        funnel: res.funnel ?? [],
+      }))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])

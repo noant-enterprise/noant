@@ -16,7 +16,12 @@ export function useAIHealth() {
 
   useEffect(() => {
     adminApi.getAIHealth()
-      .then(res => setData(res))
+      .then(res => setData({
+        ...res,
+        unanswered_questions: res.unanswered_questions ?? [],
+        accuracy_history: res.accuracy_history ?? [],
+        sentiment_breakdown: res.sentiment_breakdown ?? { positive: 0, neutral: 0, negative: 0 },
+      }))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])

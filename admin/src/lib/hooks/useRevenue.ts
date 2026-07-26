@@ -18,7 +18,12 @@ export function useRevenue() {
 
   useEffect(() => {
     adminApi.getRevenue()
-      .then(res => setData(res))
+      .then(res => setData({
+        ...res,
+        mrr_history: res.mrr_history ?? [],
+        plan_breakdown: res.plan_breakdown ?? [],
+        failed_payments: res.failed_payments ?? [],
+      }))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])

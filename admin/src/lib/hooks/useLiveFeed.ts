@@ -9,12 +9,12 @@ export function useLiveFeed() {
 
   useEffect(() => {
     Promise.all([
-      adminApi.getActivity().catch(() => ({ events: [] })),
-      adminApi.getAlerts().catch(() => ({ alerts: [] })),
+      adminApi.getActivity().catch(() => ({ events: [] as LiveFeedEvent[] })),
+      adminApi.getAlerts().catch(() => ({ alerts: [] as { id: string; type: string; title: string; description: string; severity: string; created_at: string }[] })),
     ]).then(([activityRes, alertsRes]) => {
-      setEvents(activityRes.events || [])
+      setEvents(activityRes.events ?? [])
       setAlerts(
-        (alertsRes.alerts || []).map(a => ({
+        (alertsRes.alerts ?? []).map(a => ({
           id: a.id,
           type: a.severity as Alert['type'],
           title: a.title,
