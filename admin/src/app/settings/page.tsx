@@ -1,10 +1,13 @@
 import { useAuth } from '@/lib/hooks/useAuth'
+import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import { Shield, Key, Users } from 'lucide-react'
 import { useState } from 'react'
+import { formatVersion } from '@/lib/utils'
 
 export default function SettingsPage() {
   const { user } = useAuth()
+  const { data: system, loading: systemLoading } = useSystemHealth()
   const [activeTab, setActiveTab] = useState<'profile' | 'team' | 'api-keys'>('profile')
 
   if (!user) {
@@ -112,7 +115,10 @@ export default function SettingsPage() {
         <div className="flex items-center justify-between rounded-lg border border-border bg-bg-inset p-4">
           <div>
             <p className="text-sm font-medium text-text-primary">Platform Status</p>
-            <p className="text-xs text-text-tertiary">All systems operational. Version 2.0.0.</p>
+            <p className="text-xs text-text-tertiary">
+              {systemLoading ? 'Checking...' : system.api.status === 'healthy' ? 'All systems operational' : 'Some issues detected'}
+              {systemLoading ? '' : ` • Version ${formatVersion()}`}
+            </p>
           </div>
         </div>
       </div>

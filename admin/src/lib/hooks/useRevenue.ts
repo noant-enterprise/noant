@@ -10,6 +10,8 @@ export function useRevenue() {
     paying_users: 0,
     churn_rate: 0,
     ltv: 0,
+    mrr_change: 0,
+    paying_users_change: 0,
     mrr_history: [],
     plan_breakdown: [],
     failed_payments: [],

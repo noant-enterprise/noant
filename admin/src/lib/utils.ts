@@ -33,3 +33,8 @@ export function timeAgo(date: string): string {
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
   return `${Math.floor(seconds / 86400)}d ago`
 }
+
+export function formatVersion(): string {
+  // In production, this would come from build-time injection (e.g., Vite define)
+  return import.meta.env.VITE_APP_VERSION || '2.0.0'
+}

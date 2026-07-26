@@ -57,9 +57,9 @@ export default function DashboardPage() {
           <p className="text-sm text-text-tertiary">Everything happening in NOANT right now</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1.5 text-xs text-success">
-            <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-            All systems operational
+          <span className={`flex items-center gap-1.5 text-xs ${system.system_status === 'healthy' ? 'text-success' : system.system_status === 'degraded' ? 'text-warning' : 'text-danger'}`}>
+            <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{backgroundColor: system.system_status === 'healthy' ? '#22c55e' : system.system_status === 'degraded' ? '#f59e0b' : '#ef4444'}} />
+            {system.system_status === 'healthy' ? 'All systems operational' : system.system_status === 'degraded' ? 'System degraded' : 'System down'}
           </span>
         </div>
       </div>
@@ -77,10 +77,10 @@ export default function DashboardPage() {
         <SkeletonStatGrid count={4} />
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard label="MRR" value={formatCurrency(revenue.mrr)} change={12} changeLabel="vs last month" icon={<DollarSign className="h-4 w-4" />} />
-          <StatCard label="Paying Users" value={revenue.paying_users} change={12} changeLabel="vs last month" icon={<Users className="h-4 w-4" />} />
+          <StatCard label="MRR" value={formatCurrency(revenue.mrr)} change={revenue.mrr_change ?? 0} changeLabel="vs last month" icon={<DollarSign className="h-4 w-4" />} />
+          <StatCard label="Paying Users" value={revenue.paying_users} change={revenue.paying_users_change ?? 0} changeLabel="vs last month" icon={<Users className="h-4 w-4" />} />
           <StatCard label="Visitors Today" value={formatNumber(analytics.visitors_today)} change={visitorGrowth} changeLabel="vs yesterday" icon={<Activity className="h-4 w-4" />} />
-          <StatCard label="AI Accuracy" value={`${system.api.status === 'healthy' ? '94.2' : '—'}%`} change={2.1} changeLabel="vs last week" icon={<MessageSquare className="h-4 w-4" />} />
+          <StatCard label="AI Accuracy" value={`${system.ai_accuracy ?? 0}%`} change={system.ai_accuracy ? 0 : 0} changeLabel="vs last week" icon={<MessageSquare className="h-4 w-4" />} />
         </div>
       )}
 

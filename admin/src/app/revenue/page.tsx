@@ -77,7 +77,7 @@ export default function RevenuePage() {
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard label="MRR" value={formatCurrency(data.mrr)} change={12} changeLabel="vs last month" icon={<DollarSign className="h-4 w-4" />} />
+            <StatCard label="MRR" value={formatCurrency(data.mrr)} change={data.mrr_change ?? 0} changeLabel="vs last month" icon={<DollarSign className="h-4 w-4" />} />
             <StatCard label="Paying Users" value={data.paying_users} icon={<Users className="h-4 w-4" />} />
             <StatCard label="Churn Rate" value={`${data.churn_rate}%`} icon={<TrendingDown className="h-4 w-4" />} />
             <StatCard label="Avg LTV" value={formatCurrency(data.ltv)} icon={<Wallet className="h-4 w-4" />} />

@@ -14,6 +14,7 @@ import (
 
 type Repositories struct {
 	DB                  *sql.DB
+	Redis               *infrastructure.RedisClient
 	Org                 IOrgRepo
 	User                IUserRepo
 	Conversation        IConversationRepo
@@ -42,6 +43,7 @@ type Repositories struct {
 func NewRepositories(db *sql.DB, redis *infrastructure.RedisClient) *Repositories {
 	return &Repositories{
 		DB:                  db,
+		Redis:               redis,
 		Org:                 NewOrgRepository(db, redis),
 		User:                NewUserRepository(db, redis),
 		Conversation:        NewConversationRepository(db, redis),

@@ -4,16 +4,18 @@ import type { SystemHealthResponse, SystemHealth, ServiceStatus } from '@/types'
 
 export function useSystemHealth() {
   const [data, setData] = useState<SystemHealth>({
-    api: { name: 'API Server', status: 'healthy', latency_ms: 0, last_check: new Date().toISOString(), uptime: 100 },
-    database: { name: 'TiDB', status: 'healthy', latency_ms: 0, last_check: new Date().toISOString(), uptime: 100 },
-    redis: { name: 'Redis', status: 'healthy', latency_ms: 0, last_check: new Date().toISOString(), uptime: 100 },
-    whatsapp: { name: 'WhatsApp (OpenWA)', status: 'healthy', latency_ms: 0, last_check: new Date().toISOString(), uptime: 100 },
+    api: { name: 'API Server', status: 'healthy', latency_ms: 0, last_check: new Date().toISOString() },
+    database: { name: 'TiDB', status: 'healthy', latency_ms: 0, last_check: new Date().toISOString() },
+    redis: { name: 'Redis', status: 'healthy', latency_ms: 0, last_check: new Date().toISOString() },
+    whatsapp: { name: 'WhatsApp (OpenWA)', status: 'healthy', latency_ms: 0, last_check: new Date().toISOString() },
     error_rate: 0,
     p50_latency: 0,
     p95_latency: 0,
     p99_latency: 0,
     active_websockets: 0,
     job_queue_depth: 0,
+    ai_accuracy: 0,
+    system_status: 'healthy',
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -28,7 +30,6 @@ export function useSystemHealth() {
           status: (s?.status || 'healthy') as ServiceStatus['status'],
           latency_ms: s?.latency_ms || 0,
           last_check: new Date().toISOString(),
-          uptime: s?.status === 'down' ? 0 : 99.99,
         })
 
         const svcMap: Record<string, { name: string; key: keyof Pick<SystemHealth, 'api' | 'database' | 'redis' | 'whatsapp'> }> = {
@@ -43,6 +44,7 @@ export function useSystemHealth() {
           p50_latency: res.p50_latency,
           p95_latency: res.p95_latency,
           p99_latency: res.p99_latency,
+          ai_accuracy: res.ai_accuracy,
         }
 
         for (const svc of res.services) {

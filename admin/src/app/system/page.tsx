@@ -73,7 +73,6 @@ export default function SystemPage() {
               <p className="mt-3 text-sm font-medium text-text-primary">{s.name}</p>
               <div className="mt-2 space-y-1 text-xs text-text-tertiary">
                 <p>Latency: <span className="text-text-secondary">{s.latency_ms}ms</span></p>
-                <p>Uptime: <span className="text-text-secondary">{s.uptime}%</span></p>
               </div>
             </div>
           )

@@ -145,6 +145,8 @@ export interface SystemHealth {
   p99_latency: number;
   active_websockets: number;
   job_queue_depth: number;
+  ai_accuracy: number;
+  system_status: 'healthy' | 'degraded' | 'down';
 }
 
 export interface ServiceStatus {
@@ -152,7 +154,6 @@ export interface ServiceStatus {
   status: 'healthy' | 'degraded' | 'down';
   latency_ms: number;
   last_check: string;
-  uptime: number;
 }
 
 export interface Alert {
@@ -237,6 +238,8 @@ export interface RevenueResponse {
   paying_users: number;
   churn_rate: number;
   ltv: number;
+  mrr_change: number;
+  paying_users_change: number;
   mrr_history: { month: string; amount: number }[];
   plan_breakdown: PlanRevenue[];
   failed_payments: FailedPayment[];
@@ -258,6 +261,7 @@ export interface SystemHealthResponse {
   p50_latency: number;
   p95_latency: number;
   p99_latency: number;
+  ai_accuracy: number;
 }
 
 export interface AlertsResponse {
