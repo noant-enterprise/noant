@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
 import type { SystemHealthResponse, SystemHealth, ServiceStatus } from '@/types'
 
@@ -16,8 +16,11 @@ export function useSystemHealth() {
     job_queue_depth: 0,
   })
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
+    setLoading(true)
+    setError(null)
     adminApi.getSystemHealth()
       .then((res: SystemHealthResponse) => {
         const mapService = (name: string, s?: { name: string; status: string; latency_ms: number }): ServiceStatus => ({
@@ -51,9 +54,11 @@ export function useSystemHealth() {
 
         setData(prev => ({ ...prev, ...updated }))
       })
-      .catch(() => {})
+      .catch(() => setError('Failed to load system health'))
       .finally(() => setLoading(false))
   }, [])
 
-  return { data, loading }
+  useEffect(() => { fetchData() }, [fetchData])
+
+  return { data, loading, error, refetch: fetchData }
 }

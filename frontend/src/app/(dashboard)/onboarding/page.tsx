@@ -46,6 +46,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false)
   const [industries, setIndustries] = useState<IndustryTemplate[]>([])
   const [completed, setCompleted] = useState<Set<string>>(new Set())
+  const [industryError, setIndustryError] = useState(false)
 
   useEffect(() => {
     api.get<{
@@ -64,8 +65,8 @@ export default function OnboardingPage() {
     }).catch(() => {})
 
     api.get<{ industries: IndustryTemplate[] }>('/onboarding/industry-templates')
-      .then(res => setIndustries(res.industries))
-      .catch(() => {})
+      .then(res => { setIndustries(res.industries); setIndustryError(false) })
+      .catch(() => setIndustryError(true))
   }, [])
 
   const completeStep = async (step: Step, extra?: Record<string, unknown>) => {
@@ -131,6 +132,7 @@ export default function OnboardingPage() {
         <ProfileStep
           user={user}
           industries={industries}
+          industryError={industryError}
           onComplete={async (industry) => {
             const ok = await completeStep('profile', { industry })
             if (ok) advanceTo('training')
@@ -172,10 +174,11 @@ export default function OnboardingPage() {
 
 // ===== Step 1: Profile =====
 function ProfileStep({
-  user, industries, onComplete,
+  user, industries, industryError, onComplete,
 }: {
   user: any
   industries: IndustryTemplate[]
+  industryError: boolean
   onComplete: (industry: string) => void
 }) {
   const [selectedIndustry, setSelectedIndustry] = useState(user?.industry || '')
@@ -217,6 +220,11 @@ function ProfileStep({
       {/* Industry Picker */}
       <div>
         <label className="text-sm font-medium mb-3 block">What industry are you in?</label>
+        {industryError && (
+          <div className="flex items-center gap-2 text-red-500 text-sm mb-3">
+            <AlertTriangle size={16} /> Failed to load templates
+          </div>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {industries.map(ind => {
             const Icon = industryIcons[ind.icon] || Building2
@@ -262,16 +270,18 @@ function TrainingStep({
 }) {
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState(false)
+  const [autoCreateError, setAutoCreateError] = useState(false)
   const template = industries.find(i => i.id === userIndustry)
 
   const handleAutoCreate = async () => {
     if (!userIndustry) return
     setCreating(true)
+    setAutoCreateError(false)
     try {
       await api.post('/onboarding/categories/auto-create', { industry_id: userIndustry })
       setCreated(true)
     } catch {
-      // ignore
+      setAutoCreateError(true)
     } finally {
       setCreating(false)
     }
@@ -311,6 +321,13 @@ function TrainingStep({
               )}
             </div>
           )}
+          <div className="flex gap-3">
+            {autoCreateError && (
+              <div className="flex-1 flex items-center gap-2 text-red-500 text-sm">
+                <AlertTriangle size={16} /> Failed to generate categories
+              </div>
+            )}
+          </div>
           <div className="flex gap-3">
             <button
               onClick={handleAutoCreate}

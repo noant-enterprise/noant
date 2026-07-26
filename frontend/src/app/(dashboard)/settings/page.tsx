@@ -226,11 +226,13 @@ function NotificationsTab() {
     notif_team_invite: true,
   })
   const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     api.get<typeof prefs>('/settings/notifications').then(res => {
       if (res) setPrefs(prev => ({ ...prev, ...res }))
-    }).catch(() => {})
+      setLoadError(false)
+    }).catch(() => setLoadError(true))
   }, [])
 
   const handleSave = async () => {
@@ -283,6 +285,12 @@ function NotificationsTab() {
               Notifications blocked. Enable them in your browser settings.
             </div>
           )}
+        </div>
+      )}
+
+      {loadError && (
+        <div className="flex items-center gap-2 text-red-500 text-sm px-1">
+          <BellOff className="w-4 h-4 shrink-0" /> Failed to load preferences
         </div>
       )}
 

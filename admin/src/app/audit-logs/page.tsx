@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
 import type { AuditLogEntry } from '@/types'
-import { Search, Filter, ChevronDown } from 'lucide-react'
+import { Search, Filter, ChevronDown, ClipboardList } from 'lucide-react'
 import { timeAgo } from '@/lib/utils'
+import { SkeletonTableRows } from '@/components/ui/Skeleton'
+import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
 
 const ACTION_COLORS: Record<string, string> = {
   'user.login': 'text-success',
@@ -24,22 +26,26 @@ export default function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [actionFilter, setActionFilter] = useState('')
 
-  useEffect(() => {
+  const fetchLogs = useCallback(() => {
     setLoading(true)
-    const timer = setTimeout(() => {
-      adminApi.getAuditLogs({ search: search || undefined, action: actionFilter || undefined, limit: 100 })
-        .then(res => {
-          setLogs(res.logs ?? [])
-          setTotal(res.total)
-        })
-        .catch(() => { setLogs([]); setTotal(0) })
-        .finally(() => setLoading(false))
-    }, 300)
-    return () => clearTimeout(timer)
+    setError(null)
+    adminApi.getAuditLogs({ search: search || undefined, action: actionFilter || undefined, limit: 100 })
+      .then(res => {
+        setLogs(res.logs ?? [])
+        setTotal(res.total)
+      })
+      .catch(() => { setError('Failed to load audit logs'); setLogs([]); setTotal(0) })
+      .finally(() => setLoading(false))
   }, [search, actionFilter])
+
+  useEffect(() => {
+    const timer = setTimeout(fetchLogs, 300)
+    return () => clearTimeout(timer)
+  }, [fetchLogs])
 
   return (
     <div className="space-y-6">
@@ -48,7 +54,7 @@ export default function AuditLogsPage() {
         <p className="text-sm text-text-tertiary">{total} total entries — who did what, when</p>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
           <input
@@ -77,13 +83,26 @@ export default function AuditLogsPage() {
         </div>
       </div>
 
+      {error && <ErrorBanner message={error} onRetry={fetchLogs} />}
+
       <div className="rounded-xl border border-border bg-bg-surface">
         {loading ? (
-          <div className="p-8 text-center text-sm text-text-tertiary">Loading...</div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <tbody>
+                <SkeletonTableRows rows={8} cols={4} />
+              </tbody>
+            </table>
+          </div>
         ) : logs.length === 0 ? (
-          <div className="p-8 text-center text-sm text-text-tertiary">No audit logs found</div>
+          <EmptyState
+            icon={ClipboardList}
+            title="No audit logs found"
+            description={search || actionFilter ? 'Try adjusting your filters' : 'Audit logs will appear here as actions are performed'}
+          />
         ) : (
-          <div className="divide-y divide-border">
+          <div className="overflow-x-auto">
+            <div className="divide-y divide-border">
             {logs.map(log => (
               <div key={log.id} className="flex items-start gap-4 p-4">
                 <div className="min-w-0 flex-1">
@@ -110,6 +129,7 @@ export default function AuditLogsPage() {
                 </div>
               </div>
             ))}
+            </div>
           </div>
         )}
       </div>

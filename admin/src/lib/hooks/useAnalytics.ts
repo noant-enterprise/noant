@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
 import type { AnalyticsResponse } from '@/types'
 
@@ -17,8 +17,11 @@ export function useAnalytics() {
     funnel: [],
   })
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
+    setLoading(true)
+    setError(null)
     adminApi.getAnalytics()
       .then(res => setData({
         ...res,
@@ -27,9 +30,11 @@ export function useAnalytics() {
         visitor_history: res.visitor_history ?? [],
         funnel: res.funnel ?? [],
       }))
-      .catch(() => {})
+      .catch(() => setError('Failed to load analytics'))
       .finally(() => setLoading(false))
   }, [])
 
-  return { data, loading }
+  useEffect(() => { fetchData() }, [fetchData])
+
+  return { data, loading, error, refetch: fetchData }
 }

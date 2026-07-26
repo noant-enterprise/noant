@@ -64,7 +64,7 @@ describe('ChatList', () => {
 
   it('shows empty state when no conversations', () => {
     render(<ChatList conversations={[]} />)
-    expect(screen.getByText('No conversations found')).toBeInTheDocument()
+    expect(screen.getByText('No conversations yet')).toBeInTheDocument()
   })
 
   it('shows unread badge for conversations with unread messages', () => {
@@ -115,7 +115,7 @@ describe('ChatList', () => {
     render(<ChatList {...defaultProps} />)
 
     await user.type(screen.getByPlaceholderText('Search conversations...'), 'zzzznotfound')
-    expect(screen.getByText('No conversations found')).toBeInTheDocument()
+    expect(screen.getByText('No results')).toBeInTheDocument()
   })
 
   it('shows "No messages yet" for conversations without last_message', () => {

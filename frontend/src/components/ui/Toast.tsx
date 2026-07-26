@@ -81,7 +81,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: () => void }) 
   return (
     <div
       className={cn(
-        'flex items-center gap-3 min-w-[320px] max-w-md',
+        'relative flex items-center gap-3 min-w-[320px] max-w-md',
         'bg-surface border rounded-lg shadow-lg p-4',
         'animate-slide-up',
         borders[toast.type]

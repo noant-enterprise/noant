@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
 import type { RevenueResponse } from '@/types'
 
@@ -15,8 +15,11 @@ export function useRevenue() {
     failed_payments: [],
   })
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
+    setLoading(true)
+    setError(null)
     adminApi.getRevenue()
       .then(res => setData({
         ...res,
@@ -24,9 +27,11 @@ export function useRevenue() {
         plan_breakdown: res.plan_breakdown ?? [],
         failed_payments: res.failed_payments ?? [],
       }))
-      .catch(() => {})
+      .catch(() => setError('Failed to load revenue data'))
       .finally(() => setLoading(false))
   }, [])
 
-  return { data, loading }
+  useEffect(() => { fetchData() }, [fetchData])
+
+  return { data, loading, error, refetch: fetchData }
 }

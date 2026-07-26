@@ -1,13 +1,48 @@
 import { useAIHealth } from '@/lib/hooks/useAIHealth'
 import { StatCard } from '@/components/data/StatCard'
+import { SkeletonCard, SkeletonTableRows } from '@/components/ui/Skeleton'
+import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
 import { formatNumber } from '@/lib/utils'
-import { Brain, TrendingUp, MessageSquare, AlertTriangle } from 'lucide-react'
+import { Brain, TrendingUp, MessageSquare, AlertTriangle, HelpCircle } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 const SENTIMENT_COLORS = { positive: '#22c55e', neutral: '#666', negative: '#ef4444' }
 
 export default function AIHealthPage() {
-  const { data } = useAIHealth()
+  const { data, loading, error, refetch } = useAIHealth()
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">AI Health</h1>
+          <p className="text-sm text-text-tertiary">AI accuracy, performance, and knowledge gaps</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="col-span-2 rounded-xl border border-border bg-bg-surface p-5 h-[300px] animate-pulse" />
+          <div className="rounded-xl border border-border bg-bg-surface p-5 h-[300px] animate-pulse" />
+        </div>
+        <div className="rounded-xl border border-border bg-bg-surface p-5">
+          <SkeletonTableRows rows={5} cols={3} />
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">AI Health</h1>
+          <p className="text-sm text-text-tertiary">AI accuracy, performance, and knowledge gaps</p>
+        </div>
+        <ErrorBanner message={error} onRetry={refetch} />
+      </div>
+    )
+  }
 
   const sentimentData = [
     { name: 'Positive', value: data.sentiment_breakdown.positive, color: SENTIMENT_COLORS.positive },
@@ -22,7 +57,7 @@ export default function AIHealthPage() {
         <p className="text-sm text-text-tertiary">AI accuracy, performance, and knowledge gaps</p>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Accuracy" value={`${data.accuracy}%`} change={data.accuracy_trend} changeLabel="vs last week" icon={<Brain className="h-4 w-4" />} />
         <StatCard label="Total Queries" value={formatNumber(data.total_queries)} icon={<MessageSquare className="h-4 w-4" />} />
         <StatCard label="Answered" value={formatNumber(data.answered_correctly)} icon={<TrendingUp className="h-4 w-4" />} />
@@ -76,24 +111,34 @@ export default function AIHealthPage() {
       <div className="rounded-xl border border-border bg-bg-surface p-5">
         <h3 className="mb-4 text-sm font-medium text-text-secondary">Top Unanswered Questions (Knowledge Gaps)</h3>
         <p className="mb-3 text-xs text-text-tertiary">These are questions customers ask that the AI cannot answer. Update your knowledge base to fix these.</p>
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">Question</th>
-              <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Count</th>
-              <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Last Seen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.unanswered_questions.map((q, i) => (
-              <tr key={i} className="border-b border-border-subtle">
-                <td className="px-3 py-2 text-sm text-text-primary">{q.question}</td>
-                <td className="px-3 py-2 text-right text-sm font-medium text-warning">{q.count}</td>
-                <td className="px-3 py-2 text-right text-xs text-text-tertiary">{new Date(q.last_seen).toLocaleDateString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {data.unanswered_questions.length === 0 ? (
+          <EmptyState
+            icon={HelpCircle}
+            title="No unanswered questions"
+            description="The AI is answering all questions successfully."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">Question</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Count</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Last Seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.unanswered_questions.map((q, i) => (
+                  <tr key={i} className="border-b border-border-subtle">
+                    <td className="px-3 py-2 text-sm text-text-primary">{q.question}</td>
+                    <td className="px-3 py-2 text-right text-sm font-medium text-warning">{q.count}</td>
+                    <td className="px-3 py-2 text-right text-xs text-text-tertiary">{new Date(q.last_seen).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

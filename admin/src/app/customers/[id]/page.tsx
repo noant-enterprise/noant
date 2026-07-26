@@ -1,7 +1,9 @@
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useUser } from '@/lib/hooks/useUsers'
 import { formatNumber } from '@/lib/utils'
-import { ArrowLeft, Mail, MessageSquare, CreditCard, Heart } from 'lucide-react'
+import { ArrowLeft, Mail, MessageSquare, CreditCard, Heart, UserX } from 'lucide-react'
+import { SkeletonCard } from '@/components/ui/Skeleton'
+import { EmptyState, ErrorBanner } from '@/components/ui/Feedback'
 
 const PLAN_COLORS: Record<string, string> = {
   free: 'bg-text-tertiary/10 text-text-tertiary',
@@ -11,10 +13,39 @@ const PLAN_COLORS: Record<string, string> = {
 
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { user, loading } = useUser(id || '')
+  const navigate = useNavigate()
+  const { user, loading, error } = useUser(id || '')
 
-  if (loading) return <div className="flex items-center justify-center py-20 text-text-tertiary">Loading...</div>
-  if (!user) return <div className="py-20 text-center text-text-tertiary">User not found</div>
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="h-5 w-32 rounded-md bg-bg-inset animate-pulse" />
+        <div className="flex items-start gap-6">
+          <div className="h-16 w-16 rounded-2xl bg-bg-inset animate-pulse" />
+          <div className="flex-1 space-y-2">
+            <div className="h-7 w-48 rounded-md bg-bg-inset animate-pulse" />
+            <div className="h-4 w-64 rounded-md bg-bg-inset animate-pulse" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      </div>
+    )
+  }
+
+  if (error) return <ErrorBanner message={error} onRetry={() => window.location.reload()} />
+
+  if (!user) {
+    return (
+      <EmptyState
+        icon={UserX}
+        title="User not found"
+        description="The customer you're looking for doesn't exist or has been removed."
+        action={{ label: 'Back to Customers', onClick: () => navigate('/customers') }}
+      />
+    )
+  }
 
   const healthColor = user.health_score >= 80 ? 'text-success' : user.health_score >= 50 ? 'text-warning' : 'text-danger'
   const healthBg = user.health_score >= 80 ? 'bg-success' : user.health_score >= 50 ? 'bg-warning' : 'bg-danger'
@@ -39,7 +70,7 @@ export default function CustomerDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="rounded-xl border border-border bg-bg-surface p-4">
           <div className="flex items-center gap-2 text-text-tertiary"><MessageSquare className="h-4 w-4" /><span className="text-xs">Conversations</span></div>
           <p className="mt-1 text-xl font-bold text-text-primary">{formatNumber(user.total_conversations)}</p>

@@ -1,10 +1,24 @@
 import { useAuth } from '@/lib/hooks/useAuth'
-import { Shield, Key, Users, Save } from 'lucide-react'
+import { SkeletonCard } from '@/components/ui/Skeleton'
+import { Shield, Key, Users } from 'lucide-react'
 import { useState } from 'react'
 
 export default function SettingsPage() {
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<'profile' | 'team' | 'api-keys'>('profile')
+
+  if (!user) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <SkeletonCard className="h-8 w-32" />
+          <SkeletonCard className="mt-2 h-4 w-64" />
+        </div>
+        <SkeletonCard className="h-10 w-72" />
+        <SkeletonCard className="h-48" />
+      </div>
+    )
+  }
 
   const tabs = [
     { id: 'profile' as const, label: 'Profile', icon: Shield },
@@ -39,7 +53,7 @@ export default function SettingsPage() {
       {activeTab === 'profile' && (
         <div className="rounded-xl border border-border bg-bg-surface p-6">
           <h3 className="mb-4 text-sm font-medium text-text-secondary">Admin Profile</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="mb-1 block text-xs text-text-tertiary">Email</label>
               <input
@@ -73,7 +87,8 @@ export default function SettingsPage() {
           </div>
           <div className="rounded-lg border border-border bg-bg-inset p-8 text-center">
             <Users className="mx-auto mb-2 h-8 w-8 text-text-tertiary" />
-            <p className="text-sm text-text-tertiary">Team management is available through the main app settings.</p>
+            <p className="text-sm font-medium text-text-secondary">No team members</p>
+            <p className="mt-1 text-xs text-text-tertiary">Team management is available through the main app settings.</p>
             <p className="mt-1 text-xs text-text-tertiary">Admin users are determined by the <code className="rounded bg-bg-surface px-1">role</code> field in the users table.</p>
           </div>
         </div>
@@ -93,13 +108,12 @@ export default function SettingsPage() {
       )}
 
       <div className="rounded-xl border border-border bg-bg-surface p-6">
-        <h3 className="mb-4 text-sm font-medium text-text-secondary">Danger Zone</h3>
-        <div className="flex items-center justify-between rounded-lg border border-danger/20 bg-danger/5 p-4">
+        <h3 className="mb-4 text-sm font-medium text-text-secondary">System Info</h3>
+        <div className="flex items-center justify-between rounded-lg border border-border bg-bg-inset p-4">
           <div>
-            <p className="text-sm font-medium text-danger">Platform Status</p>
+            <p className="text-sm font-medium text-text-primary">Platform Status</p>
             <p className="text-xs text-text-tertiary">All systems operational. Version 2.0.0.</p>
           </div>
-          <Save className="h-4 w-4 text-text-tertiary" />
         </div>
       </div>
     </div>

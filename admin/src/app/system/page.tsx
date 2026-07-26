@@ -1,5 +1,7 @@
 import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
 import { Activity, Database, Wifi, Server, Clock, Zap } from 'lucide-react'
+import { SkeletonCard } from '@/components/ui/Skeleton'
+import { ErrorBanner } from '@/components/ui/Feedback'
 
 const STATUS_STYLE = {
   healthy: { dot: 'bg-success', text: 'text-success', label: 'Healthy' },
@@ -15,18 +17,45 @@ const SERVICE_ICONS: Record<string, typeof Server> = {
 }
 
 export default function SystemPage() {
-  const { data } = useSystemHealth()
+  const { data, loading, error, refetch } = useSystemHealth()
 
   const services = [data.api, data.database, data.redis, data.whatsapp]
+
+  const subtitle = (() => {
+    if (services.some(s => s.status === 'down')) return 'One or more services are down'
+    if (services.some(s => s.status === 'degraded')) return 'Some services are degraded'
+    return 'All services operational'
+  })()
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">System Health</h1>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">System Health</h1>
-        <p className="text-sm text-text-tertiary">All services operational</p>
+        <p className="text-sm text-text-tertiary">{subtitle}</p>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      {error && <ErrorBanner message={error} onRetry={refetch} />}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {services.map(s => {
           const style = STATUS_STYLE[s.status]
           const Icon = SERVICE_ICONS[s.name] || Server
@@ -49,7 +78,7 @@ export default function SystemPage() {
         })}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-xl border border-border bg-bg-surface p-5">
           <h3 className="mb-4 text-sm font-medium text-text-secondary">Performance Metrics</h3>
           <div className="space-y-3">

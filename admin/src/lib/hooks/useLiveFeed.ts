@@ -6,8 +6,11 @@ export function useLiveFeed() {
   const [events, setEvents] = useState<LiveFeedEvent[]>([])
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
+    setLoading(true)
+    setError(null)
     Promise.all([
       adminApi.getActivity().catch(() => ({ events: [] as LiveFeedEvent[] })),
       adminApi.getAlerts().catch(() => ({ alerts: [] as { id: string; type: string; title: string; description: string; severity: string; created_at: string }[] })),
@@ -23,12 +26,15 @@ export function useLiveFeed() {
           acknowledged: false,
         }))
       )
-    }).finally(() => setLoading(false))
+    }).catch(() => setError('Failed to load live feed'))
+      .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
 
   const acknowledgeAlert = useCallback((id: string) => {
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, acknowledged: true } : a))
   }, [])
 
-  return { events, alerts, loading, acknowledgeAlert }
+  return { events, alerts, loading, error, acknowledgeAlert, refetch: fetchData }
 }

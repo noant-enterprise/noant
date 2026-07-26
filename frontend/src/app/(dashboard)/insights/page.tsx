@@ -6,6 +6,7 @@ import {
 } from '@/components/stats'
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card'
 import { Skeleton, StatSkeleton } from '@/components/ui/Skeleton'
+import { BarChart3, TrendingUp, Clock, PieChart as PieChartIcon, MessageCircleQuestion } from 'lucide-react'
 import type {
   AnalyticsOverview, TrendsResponse, InsightsResponse,
   ChannelAnalyticsResponse, CSATResponse, UnknownQuestionsStatsResponse,
@@ -211,6 +212,11 @@ export default function InsightsPage() {
           <CardBody className="p-3 lg:p-4">
             {csatLoading ? (
               <SkeletonBox h="h-[200px]" />
+            ) : (csat?.trend || []).length === 0 ? (
+              <div className="h-[200px] flex flex-col items-center justify-center text-center">
+                <TrendingUp className="w-8 h-8 text-tertiary/40 mb-2" />
+                <p className="text-xs text-tertiary">No data yet</p>
+              </div>
             ) : (
               <div className="h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -239,6 +245,11 @@ export default function InsightsPage() {
           <CardBody className="p-3 lg:p-4">
             {msgLoading ? (
               <SkeletonBox h="h-[200px]" />
+            ) : msgChartData.length === 0 ? (
+              <div className="h-[200px] flex flex-col items-center justify-center text-center">
+                <BarChart3 className="w-8 h-8 text-tertiary/40 mb-2" />
+                <p className="text-xs text-tertiary">No data yet</p>
+              </div>
             ) : (
               <div className="h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -264,7 +275,12 @@ export default function InsightsPage() {
               <CardTitle>Conversation trends</CardTitle>
             </CardHeader>
             <CardBody className="p-3 lg:p-4">
-              {trLoading ? <SkeletonBox /> : (
+              {trLoading ? <SkeletonBox /> : (trends?.trends || []).length === 0 ? (
+                <div className="h-[200px] lg:h-[260px] flex flex-col items-center justify-center text-center">
+                  <TrendingUp className="w-8 h-8 text-tertiary/40 mb-2" />
+                  <p className="text-xs text-tertiary">No data yet</p>
+                </div>
+              ) : (
                 <div className="h-[200px] lg:h-[260px]">
                   <TrendChart data={trends?.trends || []} />
                 </div>
@@ -289,6 +305,11 @@ export default function InsightsPage() {
                   </div>
                 ))}
               </div>
+            ) : (insights?.top_intents || []).length === 0 ? (
+              <div className="py-8 text-center">
+                <MessageCircleQuestion className="w-8 h-8 text-tertiary/40 mx-auto mb-2" />
+                <p className="text-xs text-tertiary">No data yet</p>
+              </div>
             ) : (
               (insights?.top_intents || []).map((item, i) => (
                 <MetricRow
@@ -312,7 +333,12 @@ export default function InsightsPage() {
             <CardTitle>Peak hours</CardTitle>
           </CardHeader>
           <CardBody className="p-3 lg:p-4">
-            {inLoading ? <SkeletonBox h="h-[180px]" /> : (
+            {inLoading ? <SkeletonBox h="h-[180px]" /> : (insights?.peak_hours || []).length === 0 ? (
+              <div className="h-[180px] lg:h-[200px] flex flex-col items-center justify-center text-center">
+                <Clock className="w-8 h-8 text-tertiary/40 mb-2" />
+                <p className="text-xs text-tertiary">No data yet</p>
+              </div>
+            ) : (
               <div className="h-[180px] lg:h-[200px]">
                 <PeakHoursChart data={insights?.peak_hours || []} />
               </div>
@@ -324,7 +350,12 @@ export default function InsightsPage() {
             <CardTitle>Channel distribution</CardTitle>
           </CardHeader>
           <CardBody className="p-3 lg:p-4">
-            {chLoading ? <SkeletonBox h="h-[180px]" /> : (
+            {chLoading ? <SkeletonBox h="h-[180px]" /> : Object.keys(channels?.distribution || {}).length === 0 ? (
+              <div className="h-[180px] lg:h-[200px] flex flex-col items-center justify-center text-center">
+                <PieChartIcon className="w-8 h-8 text-tertiary/40 mb-2" />
+                <p className="text-xs text-tertiary">No data yet</p>
+              </div>
+            ) : (
               <div className="h-[180px] lg:h-[200px] flex items-center justify-center">
                 <ChannelDistributionChart data={channels?.distribution || {}} />
               </div>

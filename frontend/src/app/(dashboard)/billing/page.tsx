@@ -457,6 +457,7 @@ export default function BillingPage() {
                 <p className="text-xs text-tertiary mt-1">Your credit pack purchases will appear here.</p>
               </div>
             ) : (
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-default text-left">
@@ -497,6 +498,7 @@ export default function BillingPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </div>

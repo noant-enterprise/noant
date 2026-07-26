@@ -1,13 +1,56 @@
 import { useAnalytics } from '@/lib/hooks/useAnalytics'
 import { StatCard } from '@/components/data/StatCard'
+import { SkeletonCard, SkeletonTableRows } from '@/components/ui/Skeleton'
+import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
 import { formatNumber } from '@/lib/utils'
-import { Users, Eye, MousePointerClick, Clock } from 'lucide-react'
+import { Users, Eye, MousePointerClick, Clock, BarChart3 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 const COLORS = ['#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']
 
 export default function AnalyticsPage() {
-  const { data } = useAnalytics()
+  const { data, loading, error, refetch } = useAnalytics()
+
+  const visitorsChange = data.visitors_yesterday
+    ? ((data.visitors_today - data.visitors_yesterday) / data.visitors_yesterday) * 100
+    : 0
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Analytics</h1>
+          <p className="text-sm text-text-tertiary">Landing page performance and visitor insights</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-xl border border-border bg-bg-surface p-5">
+            <SkeletonCard />
+          </div>
+          <div className="rounded-xl border border-border bg-bg-surface p-5">
+            <SkeletonCard />
+          </div>
+        </div>
+        <div className="rounded-xl border border-border bg-bg-surface p-5">
+          <SkeletonTableRows rows={5} cols={5} />
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Analytics</h1>
+          <p className="text-sm text-text-tertiary">Landing page performance and visitor insights</p>
+        </div>
+        <ErrorBanner message={error} onRetry={refetch} />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -16,8 +59,8 @@ export default function AnalyticsPage() {
         <p className="text-sm text-text-tertiary">Landing page performance and visitor insights</p>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
-        <StatCard label="Visitors Today" value={formatNumber(data.visitors_today)} change={((data.visitors_today - data.visitors_yesterday) / data.visitors_yesterday) * 100} changeLabel="vs yesterday" icon={<Eye className="h-4 w-4" />} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Visitors Today" value={formatNumber(data.visitors_today)} change={visitorsChange} changeLabel="vs yesterday" icon={<Eye className="h-4 w-4" />} />
         <StatCard label="Signups Today" value={data.signups_today} icon={<Users className="h-4 w-4" />} />
         <StatCard label="Conversion Rate" value={`${data.conversion_rate}%`} icon={<MousePointerClick className="h-4 w-4" />} />
         <StatCard label="Avg Session" value={`${Math.floor(data.avg_session_duration / 60)}m ${data.avg_session_duration % 60}s`} icon={<Clock className="h-4 w-4" />} />
@@ -63,28 +106,32 @@ export default function AnalyticsPage() {
 
       <div className="rounded-xl border border-border bg-bg-surface p-5">
         <h3 className="mb-4 text-sm font-medium text-text-secondary">Page Performance</h3>
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">Page</th>
-              <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Views</th>
-              <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Unique</th>
-              <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Avg Time</th>
-              <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Bounce</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.page_views.map(pv => (
-              <tr key={pv.path} className="border-b border-border-subtle">
-                <td className="px-3 py-2 text-sm font-medium text-text-primary">{pv.path}</td>
-                <td className="px-3 py-2 text-right text-sm text-text-secondary">{formatNumber(pv.views)}</td>
-                <td className="px-3 py-2 text-right text-sm text-text-secondary">{formatNumber(pv.unique_visitors)}</td>
-                <td className="px-3 py-2 text-right text-sm text-text-secondary">{pv.avg_time_on_page}s</td>
-                <td className="px-3 py-2 text-right text-sm text-text-secondary">{pv.bounce_rate}%</td>
+        {data.page_views.length === 0 ? (
+          <EmptyState icon={BarChart3} title="No page data" description="Page performance data will appear here once visitors start browsing." />
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="px-3 py-2 text-left text-xs font-medium text-text-tertiary">Page</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Views</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Unique</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Avg Time</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-text-tertiary">Bounce</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.page_views.map(pv => (
+                <tr key={pv.path} className="border-b border-border-subtle">
+                  <td className="px-3 py-2 text-sm font-medium text-text-primary">{pv.path}</td>
+                  <td className="px-3 py-2 text-right text-sm text-text-secondary">{formatNumber(pv.views)}</td>
+                  <td className="px-3 py-2 text-right text-sm text-text-secondary">{formatNumber(pv.unique_visitors)}</td>
+                  <td className="px-3 py-2 text-right text-sm text-text-secondary">{pv.avg_time_on_page}s</td>
+                  <td className="px-3 py-2 text-right text-sm text-text-secondary">{pv.bounce_rate}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )

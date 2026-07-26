@@ -39,8 +39,10 @@ export default function ChatsPage() {
   const [aiInitLoading, setAiInitLoading] = useState(false)
   const [pendingAI, setPendingAI] = useState<Set<string>>(new Set())
   const aiPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const aiPollCountRef = useRef(0)
   const lastSentContent = useRef<string>('')
   const streamAbortRef = useRef<AbortController | null>(null)
+  const [aiPollFailed, setAiPollFailed] = useState(false)
 
   // Cleanup any in-flight stream on unmount
   useEffect(() => {
@@ -74,10 +76,26 @@ export default function ChatsPage() {
         clearInterval(aiPollRef.current)
         aiPollRef.current = null
       }
+      aiPollCountRef.current = 0
       return
     }
 
+    aiPollCountRef.current = 0
+    setAiPollFailed(false)
+
     aiPollRef.current = setInterval(async () => {
+      aiPollCountRef.current += 1
+      if (aiPollCountRef.current > 30) {
+        clearInterval(aiPollRef.current!)
+        aiPollRef.current = null
+        setPendingAI(prev => {
+          const next = new Set(prev)
+          next.delete(activeId)
+          return next
+        })
+        setAiPollFailed(true)
+        return
+      }
       try {
         const res = await api.get<any>(`/chats/conversations/${activeId}?limit=30&page=1`)
         setActiveMessages(res.messages || [])
@@ -539,6 +557,17 @@ export default function ChatsPage() {
               onLoadMore={handleLoadMoreMessages}
               conversationId={activeId}
             />
+            {aiPollFailed && (
+              <div className="px-4 py-2.5 bg-amber-500/5 border-t border-default flex items-center justify-between">
+                <span className="text-sm text-amber-600 dark:text-amber-400">Connection lost. Click to retry.</span>
+                <button
+                  onClick={() => { setAiPollFailed(false); setPendingAI(prev => { const next = new Set(prev); next.add(activeId!); return next }) }}
+                  className="text-sm text-noant-sky hover:underline font-medium"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             <ChatInput
               onSend={handleSend}
               onTakeover={handleTakeover}

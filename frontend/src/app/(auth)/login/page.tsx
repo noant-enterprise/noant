@@ -4,39 +4,60 @@ import { login } from '@/lib/auth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({})
+  const [touched, setTouched] = useState<{ email: boolean; password: boolean }>({ email: false, password: false })
   const navigate = useNavigate()
   const { toast } = useToast()
 
+  const validate = () => {
+    const errs: typeof errors = {}
+    if (!email.trim()) errs.email = 'Email is required'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Enter a valid email address'
+    if (!password) errs.password = 'Password is required'
+    return errs
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!email || !password) {
-      toast('Please fill in all fields', 'error')
-      return
-    }
+    setTouched({ email: true, password: true })
+    const errs = validate()
+    setErrors(errs)
+    if (Object.keys(errs).length > 0) return
+
     setLoading(true)
+    setErrors({})
     try {
       await login({ email, password })
       toast('Welcome back!', 'success')
       navigate('/dashboard')
     } catch (err: any) {
-      // If backend says email_not_verified, redirect to the verification page
       if (err?.code === 'email_not_verified' || err?.message === 'email_not_verified') {
         toast('Please verify your email before signing in.', 'error')
         navigate(`/verify-email?email=${encodeURIComponent(email)}`)
         return
       }
-      toast(err?.message || 'Invalid credentials', 'error')
+      const msg = err?.message || ''
+      if (msg.includes('500') || msg.includes('server') || msg.includes('network') || msg.includes('fetch')) {
+        setErrors({ general: 'Something went wrong on our end. Please try again in a moment.' })
+      } else if (msg.includes('invalid') || msg.includes('credentials') || msg.includes('password') || msg.includes('email')) {
+        setErrors({ general: 'Invalid email or password. Please check your credentials.' })
+      } else {
+        setErrors({ general: msg || 'Unable to sign in. Please try again.' })
+      }
     } finally {
       setLoading(false)
     }
   }
+
+  const emailErr = touched.email ? validate().email : undefined
+  const passwordErr = touched.password ? validate().password : undefined
 
   return (
     <div className="w-full animate-fade-in flex flex-col h-full lg:h-auto justify-center">
@@ -55,6 +76,12 @@ export default function LoginPage() {
       <h1 className="text-xl lg:text-3xl font-bold text-primary mb-0.5">Welcome back</h1>
       <p className="text-xs lg:text-sm text-secondary mb-4">Sign in to manage your AI customer support</p>
 
+      {errors.general && (
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {errors.general}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
           <label className="block text-xs font-semibold text-primary mb-1">Email</label>
@@ -62,10 +89,12 @@ export default function LoginPage() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onBlur={() => setTouched(prev => ({ ...prev, email: true }))}
             placeholder="you@company.com"
             autoComplete="email"
-            className="h-9 text-sm"
+            className={`h-9 text-sm ${emailErr ? 'border-red-500 focus:border-red-500 focus:ring-red-200' : ''}`}
           />
+          {emailErr && <p className="text-[11px] text-red-500 mt-1">{emailErr}</p>}
         </div>
         <div>
           <label className="block text-xs font-semibold text-primary mb-1">Password</label>
@@ -74,9 +103,10 @@ export default function LoginPage() {
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onBlur={() => setTouched(prev => ({ ...prev, password: true }))}
               placeholder="********"
               autoComplete="current-password"
-              className="h-9 text-sm pr-10"
+              className={`h-9 text-sm pr-10 ${passwordErr ? 'border-red-500 focus:border-red-500 focus:ring-red-200' : ''}`}
             />
             <button
               type="button"
@@ -87,6 +117,7 @@ export default function LoginPage() {
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          {passwordErr && <p className="text-[11px] text-red-500 mt-1">{passwordErr}</p>}
         </div>
         <div className="flex items-center justify-between">
           <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
@@ -97,8 +128,15 @@ export default function LoginPage() {
             Forgot?
           </Link>
         </div>
-        <Button type="submit" className="w-full h-10 text-sm" loading={loading}>
-          Sign in
+        <Button type="submit" className="w-full h-10 text-sm" disabled={loading}>
+          {loading ? (
+            <span className="flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Signing in…
+            </span>
+          ) : (
+            'Sign in'
+          )}
         </Button>
       </form>
 

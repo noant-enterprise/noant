@@ -84,6 +84,7 @@ export default function ChannelsPage() {
 
   const [disconnectChannel, setDisconnectChannel] = useState('')
   const [disconnectLoading, setDisconnectLoading] = useState(false)
+  const [disconnectError, setDisconnectError] = useState('')
   const [copiedWebhookId, setCopiedWebhookId] = useState('')
   const [activeModal, setActiveModal] = useState<'telegram' | 'whatsapp' | 'gmail' | 'web' | null>(null)
   const [connectLoading, setConnectLoading] = useState(false)
@@ -158,6 +159,7 @@ export default function ChannelsPage() {
 
   const handleDisconnectClick = (channel: string) => {
     setDisconnectChannel(channel)
+    setDisconnectError('')
     openDisconnect()
   }
 
@@ -165,6 +167,7 @@ export default function ChannelsPage() {
     if (!disconnectChannel) return
 
     setDisconnectLoading(true)
+    setDisconnectError('')
     try {
       await post(`/integrations/disconnect/${disconnectChannel}`)
       if (disconnectChannel === 'web') {
@@ -176,12 +179,12 @@ export default function ChannelsPage() {
         })
       }
       getIntegrations('/integrations/list')
-    } catch {
-      // handled by API hook
-    } finally {
-      setDisconnectLoading(false)
       closeDisconnect()
       setDisconnectChannel('')
+    } catch (err: any) {
+      setDisconnectError(err?.message || 'Failed to disconnect channel. Please try again.')
+    } finally {
+      setDisconnectLoading(false)
     }
   }
 
@@ -422,11 +425,19 @@ export default function ChannelsPage() {
         onClose={closeDisconnect}
         onConfirm={handleDisconnectConfirm}
         title="Disconnect channel?"
-        description={`Your ${disconnectChannel} integration will be removed. You can reconnect anytime.`}
+        description={`Your ${disconnectChannel} integration will be removed. You can reconnect anytime.${disconnectError ? '' : ''}`}
         variant="warning"
         confirmText="Disconnect"
         loading={disconnectLoading}
       />
+      {showDisconnect && disconnectError && (
+        <div className="fixed inset-0 z-[15001] pointer-events-none flex items-end justify-center p-4 sm:p-6">
+          <div className="pointer-events-auto bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 shadow-lg max-w-md w-full flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{disconnectError}</span>
+          </div>
+        </div>
+      )}
 
       <WhatsAppModal
         open={activeModal === 'whatsapp'}

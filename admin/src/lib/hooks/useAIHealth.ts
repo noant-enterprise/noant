@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
 import type { AIHealthResponse } from '@/types'
 
@@ -13,8 +13,11 @@ export function useAIHealth() {
     sentiment_breakdown: { positive: 0, neutral: 0, negative: 0 },
   })
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
+    setLoading(true)
+    setError(null)
     adminApi.getAIHealth()
       .then(res => setData({
         ...res,
@@ -22,9 +25,11 @@ export function useAIHealth() {
         accuracy_history: res.accuracy_history ?? [],
         sentiment_breakdown: res.sentiment_breakdown ?? { positive: 0, neutral: 0, negative: 0 },
       }))
-      .catch(() => {})
+      .catch(() => setError('Failed to load AI health data'))
       .finally(() => setLoading(false))
   }, [])
 
-  return { data, loading }
+  useEffect(() => { fetchData() }, [fetchData])
+
+  return { data, loading, error, refetch: fetchData }
 }

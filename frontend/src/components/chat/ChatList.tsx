@@ -94,12 +94,23 @@ export function ChatList({
       </div>
 
       <div className="flex-1 overflow-y-auto overscroll-contain">
-        {filtered.length === 0 && !loadingMore ? (
+        {conversations.length === 0 && !loadingMore ? (
+          <div className="p-8 text-center">
+            <div className="w-12 h-12 bg-inset rounded-full flex items-center justify-center mx-auto mb-3">
+              <MessageCircle className="w-5 h-5 text-tertiary" />
+            </div>
+            <p className="text-sm font-medium text-secondary">No conversations yet</p>
+            <p className="text-xs text-tertiary mt-1">Connect a channel to get started</p>
+            <a href="/channels" className="inline-block mt-3 text-xs font-medium text-noant-sky hover:text-noant-sky-deep transition-colors">
+              Go to channels
+            </a>
+          </div>
+        ) : filtered.length === 0 && !loadingMore ? (
           <div className="p-8 text-center">
             <div className="w-12 h-12 bg-inset rounded-full flex items-center justify-center mx-auto mb-3">
               <Search className="w-5 h-5 text-tertiary" />
             </div>
-            <p className="text-sm font-medium text-secondary">No conversations found</p>
+            <p className="text-sm font-medium text-secondary">No results</p>
             <p className="text-xs text-tertiary mt-1">Try a different search or filter</p>
           </div>
         ) : (
