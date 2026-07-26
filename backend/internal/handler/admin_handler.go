@@ -936,7 +936,7 @@ func (h *AdminHandler) SalesLeads(c *gin.Context) {
 		UpdatedAt       string  `json:"updated_at"`
 	}
 
-	var leads []lead
+	leads := make([]lead, 0)
 	for rows.Next() {
 		var l lead
 		if err := rows.Scan(&l.ID, &l.ContactName, &l.ContactPhone, &l.ContactEmail, &l.BusinessName, &l.BusinessType, &l.Status, &l.Notes, &l.MeetingLocation, &l.ReferralCode, &l.CreatedAt, &l.UpdatedAt); err != nil {
@@ -1039,7 +1039,7 @@ func (h *AdminHandler) SalesPipelineStats(c *gin.Context) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	var stats []statusCount
+	stats := make([]statusCount, 0)
 	for rows.Next() {
 		var s statusCount
 		if err := rows.Scan(&s.Status, &s.Count); err != nil {

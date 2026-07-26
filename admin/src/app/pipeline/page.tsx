@@ -128,9 +128,9 @@ export default function PipelinePage() {
         adminApi.getSalesLeads(filter !== 'all' ? { status: filter } : undefined),
         adminApi.getPipelineStats(),
       ])
-      setLeads(leadsRes.leads)
-      setTotalLeads(leadsRes.total)
-      setStats(statsRes.pipeline)
+      setLeads(leadsRes.leads ?? [])
+      setTotalLeads(leadsRes.total ?? 0)
+      setStats(statsRes.pipeline ?? [])
     } catch (err: any) {
       setError(err.message || 'Failed to load pipeline')
     } finally {
