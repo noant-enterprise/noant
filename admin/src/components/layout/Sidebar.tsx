@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Users, BarChart3, DollarSign, Brain, Server, BookOpen, ClipboardList, Settings, Zap } from 'lucide-react'
+import { LayoutDashboard, Users, BarChart3, DollarSign, Brain, Server, BookOpen, ClipboardList, Settings, Zap, Target } from 'lucide-react'
 
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/pipeline', icon: Target, label: 'Sales Pipeline' },
   { to: '/customers', icon: Users, label: 'Customers' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
   { to: '/revenue', icon: DollarSign, label: 'Revenue' },

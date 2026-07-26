@@ -1,4 +1,4 @@
-import type { OverviewResponse, UsersResponse, UserDetail, AnalyticsResponse, RevenueResponse, AIHealthResponse, SystemHealthResponse, AlertsResponse, ActivityResponse, LoginResponse, AuditLogsResponse, KnowledgeBaseResponse, TrainKnowledgeRequest } from '@/types'
+import type { OverviewResponse, UsersResponse, UserDetail, AnalyticsResponse, RevenueResponse, AIHealthResponse, SystemHealthResponse, AlertsResponse, ActivityResponse, LoginResponse, AuditLogsResponse, KnowledgeBaseResponse, TrainKnowledgeRequest, SalesLead } from '@/types'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
@@ -101,6 +101,29 @@ class AdminAPI {
 
   trainKnowledge(data: TrainKnowledgeRequest) {
     return this.request<{ message: string }>('POST', '/api/v1/admin/knowledge-base/train', data)
+  }
+
+  getReferral() {
+    return this.request<{ code: string; url: string; clicks: number; signups: number; conversions: number }>('GET', '/api/v1/admin/referral')
+  }
+
+  getSalesLeads(params?: { status?: string }) {
+    const query = new URLSearchParams()
+    if (params?.status) query.set('status', params.status)
+    const qs = query.toString()
+    return this.request<{ leads: SalesLead[]; total: number }>('GET', `/api/v1/admin/sales-leads${qs ? '?' + qs : ''}`)
+  }
+
+  createSalesLead(data: { contact_name: string; contact_phone?: string; contact_email?: string; business_name?: string; business_type?: string; status?: string; notes?: string; meeting_location?: string }) {
+    return this.request<{ id: string }>('POST', '/api/v1/admin/sales-leads', data)
+  }
+
+  updateSalesLead(id: string, data: { status?: string; notes?: string }) {
+    return this.request<{ message: string }>('PUT', `/api/v1/admin/sales-leads/${id}`, data)
+  }
+
+  getPipelineStats() {
+    return this.request<{ pipeline: { status: string; count: number }[]; total_leads: number }>('GET', '/api/v1/admin/pipeline-stats')
   }
 }
 

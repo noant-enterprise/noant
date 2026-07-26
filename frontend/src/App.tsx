@@ -36,6 +36,7 @@ const InventoryPage = lazy(() => import('@/app/(dashboard)/inventory/page'))
 const OnboardingPage = lazy(() => import('@/app/(dashboard)/onboarding/page'))
 const UnknownQuestionsPage = lazy(() => import('@/app/(dashboard)/teach/unknown/page'))
 const LandingPage = lazy(() => import('@/app/landing/page'))
+const InvitePage = lazy(() => import('@/app/invite/[code]/page'))
 const TermsPage = lazy(() => import('@/app/legal/terms/page'))
 const PrivacyPage = lazy(() => import('@/app/legal/privacy/page'))
 
@@ -141,6 +142,16 @@ const router = createBrowserRouter([
           </GuestRoute>
         ),
         children: [{ index: true, element: <RouteErrorBoundary pageName="Verify Email"><Suspense fallback={<PageLoader />}><VerifyEmailPage /></Suspense></RouteErrorBoundary> }],
+      },
+      {
+        path: '/invite/:code',
+        element: (
+          <RouteErrorBoundary pageName="Invite">
+            <Suspense fallback={<PageLoader />}>
+              <InvitePage />
+            </Suspense>
+          </RouteErrorBoundary>
+        ),
       },
       {
         path: '/terms',

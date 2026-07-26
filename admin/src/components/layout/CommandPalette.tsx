@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Command } from 'cmdk'
-import { LayoutDashboard, Users, BarChart3, DollarSign, Brain, Server, BookOpen, ClipboardList, Settings, X } from 'lucide-react'
+import { LayoutDashboard, Users, BarChart3, DollarSign, Brain, Server, BookOpen, ClipboardList, Settings, Target, X } from 'lucide-react'
 
 const NAVIGATION = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/pipeline', label: 'Sales Pipeline', icon: Target },
   { path: '/customers', label: 'Customers', icon: Users },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
   { path: '/revenue', label: 'Revenue', icon: DollarSign },

@@ -870,3 +870,186 @@ func (h *AdminHandler) TrainKnowledge(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"status": "trained", "qa_pair_id": qaID})
 }
+
+func (h *AdminHandler) GetReferralCode(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, _ := c.Get("userID")
+
+	var code string
+	err := h.repos.DB.QueryRowContext(ctx, `SELECT code FROM referrals WHERE referrer_user_id = ?`, userID).Scan(&code)
+	if err != nil {
+		code = "ref_" + userID.(string)[:8]
+		_, err = h.repos.DB.ExecContext(ctx,
+			`INSERT IGNORE INTO referrals (id, referrer_user_id, code) VALUES (?, ?, ?)`,
+			userID.(string)+"_ref", userID, code)
+		if err != nil {
+			h.logger.Error("admin referral: create", "error", err)
+		}
+	}
+
+	var clicks, signups, conversions int
+	_ = h.repos.DB.QueryRowContext(ctx, `SELECT clicks, signups, conversions FROM referrals WHERE code = ?`, code).Scan(&clicks, &signups, &conversions)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":        code,
+		"url":         fmt.Sprintf("%s/invite/%s", c.Request.Header.Get("Origin"), code),
+		"clicks":      clicks,
+		"signups":     signups,
+		"conversions": conversions,
+	})
+}
+
+func (h *AdminHandler) SalesLeads(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, _ := c.Get("userID")
+
+	status := c.Query("status")
+	query := `SELECT id, contact_name, contact_phone, contact_email, business_name, business_type, status, notes, meeting_location, referral_code, created_at, updated_at FROM sales_leads WHERE user_id = ?`
+	args := []interface{}{userID}
+
+	if status != "" {
+		query += ` AND status = ?`
+		args = append(args, status)
+	}
+	query += ` ORDER BY updated_at DESC LIMIT 200`
+
+	rows, err := h.repos.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		h.logger.Error("admin sales leads: query", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	type lead struct {
+		ID              string  `json:"id"`
+		ContactName     string  `json:"contact_name"`
+		ContactPhone    *string `json:"contact_phone"`
+		ContactEmail    *string `json:"contact_email"`
+		BusinessName    *string `json:"business_name"`
+		BusinessType    *string `json:"business_type"`
+		Status          string  `json:"status"`
+		Notes           *string `json:"notes"`
+		MeetingLocation *string `json:"meeting_location"`
+		ReferralCode    *string `json:"referral_code"`
+		CreatedAt       string  `json:"created_at"`
+		UpdatedAt       string  `json:"updated_at"`
+	}
+
+	var leads []lead
+	for rows.Next() {
+		var l lead
+		if err := rows.Scan(&l.ID, &l.ContactName, &l.ContactPhone, &l.ContactEmail, &l.BusinessName, &l.BusinessType, &l.Status, &l.Notes, &l.MeetingLocation, &l.ReferralCode, &l.CreatedAt, &l.UpdatedAt); err != nil {
+			h.logger.Error("admin sales leads: scan", "error", err)
+			continue
+		}
+		leads = append(leads, l)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"leads": leads, "total": len(leads)})
+}
+
+func (h *AdminHandler) CreateSalesLead(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, _ := c.Get("userID")
+
+	var req struct {
+		ContactName     string  `json:"contact_name" binding:"required"`
+		ContactPhone    *string `json:"contact_phone"`
+		ContactEmail    *string `json:"contact_email"`
+		BusinessName    *string `json:"business_name"`
+		BusinessType    *string `json:"business_type"`
+		Status          string  `json:"status"`
+		Notes           *string `json:"notes"`
+		MeetingLocation *string `json:"meeting_location"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Missing contact name")
+		return
+	}
+
+	id := uuid.New().String()
+	status := req.Status
+	if status == "" {
+		status = "contacted"
+	}
+
+	_, err := h.repos.DB.ExecContext(ctx,
+		`INSERT INTO sales_leads (id, user_id, contact_name, contact_phone, contact_email, business_name, business_type, status, notes, meeting_location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, userID, req.ContactName, req.ContactPhone, req.ContactEmail, req.BusinessName, req.BusinessType, status, req.Notes, req.MeetingLocation)
+	if err != nil {
+		h.logger.Error("admin sales leads: create", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "Lead created"})
+}
+
+func (h *AdminHandler) UpdateSalesLead(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
+	var req struct {
+		Status *string `json:"status"`
+		Notes  *string `json:"notes"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.RespondValidationError(c, "Invalid request")
+		return
+	}
+
+	if req.Status != nil {
+		_, err := h.repos.DB.ExecContext(ctx, `UPDATE sales_leads SET status = ? WHERE id = ?`, *req.Status, id)
+		if err != nil {
+			h.logger.Error("admin sales leads: update status", "error", err)
+			utils.RespondInternalError(c, err.Error())
+			return
+		}
+	}
+	if req.Notes != nil {
+		_, err := h.repos.DB.ExecContext(ctx, `UPDATE sales_leads SET notes = ? WHERE id = ?`, *req.Notes, id)
+		if err != nil {
+			h.logger.Error("admin sales leads: update notes", "error", err)
+			utils.RespondInternalError(c, err.Error())
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Lead updated"})
+}
+
+func (h *AdminHandler) SalesPipelineStats(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, _ := c.Get("userID")
+
+	type statusCount struct {
+		Status string `json:"status"`
+		Count  int    `json:"count"`
+	}
+
+	rows, err := h.repos.DB.QueryContext(ctx,
+		`SELECT status, COUNT(*) as cnt FROM sales_leads WHERE user_id = ? GROUP BY status`, userID)
+	if err != nil {
+		h.logger.Error("admin pipeline stats: query", "error", err)
+		utils.RespondInternalError(c, err.Error())
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	var stats []statusCount
+	for rows.Next() {
+		var s statusCount
+		if err := rows.Scan(&s.Status, &s.Count); err != nil {
+			continue
+		}
+		stats = append(stats, s)
+	}
+
+	var totalCount int
+	_ = h.repos.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sales_leads WHERE user_id = ?`, userID).Scan(&totalCount)
+
+	c.JSON(http.StatusOK, gin.H{"pipeline": stats, "total_leads": totalCount})
+}

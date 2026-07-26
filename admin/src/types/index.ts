@@ -313,3 +313,18 @@ export interface TrainKnowledgeRequest {
   answer: string;
   category_id?: string;
 }
+
+export interface SalesLead {
+  id: string;
+  contact_name: string;
+  contact_phone?: string;
+  contact_email?: string;
+  business_name?: string;
+  business_type?: string;
+  status: 'contacted' | 'demo_sent' | 'signed_up' | 'paying' | 'lost';
+  notes?: string;
+  meeting_location?: string;
+  referral_code?: string;
+  created_at: string;
+  updated_at: string;
+}

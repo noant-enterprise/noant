@@ -23,6 +23,7 @@ import (
 	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -596,6 +597,28 @@ func main() {
 	adminRoutes.GET("/audit-logs", handlers.Admin.AuditLogs)
 	adminRoutes.GET("/knowledge-base", handlers.Admin.KnowledgeBase)
 	adminRoutes.POST("/knowledge-base/train", handlers.Admin.TrainKnowledge)
+	adminRoutes.GET("/referral", handlers.Admin.GetReferralCode)
+	adminRoutes.GET("/sales-leads", handlers.Admin.SalesLeads)
+	adminRoutes.POST("/sales-leads", handlers.Admin.CreateSalesLead)
+	adminRoutes.PUT("/sales-leads/:id", handlers.Admin.UpdateSalesLead)
+	adminRoutes.GET("/pipeline-stats", handlers.Admin.SalesPipelineStats)
+
+	// Public referral tracking (no auth)
+	api.GET("/referral/:code", func(c *gin.Context) {
+		code := c.Param("code")
+		ctx := c.Request.Context()
+		_, _ = repos.DB.ExecContext(ctx, `UPDATE referrals SET clicks = clicks + 1 WHERE code = ?`, code)
+		var referralID string
+		_ = repos.DB.QueryRowContext(ctx, `SELECT id FROM referrals WHERE code = ?`, code).Scan(&referralID)
+		if referralID != "" {
+			ip := c.ClientIP()
+			ua := c.Request.UserAgent()
+			_, _ = repos.DB.ExecContext(ctx,
+				`INSERT INTO referral_events (id, referral_id, event_type, visitor_ip, user_agent) VALUES (?, ?, 'click', ?, ?)`,
+				uuid.New().String(), referralID, ip, ua)
+		}
+		c.JSON(http.StatusOK, gin.H{"code": code, "referral_id": referralID})
+	})
 
 	// Serve frontend static files if the static directory exists
 	if _, err := os.Stat("./static"); err == nil {

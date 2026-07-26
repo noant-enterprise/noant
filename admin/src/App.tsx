@@ -12,6 +12,7 @@ import SystemPage from '@/app/system/page'
 import SettingsPage from '@/app/settings/page'
 import AuditLogsPage from '@/app/audit-logs/page'
 import KnowledgeBasePage from '@/app/knowledge/page'
+import PipelinePage from '@/app/pipeline/page'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/audit-logs" element={<AuditLogsPage />} />
           <Route path="/knowledge" element={<KnowledgeBasePage />} />
+          <Route path="/pipeline" element={<PipelinePage />} />
         </Route>
       </Routes>
     </BrowserRouter>

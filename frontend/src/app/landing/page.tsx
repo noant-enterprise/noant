@@ -86,7 +86,7 @@ export default function LandingPage() {
       if (matchedPreset) {
         aiText = matchedPreset.answer
       } else if (text.toLowerCase().includes('price') || text.toLowerCase().includes('cost')) {
-        aiText = 'Noant plans start at $0/mo for our Free tier (1 AI Agent, 100 chats/mo). Our Pro plan is $49/mo (unlimited chats, custom WhatsApp/Telegram sync) and Enterprise starts at $149/mo.'
+        aiText = 'Noant plans start at ₦0/mo for our Free tier (1 AI Agent, 100 chats/mo). Our Pro plan is ₦15,000/mo (unlimited chats, custom WhatsApp/Telegram sync) and Enterprise starts at ₦50,000/mo.'
       } else if (text.toLowerCase().includes('demo') || text.toLowerCase().includes('try')) {
         aiText = 'You are playing with it right now! Noant runs a similar custom-trained model on your website widget. Create a free account to customize your bot persona!'
       }
@@ -628,7 +628,7 @@ export default function LandingPage() {
                     <p className="text-xs text-tertiary">Perfect for initial testing and local bot tuning.</p>
                   </div>
                   <div className="flex items-baseline gap-1 text-primary">
-                    <span className="text-3xl sm:text-4xl font-extrabold">$0</span>
+                    <span className="text-3xl sm:text-4xl font-extrabold">₦0</span>
                     <span className="text-xs text-tertiary">/mo</span>
                   </div>
                   <ul className="space-y-3 pt-4 border-t border-subtle">
@@ -655,7 +655,7 @@ export default function LandingPage() {
                     <p className="text-xs text-tertiary">For active businesses running omnichannel customer support.</p>
                   </div>
                   <div className="flex items-baseline gap-1 text-primary">
-                    <span className="text-3xl sm:text-4xl font-extrabold">${isAnnual ? '39' : '49'}</span>
+                    <span className="text-3xl sm:text-4xl font-extrabold">₦{isAnnual ? '12,000' : '15,000'}</span>
                     <span className="text-xs text-tertiary">/mo</span>
                   </div>
                   <ul className="space-y-3 pt-4 border-t border-subtle">
@@ -681,7 +681,7 @@ export default function LandingPage() {
                     <p className="text-xs text-tertiary">For organizations requiring tailored scaling and custom models.</p>
                   </div>
                   <div className="flex items-baseline gap-1 text-primary">
-                    <span className="text-3xl sm:text-4xl font-extrabold">${isAnnual ? '119' : '149'}</span>
+                    <span className="text-3xl sm:text-4xl font-extrabold">₦{isAnnual ? '40,000' : '50,000'}</span>
                     <span className="text-xs text-tertiary">/mo</span>
                   </div>
                   <ul className="space-y-3 pt-4 border-t border-subtle">
