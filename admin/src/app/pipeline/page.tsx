@@ -4,7 +4,8 @@ import type { SalesLead } from '@/types'
 import { timeAgo } from '@/lib/utils'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import { ErrorBanner, EmptyState } from '@/components/ui/Feedback'
-import { Plus, X, ClipboardList, ChevronDown } from 'lucide-react'
+import { Plus, X, ClipboardList, ChevronDown, QrCode, Link2, Copy, Check } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   contacted: { label: 'Contacted', color: 'text-amber-600', bg: 'bg-amber-500/10' },
@@ -108,6 +109,9 @@ export default function PipelinePage() {
   const [filter, setFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [showQR, setShowQR] = useState(false)
+  const [referral, setReferral] = useState<{ code: string; url: string; clicks: number; signups: number } | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const [form, setForm] = useState({
     contact_name: '',
@@ -171,6 +175,40 @@ export default function PipelinePage() {
 
   const statCounts = stats.reduce((acc, s) => { acc[s.status] = s.count; return acc }, {} as Record<string, number>)
 
+  const fetchReferral = async () => {
+    try {
+      const res = await adminApi.getReferral()
+      setReferral(res)
+    } catch { /* silent */ }
+  }
+
+  const handleShowQR = () => {
+    setShowQR(true)
+    if (!referral) fetchReferral()
+  }
+
+  const handleCopyLink = async () => {
+    if (!referral?.url) return
+    try {
+      await navigator.clipboard.writeText(referral.url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* silent */ }
+  }
+
+  const handleDownloadQR = () => {
+    const svg = document.getElementById('referral-qr')?.querySelector('svg')
+    if (!svg) return
+    const data = new XMLSerializer().serializeToString(svg)
+    const blob = new Blob([data], { type: 'image/svg+xml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `noant-qr-${referral?.code ?? 'code'}.svg`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -210,13 +248,22 @@ export default function PipelinePage() {
             </button>
           ))}
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="ml-auto flex items-center gap-1.5 rounded-lg bg-brand-sky px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-brand-sky-deep"
-        >
-          {showForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-          {showForm ? 'Cancel' : 'Add Lead'}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={handleShowQR}
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-bg-inset px-3.5 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-surface hover:text-text-primary"
+          >
+            <QrCode className="h-3.5 w-3.5" />
+            Share QR
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-1.5 rounded-lg bg-brand-sky px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-brand-sky-deep"
+          >
+            {showForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+            {showForm ? 'Cancel' : 'Add Lead'}
+          </button>
+        </div>
       </div>
 
       {/* Inline add form */}
@@ -343,6 +390,54 @@ export default function PipelinePage() {
           {leads.map(lead => (
             <LeadCard key={lead.id} lead={lead} onStatusUpdate={handleStatusUpdate} />
           ))}
+        </div>
+      )}
+
+      {/* QR Code Modal */}
+      {showQR && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowQR(false)}>
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-bg-base p-6 space-y-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-text-primary">Your Referral QR</h2>
+              <button onClick={() => setShowQR(false)} className="rounded-lg p-1 text-text-tertiary hover:text-text-primary hover:bg-bg-inset">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {referral ? (
+              <>
+                <div className="flex justify-center rounded-xl border border-border bg-white p-6" id="referral-qr">
+                  <QRCodeSVG value={referral.url} size={180} level="H" />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-inset px-3 py-2">
+                    <Link2 className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
+                    <span className="flex-1 truncate text-xs text-text-secondary font-mono">{referral.url}</span>
+                    <button onClick={handleCopyLink} className="shrink-0 rounded-md p-1 text-text-tertiary hover:text-brand-sky transition-colors">
+                      {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-border bg-bg-inset p-3 text-center">
+                      <p className="text-2xl font-bold text-text-primary">{referral.clicks}</p>
+                      <p className="text-xs text-text-tertiary mt-0.5">Clicks</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-bg-inset p-3 text-center">
+                      <p className="text-2xl font-bold text-brand-sky">{referral.signups}</p>
+                      <p className="text-xs text-text-tertiary mt-0.5">Signups</p>
+                    </div>
+                  </div>
+                  <button onClick={handleDownloadQR} className="w-full rounded-lg border border-border bg-bg-inset px-4 py-2.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-surface hover:text-text-primary">
+                    Download QR
+                  </button>
+                  <p className="text-center text-xs text-text-tertiary">Show this QR code during meetings. People scan it to sign up with your referral.</p>
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-center py-8">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-sky border-t-transparent" />
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
