@@ -15,7 +15,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
   },
   "dependencies": {
-    "@sentry/react": "^10.67.0",
+    "@sentry/react": "^10.68.0",
     "clsx": "^2.1.0",
     "emoji-picker-react": "^4.19.1",
     "lucide-react": "^0.344.0",
